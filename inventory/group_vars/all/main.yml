@@ -1,0 +1,25 @@
+# 全局变量配置文件
+# 适用于所有主机组的通用变量
+
+# 时区设置
+timezone: "Asia/Shanghai"
+
+# 常用软件包
+common_packages:
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+
+# NTP 服务器配置
+ntp_servers:
+  - "ntp.aliyun.com"
+  - "pool.ntp.org"
+
+# SSH 配置
+ssh_port: 22
+ssh_allow_root: false
+
+# 防火墙配置
+firewall_enabled: true

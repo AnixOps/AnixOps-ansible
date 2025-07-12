@@ -1,0 +1,59 @@
+name: Ansible CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+      
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: 安装 Ansible 和 ansible-lint
+      run: |
+        pip install ansible ansible-lint
+        
+    - name: 运行 Ansible Lint 检查
+      run: |
+        ansible-lint playbooks/ || true
+        
+    - name: 验证 Ansible 语法
+      run: |
+        ansible-playbook --syntax-check playbooks/site.yml
+
+  deploy:
+    name: 部署到测试环境
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+      
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: 安装 Ansible
+      run: |
+        pip install ansible
+        
+    # 注意：实际部署需要配置 SSH 密钥和 Ansible Vault 密码
+    # - name: 运行 Ansible Playbook
+    #   run: |
+    #     ansible-playbook -i inventory/hosts.yml playbooks/site.yml --check
+    #   env:
+    #     ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}

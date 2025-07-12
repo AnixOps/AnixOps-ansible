@@ -1,0 +1,50 @@
+---
+# 主站点 Playbook
+# 这是项目的入口 Playbook，用于协调所有角色的部署
+
+- name: 应用通用配置到所有服务器
+  hosts: all
+  gather_facts: yes
+  become: yes
+  
+  roles:
+    # - common  # 当创建了 common 角色后取消注释
+
+  tasks:
+    - name: 确保系统时间同步
+      command: timedatectl status
+      register: time_status
+      
+    - name: 显示时间状态
+      debug:
+        var: time_status.stdout_lines
+
+- name: 配置跳板机
+  hosts: jump_servers
+  gather_facts: yes
+  become: yes
+  
+  tasks:
+    - name: 确保跳板机服务正常运行
+      service:
+        name: sshd
+        state: started
+        enabled: yes
+
+- name: 配置日本区域服务器
+  hosts: jp_servers
+  gather_facts: yes
+  become: yes
+  
+  tasks:
+    - name: 检查日本服务器连通性
+      ping:
+
+- name: 配置美国区域服务器
+  hosts: us_servers
+  gather_facts: yes
+  become: yes
+  
+  tasks:
+    - name: 检查美国服务器连通性
+      ping:

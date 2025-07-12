@@ -1,0 +1,18 @@
+# Ansible 临时文件
+*.retry
+*.pyc
+*.pyo
+
+# Ansible Vault 密码文件 (非常重要！)
+.vault_password.txt
+
+# 本地配置文件 (如果需要)
+*.local
+ansible.local.cfg
+
+# IDE 和操作系统生成的文件
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
