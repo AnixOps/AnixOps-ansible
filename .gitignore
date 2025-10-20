@@ -16,3 +16,4 @@ ansible.local.cfg
 *.swp
 *~
 .DS_Store
+venv/

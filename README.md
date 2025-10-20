@@ -154,7 +154,7 @@ ansible all -m ping -i inventory/hosts.yml
 
 ### 7. 执行部署
 
-#### 本地执行
+#### 本地执行 (Linux/Mac)
 
 ```bash
 # 完整部署
@@ -166,6 +166,25 @@ ansible-playbook -i inventory/hosts.yml playbooks/quick-setup.yml
 # 健康检查
 ansible-playbook -i inventory/hosts.yml playbooks/health-check.yml
 ```
+
+**或使用 Makefile**:
+
+```bash
+make deploy
+make quick-setup
+make health-check
+```
+
+#### 本地执行 (Windows)
+
+```powershell
+# 使用 PowerShell 脚本
+.\run.ps1 deploy
+.\run.ps1 quick-setup
+.\run.ps1 health-check
+```
+
+**Windows 用户提示**: 项目包含 `run.ps1` PowerShell 脚本，提供与 Makefile 相同的功能。
 
 #### 通过 GitHub Actions
 
@@ -246,7 +265,19 @@ git push origin hotfix/critical-fix
 
 ## 📚 完整文档
 
-详细的运维手册请参见项目根目录的完整文档（中英文版本）。
+### 核心文档
+
+- 📖 **[快速开始指南](QUICKSTART.md)** - 5 分钟快速部署
+- 📝 **[使用示例](EXAMPLES.md)** - 10 个实际场景示例
+- 🔐 **[SSH 密钥管理方案](docs/SSH_KEY_MANAGEMENT.md)** - 多机器私钥管理完整方案
+- 🖥️ **[多机器操作指南](docs/MULTI_MACHINE_SETUP.md)** - Windows/Linux/Mac 多平台配置
+- 📋 **[项目总结](PROJECT_SUMMARY.md)** - 完整功能清单
+- 📜 **[更新日志](CHANGELOG.md)** - 版本历史
+
+### 命令参考
+
+- **Linux/Mac**: 使用 `Makefile` - 运行 `make help` 查看所有命令
+- **Windows**: 使用 `run.ps1` - 运行 `.\run.ps1 help` 查看所有命令
 
 ---
 
