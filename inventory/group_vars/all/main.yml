@@ -1,25 +1,143 @@
+---
 # 全局变量配置文件
 # 适用于所有主机组的通用变量
+# 所有敏感信息应存储在 GitHub Secrets 中
 
-# 时区设置
+# ====================
+# 时区和本地化配置
+# ====================
 timezone: "Asia/Shanghai"
+locale: "en_US.UTF-8"
 
+# ====================
 # 常用软件包
+# ====================
 common_packages:
   - curl
   - wget
   - vim
   - htop
   - git
+  - net-tools
+  - telnet
+  - unzip
+  - tar
+  - python3
+  - python3-pip
 
+# ====================
 # NTP 服务器配置
+# ====================
 ntp_servers:
   - "ntp.aliyun.com"
   - "pool.ntp.org"
 
+# ====================
 # SSH 配置
+# ====================
 ssh_port: 22
-ssh_allow_root: false
+ssh_allow_root: true  # 生产环境建议设为 false
+ssh_password_authentication: false
+ssh_pubkey_authentication: true
 
+# ====================
 # 防火墙配置
+# ====================
 firewall_enabled: true
+firewall_allowed_ports:
+  - 22     # SSH
+  - 80     # HTTP
+  - 443    # HTTPS
+  - 9100   # Node Exporter
+
+# ====================
+# 用户管理
+# ====================
+admin_users:
+  - name: ansible
+    shell: /bin/bash
+    groups: sudo,wheel
+    state: present
+
+# ====================
+# 安全配置
+# ====================
+security:
+  fail2ban_enabled: true
+  fail2ban_max_retry: 5
+  fail2ban_ban_time: 3600
+  
+  # 系统限制
+  limits:
+    - domain: '*'
+      limit_type: soft
+      limit_item: nofile
+      value: 65535
+    - domain: '*'
+      limit_type: hard
+      limit_item: nofile
+      value: 65535
+
+# ====================
+# 系统内核参数优化
+# ====================
+sysctl_config:
+  net.ipv4.tcp_tw_reuse: 1
+  net.ipv4.ip_forward: 0
+  net.ipv4.conf.default.rp_filter: 1
+  net.ipv4.conf.default.accept_source_route: 0
+  kernel.sysrq: 0
+  kernel.core_uses_pid: 1
+  net.ipv4.tcp_syncookies: 1
+  fs.file-max: 65535
+  net.core.somaxconn: 1024
+  net.ipv4.tcp_max_syn_backlog: 2048
+
+# ====================
+# Prometheus 监控配置
+# ====================
+prometheus:
+  node_exporter:
+    version: "1.7.0"
+    port: 9100
+    download_url: "https://github.com/prometheus/node_exporter/releases/download"
+  
+  # Prometheus 服务器地址 (从环境变量读取)
+  server_url: "{{ lookup('env', 'PROMETHEUS_URL') | default('http://localhost:9090') }}"
+
+# ====================
+# Loki 日志配置
+# ====================
+loki:
+  promtail:
+    version: "2.9.3"
+    port: 9080
+    download_url: "https://github.com/grafana/loki/releases/download"
+  
+  # Loki 服务器地址 (从环境变量读取)
+  server_url: "{{ lookup('env', 'LOKI_URL') | default('http://localhost:3100') }}"
+
+# ====================
+# Grafana 配置
+# ====================
+grafana:
+  url: "{{ lookup('env', 'GRAFANA_URL') | default('http://localhost:3000') }}"
+
+# ====================
+# Nginx 配置
+# ====================
+nginx:
+  version: "latest"
+  worker_processes: auto
+  worker_connections: 1024
+  client_max_body_size: "10M"
+  keepalive_timeout: 65
+
+# ====================
+# 应用通用配置
+# ====================
+app:
+  deploy_dir: /opt/apps
+  log_dir: /var/log/apps
+  app_user: appuser
+  app_group: appgroup

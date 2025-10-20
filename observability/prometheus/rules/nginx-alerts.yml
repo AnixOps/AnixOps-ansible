@@ -1,0 +1,62 @@
+---
+# Prometheus Alert Rules - Nginx Monitoring
+# Nginx 服务监控告警规则
+
+groups:
+  - name: nginx_alerts
+    interval: 30s
+    rules:
+      # Nginx 服务宕机
+      - alert: NginxDown
+        expr: nginx_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Nginx is down on {{ $labels.instance }}"
+          description: "Nginx service has been down for more than 1 minute"
+
+      # HTTP 5xx 错误率过高
+      - alert: HighHTTP5xxRate
+        expr: rate(nginx_http_requests_total{status=~"5.."}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.instance }}"
+          description: "HTTP 5xx error rate is {{ $value }} requests/second"
+
+      # HTTP 4xx 错误率过高
+      - alert: HighHTTP4xxRate
+        expr: rate(nginx_http_requests_total{status=~"4.."}[5m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High 4xx error rate on {{ $labels.instance }}"
+          description: "HTTP 4xx error rate is {{ $value }} requests/second"
+
+      # 请求延迟过高
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(nginx_http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High request latency on {{ $labels.instance }}"
+          description: "95th percentile latency is {{ $value }}s"
+
+      # 连接数过高
+      - alert: HighConnectionCount
+        expr: nginx_connections_active > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High active connections on {{ $labels.instance }}"
+          description: "Active connections: {{ $value }}"

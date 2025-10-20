@@ -1,0 +1,25 @@
+---
+# Web Servers Playbook
+# 专门用于部署 Web 服务器 (Nginx)
+
+- name: Deploy web servers
+  hosts: web_servers
+  become: yes
+  gather_facts: yes
+  
+  roles:
+    - nginx
+
+  post_tasks:
+    - name: Verify Nginx is accessible
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}"
+        status_code: 200
+      register: web_check
+      
+    - name: Display web server info
+      debug:
+        msg: |
+          ✓ Web server deployed successfully
+          - URL: http://{{ ansible_default_ipv4.address }}
+          - Status: {{ web_check.status }}

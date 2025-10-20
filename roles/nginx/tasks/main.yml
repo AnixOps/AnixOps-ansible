@@ -1,0 +1,115 @@
+---
+# Nginx role - Web 服务器
+# 安装和配置 Nginx
+
+- name: Install Nginx
+  package:
+    name: nginx
+    state: present
+
+- name: Create Nginx configuration directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+    - /etc/nginx/conf.d
+    - /var/log/nginx
+
+- name: Deploy main Nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    mode: '0644'
+    backup: yes
+  notify: reload nginx
+
+- name: Deploy default virtual host
+  template:
+    src: default-site.conf.j2
+    dest: /etc/nginx/sites-available/default
+    mode: '0644'
+  notify: reload nginx
+
+- name: Enable default site
+  file:
+    src: /etc/nginx/sites-available/default
+    dest: /etc/nginx/sites-enabled/default
+    state: link
+  notify: reload nginx
+
+- name: Remove default Nginx welcome page (if exists)
+  file:
+    path: /var/www/html/index.nginx-debian.html
+    state: absent
+
+- name: Create web root directory
+  file:
+    path: /var/www/html
+    state: directory
+    mode: '0755'
+    owner: www-data
+    group: www-data
+
+- name: Deploy custom index page
+  template:
+    src: index.html.j2
+    dest: /var/www/html/index.html
+    mode: '0644'
+    owner: www-data
+    group: www-data
+
+- name: Ensure Nginx is enabled and running
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Allow HTTP in firewall
+  ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(false)
+
+- name: Allow HTTPS in firewall
+  ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(false)
+
+- name: Allow HTTP in firewalld
+  firewalld:
+    service: http
+    permanent: yes
+    state: enabled
+    immediate: yes
+  when: 
+    - ansible_os_family == "RedHat"
+    - firewall_enabled | default(false)
+
+- name: Allow HTTPS in firewalld
+  firewalld:
+    service: https
+    permanent: yes
+    state: enabled
+    immediate: yes
+  when: 
+    - ansible_os_family == "RedHat"
+    - firewall_enabled | default(false)
+
+- name: Verify Nginx is responding
+  uri:
+    url: "http://localhost"
+    status_code: 200
+  register: nginx_health
+  retries: 3
+  delay: 5
+  until: nginx_health.status == 200

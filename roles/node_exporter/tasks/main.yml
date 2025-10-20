@@ -1,0 +1,100 @@
+---
+# Node Exporter role - Prometheus 主机监控
+# 安装和配置 Prometheus Node Exporter
+
+- name: Check if node_exporter is already installed
+  stat:
+    path: /usr/local/bin/node_exporter
+  register: node_exporter_binary
+
+- name: Get installed node_exporter version
+  shell: /usr/local/bin/node_exporter --version 2>&1 | grep -oP 'version \K[0-9.]+'
+  register: installed_version
+  when: node_exporter_binary.stat.exists
+  changed_when: false
+  failed_when: false
+
+- name: Download and install node_exporter
+  block:
+    - name: Create temporary directory
+      file:
+        path: /tmp/node_exporter
+        state: directory
+        mode: '0755'
+
+    - name: Download node_exporter
+      get_url:
+        url: "{{ prometheus.node_exporter.download_url }}/v{{ prometheus.node_exporter.version }}/node_exporter-{{ prometheus.node_exporter.version }}.linux-amd64.tar.gz"
+        dest: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-amd64.tar.gz"
+        mode: '0644'
+
+    - name: Extract node_exporter
+      unarchive:
+        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-amd64.tar.gz"
+        dest: /tmp/node_exporter
+        remote_src: yes
+
+    - name: Copy node_exporter binary
+      copy:
+        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+
+    - name: Clean up temporary files
+      file:
+        path: /tmp/node_exporter
+        state: absent
+  when: >
+    not node_exporter_binary.stat.exists or
+    (installed_version.stdout is defined and installed_version.stdout != prometheus.node_exporter.version)
+
+- name: Create node_exporter user
+  user:
+    name: node_exporter
+    system: yes
+    shell: /bin/false
+    create_home: no
+
+- name: Create node_exporter systemd service
+  template:
+    src: node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart node_exporter
+
+- name: Enable and start node_exporter
+  service:
+    name: node_exporter
+    state: started
+    enabled: yes
+
+- name: Allow node_exporter port in firewall
+  ufw:
+    rule: allow
+    port: "{{ prometheus.node_exporter.port }}"
+    proto: tcp
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(false)
+
+- name: Allow node_exporter port in firewalld
+  firewalld:
+    port: "{{ prometheus.node_exporter.port }}/tcp"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  when: 
+    - ansible_os_family == "RedHat"
+    - firewall_enabled | default(false)
+
+- name: Verify node_exporter is responding
+  uri:
+    url: "http://localhost:{{ prometheus.node_exporter.port }}/metrics"
+    status_code: 200
+  register: node_exporter_health
+  retries: 3
+  delay: 5
+  until: node_exporter_health.status == 200

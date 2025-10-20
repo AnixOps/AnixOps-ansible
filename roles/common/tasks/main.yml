@@ -1,0 +1,162 @@
+---
+# Common role - 基础配置任务
+# 这个角色负责服务器的基础配置和安全加固
+
+- name: Update apt cache (Debian/Ubuntu)
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Update yum cache (RedHat/CentOS)
+  yum:
+    update_cache: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Install common packages
+  package:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Set timezone
+  timezone:
+    name: "{{ timezone }}"
+
+- name: Set system locale
+  locale_gen:
+    name: "{{ locale }}"
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Configure NTP servers
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    mode: '0644'
+  notify: restart chrony
+  when: ansible_os_family == "Debian"
+
+- name: Ensure chrony is running
+  service:
+    name: chronyd
+    state: started
+    enabled: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Ensure chrony is running (Debian/Ubuntu)
+  service:
+    name: chrony
+    state: started
+    enabled: yes
+  when: ansible_os_family == "Debian"
+
+- name: Create admin users
+  user:
+    name: "{{ item.name }}"
+    shell: "{{ item.shell }}"
+    groups: "{{ item.groups }}"
+    state: "{{ item.state }}"
+    create_home: yes
+  loop: "{{ admin_users }}"
+  when: admin_users is defined
+
+- name: Configure SSH
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    mode: '0600'
+    backup: yes
+  notify: restart sshd
+
+- name: Apply sysctl parameters
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop: "{{ sysctl_config | dict2items }}"
+  when: sysctl_config is defined
+
+- name: Configure system limits
+  pam_limits:
+    domain: "{{ item.domain }}"
+    limit_type: "{{ item.limit_type }}"
+    limit_item: "{{ item.limit_item }}"
+    value: "{{ item.value }}"
+  loop: "{{ security.limits }}"
+  when: security.limits is defined
+
+- name: Install fail2ban
+  package:
+    name: fail2ban
+    state: present
+  when: security.fail2ban_enabled | default(false)
+
+- name: Configure fail2ban
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    mode: '0644'
+  notify: restart fail2ban
+  when: security.fail2ban_enabled | default(false)
+
+- name: Ensure fail2ban is running
+  service:
+    name: fail2ban
+    state: started
+    enabled: yes
+  when: security.fail2ban_enabled | default(false)
+
+- name: Configure UFW firewall (Ubuntu/Debian)
+  block:
+    - name: Allow SSH
+      ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+
+    - name: Allow configured ports
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: "{{ firewall_allowed_ports }}"
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(false)
+
+- name: Configure firewalld (RedHat/CentOS)
+  block:
+    - name: Allow SSH
+      firewalld:
+        port: "{{ ssh_port }}/tcp"
+        permanent: yes
+        state: enabled
+
+    - name: Allow configured ports
+      firewalld:
+        port: "{{ item }}/tcp"
+        permanent: yes
+        state: enabled
+      loop: "{{ firewall_allowed_ports }}"
+
+    - name: Reload firewalld
+      command: firewall-cmd --reload
+  when: 
+    - ansible_os_family == "RedHat"
+    - firewall_enabled | default(false)
+
+- name: Disable unnecessary services
+  service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - avahi-daemon
+    - cups
+  ignore_errors: yes

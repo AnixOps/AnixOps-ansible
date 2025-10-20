@@ -1,0 +1,50 @@
+server:
+  http_listen_port: {{ loki.promtail.port }}
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: {{ loki.server_url }}/loki/api/v1/push
+
+scrape_configs:
+  # System logs
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: varlogs
+          host: {{ ansible_hostname }}
+          __path__: /var/log/*log
+
+  # Auth logs
+  - job_name: auth
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: auth
+          host: {{ ansible_hostname }}
+          __path__: /var/log/auth.log
+
+  # Syslog
+  - job_name: syslog
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          host: {{ ansible_hostname }}
+          __path__: /var/log/syslog
+
+  # Application logs (if exists)
+  - job_name: applications
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: applications
+          host: {{ ansible_hostname }}
+          __path__: {{ app.log_dir | default('/var/log/apps') }}/*.log

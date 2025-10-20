@@ -1,0 +1,16 @@
+# AnixOps Ansible 依赖
+
+# Ansible Core
+ansible>=2.15.0
+ansible-lint>=6.0.0
+
+# YAML 工具
+yamllint>=1.32.0
+
+# SSH 密钥管理工具依赖
+PyNaCl>=1.5.0
+requests>=2.31.0
+
+# 可选：性能和调试工具
+ansible-runner>=2.3.0
+mitogen>=0.3.4

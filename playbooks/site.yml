@@ -1,50 +1,57 @@
 ---
-# 主站点 Playbook
-# 这是项目的入口 Playbook，用于协调所有角色的部署
+# AnixOps Main Playbook
+# 这是主 playbook，用于完整部署所有服务器配置
 
-- name: 应用通用配置到所有服务器
+- name: Deploy Common Configuration
   hosts: all
-  gather_facts: yes
   become: yes
-  
+  gather_facts: yes
   roles:
-    # - common  # 当创建了 common 角色后取消注释
+    - common
 
+- name: Deploy Node Exporter (Monitoring)
+  hosts: all
+  become: yes
+  roles:
+    - node_exporter
+
+- name: Deploy Promtail (Log Collection)
+  hosts: all
+  become: yes
+  roles:
+    - promtail
+
+- name: Deploy Nginx (Web Servers)
+  hosts: web_servers
+  become: yes
+  roles:
+    - nginx
+
+- name: Final Health Check
+  hosts: all
+  become: yes
+  gather_facts: no
   tasks:
-    - name: 确保系统时间同步
-      command: timedatectl status
-      register: time_status
-      
-    - name: 显示时间状态
+    - name: Display deployment summary
       debug:
-        var: time_status.stdout_lines
-
-- name: 配置跳板机
-  hosts: jump_servers
-  gather_facts: yes
-  become: yes
-  
-  tasks:
-    - name: 确保跳板机服务正常运行
-      service:
-        name: sshd
-        state: started
-        enabled: yes
-
-- name: 配置日本区域服务器
-  hosts: jp_servers
-  gather_facts: yes
-  become: yes
-  
-  tasks:
-    - name: 检查日本服务器连通性
-      ping:
-
-- name: 配置美国区域服务器
-  hosts: us_servers
-  gather_facts: yes
-  become: yes
-  
-  tasks:
-    - name: 检查美国服务器连通性
-      ping:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          ✓ Deployment completed successfully for {{ inventory_hostname }}
+          ═══════════════════════════════════════════════════════════
+          Hostname: {{ ansible_hostname }}
+          IP Address: {{ ansible_default_ipv4.address | default('N/A') }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          
+          Services Deployed:
+          ✓ Common configuration (security, timezone, users)
+          ✓ Node Exporter (port {{ prometheus.node_exporter.port }})
+          ✓ Promtail (log collection)
+          {% if inventory_hostname in groups['web_servers'] %}
+          ✓ Nginx (HTTP/HTTPS)
+          {% endif %}
+          
+          Next Steps:
+          1. Verify in Grafana: {{ grafana.url }}
+          2. Check Prometheus metrics: {{ prometheus.server_url }}
+          3. Review logs in Loki: {{ loki.server_url }}
+          ═══════════════════════════════════════════════════════════

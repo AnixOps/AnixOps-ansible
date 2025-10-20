@@ -1,0 +1,66 @@
+---
+# Health Check Playbook
+# 检查所有服务器和服务的健康状态
+
+- name: Health check for all servers
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    - name: Check system uptime
+      command: uptime
+      register: uptime_result
+      changed_when: false
+      
+    - name: Check disk usage
+      shell: df -h / | tail -1 | awk '{print $5}' | sed 's/%//'
+      register: disk_usage
+      changed_when: false
+      
+    - name: Check memory usage
+      shell: free | grep Mem | awk '{printf "%.0f", $3/$2 * 100.0}'
+      register: memory_usage
+      changed_when: false
+      
+    - name: Check if node_exporter is running
+      systemd:
+        name: node_exporter
+      register: node_exporter_status
+      
+    - name: Check if promtail is running
+      systemd:
+        name: promtail
+      register: promtail_status
+      
+    - name: Check if nginx is running (web servers only)
+      systemd:
+        name: nginx
+      register: nginx_status
+      when: inventory_hostname in groups['web_servers']
+      
+    - name: Display health check results
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          Health Check Report for {{ inventory_hostname }}
+          ═══════════════════════════════════════════════════════════
+          
+          System Info:
+          - Hostname: {{ ansible_hostname }}
+          - IP: {{ ansible_default_ipv4.address | default('N/A') }}
+          - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          - Uptime: {{ uptime_result.stdout }}
+          
+          Resource Usage:
+          - Disk Usage: {{ disk_usage.stdout }}%
+          - Memory Usage: {{ memory_usage.stdout }}%
+          
+          Services:
+          - Node Exporter: {{ node_exporter_status.status.ActiveState }}
+          - Promtail: {{ promtail_status.status.ActiveState }}
+          {% if inventory_hostname in groups['web_servers'] %}
+          - Nginx: {{ nginx_status.status.ActiveState }}
+          {% endif %}
+          
+          ═══════════════════════════════════════════════════════════

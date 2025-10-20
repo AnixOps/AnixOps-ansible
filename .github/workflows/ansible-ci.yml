@@ -2,9 +2,9 @@ name: Ansible CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ deploy, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ deploy ]
 
 jobs:
   lint:

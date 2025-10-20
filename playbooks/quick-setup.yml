@@ -1,0 +1,22 @@
+---
+# Quick Setup Playbook
+# 仅部署基础配置和监控，用于快速初始化新服务器
+
+- name: Quick server setup
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  roles:
+    - common
+    - node_exporter
+    - promtail
+
+  post_tasks:
+    - name: Display quick setup summary
+      debug:
+        msg: |
+          ✓ Quick setup completed for {{ inventory_hostname }}
+          - Common configuration applied
+          - Node Exporter installed (port {{ prometheus.node_exporter.port }})
+          - Promtail configured for log collection

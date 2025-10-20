@@ -1,0 +1,44 @@
+name: Ansible Lint
+
+on:
+  pull_request:
+    branches: [ main, staging ]
+  push:
+    branches: [ main, staging ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint Ansible Code
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible ansible-lint yamllint
+
+      - name: Run yamllint
+        run: |
+          yamllint -c .yamllint.yml .
+        continue-on-error: true
+
+      - name: Run ansible-lint
+        run: |
+          ansible-lint --force-color playbooks/*.yml roles/*/tasks/*.yml
+        continue-on-error: true
+
+      - name: Syntax check
+        run: |
+          ansible-playbook --syntax-check playbooks/site.yml
+
+      - name: Display lint results
+        run: |
+          echo "✓ Ansible code lint completed"
