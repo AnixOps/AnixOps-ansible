@@ -134,10 +134,28 @@ def generate_github_actions_inventory(config: Dict[str, Any],
 
 def generate_inventory_yaml(inventory: Dict[str, Any]) -> str:
     """生成 YAML 格式的 inventory"""
-    # 使用 Dumper 禁用别名/锚点，确保在 GitHub Actions 中正常工作
+    
+    # Custom dumper to handle Jinja2 templates properly
     class NoAliasDumper(yaml.SafeDumper):
         def ignore_aliases(self, data):
             return True
+    
+    # 自定义字符串表示器，对 Jinja2 模板使用双引号
+    # Custom string representer: use double quotes for Jinja2 templates
+    def represent_str(dumper, data):
+        # 如果字符串包含 Jinja2 模板语法，使用双引号样式
+        # If string contains Jinja2 template syntax, use double-quoted style
+        if '{{' in data and '}}' in data:
+            # 使用双引号样式 (") 而不是单引号 (')
+            # Use double-quoted style (") instead of single-quoted (')
+            return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
+        # 对于普通字符串，使用默认样式
+        # For regular strings, use default style
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+    
+    # 注册自定义的字符串表示器
+    # Register custom string representer
+    NoAliasDumper.add_representer(str, represent_str)
     
     return yaml.dump(inventory, 
                      Dumper=NoAliasDumper,
