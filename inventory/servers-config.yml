@@ -25,7 +25,7 @@ github_actions_servers:
       - dev
     roles:
       - web
-    environment: development
+    server_environment: development
     
   pl-test-1:
     secret_name: PL_1_V4_SSH
@@ -38,7 +38,7 @@ github_actions_servers:
     roles:
       - web
       - observability
-    environment: production
+    server_environment: production
 
 # -----------------------------------------------------------------------------
 # 生产环境服务器 | Production Environment Servers
@@ -62,7 +62,7 @@ production_servers:
       - web_servers
     roles:
       - web
-    environment: test
+    server_environment: test
     
   jp-1:
     env_var: JP_1_V4_SSH
@@ -73,7 +73,7 @@ production_servers:
       - web_servers
     roles:
       - web
-    environment: test
+    server_environment: test
     
   uk-1:
     env_var: UK_1_V4_SSH
@@ -84,7 +84,7 @@ production_servers:
       - web_servers
     roles:
       - web
-    environment: test
+    server_environment: test
     
   us-w-1:
     env_var: US_W_1_V4_SSH
@@ -95,7 +95,7 @@ production_servers:
       - web_servers
     roles:
       - web
-    environment: production
+    server_environment: production
   
   # ---------------------------------------------------------------------------
   # Proxy 服务器组 (PLG Stack) | Proxy Server Group (PLG Stack)
@@ -113,7 +113,7 @@ production_servers:
     roles:
       - proxy
       - plg_stack
-    environment: production
+    server_environment: production
     
   jp-2:
     env_var: JP_2_V4_SSH
@@ -125,7 +125,7 @@ production_servers:
     roles:
       - proxy
       - plg_stack
-    environment: production
+    server_environment: production
     
   hk-1:
     env_var: HK_1_V4_SSH
@@ -137,7 +137,7 @@ production_servers:
     roles:
       - proxy
       - plg_stack
-    environment: production
+    server_environment: production
     
   uk-2:
     env_var: UK_2_V4_SSH
@@ -149,7 +149,7 @@ production_servers:
     roles:
       - proxy
       - plg_stack
-    environment: production
+    server_environment: production
   
   # ---------------------------------------------------------------------------
   # 开发服务器组 | Development Server Group
@@ -167,7 +167,7 @@ production_servers:
       - dev
     roles:
       - development
-    environment: development
+    server_environment: development
   
   # ---------------------------------------------------------------------------
   # 可观测性服务器组 | Observability Server Group
@@ -187,7 +187,7 @@ production_servers:
       - prometheus
       - grafana
       - loki
-    environment: production
+    server_environment: production
 
 # =============================================================================
 # 组别定义 | Group Definitions
@@ -220,12 +220,12 @@ group_definitions:
   dev:
     description: "开发环境 | Development Environment"
     vars:
-      environment: development
+      server_environment: development
       
   prod:
     description: "生产环境 | Production Environment"
     vars:
-      environment: production
+      server_environment: production
 
 # =============================================================================
 # 全局变量 | Global Variables

@@ -49,8 +49,8 @@ def generate_local_inventory(config: Dict[str, Any]) -> Dict[str, Any]:
             host_config['server_alias'] = server_info['alias']
         if 'location' in server_info:
             host_config['location'] = server_info['location']
-        if 'environment' in server_info:
-            host_config['environment'] = server_info['environment']
+        if 'server_environment' in server_info:
+            host_config['server_environment'] = server_info['server_environment']
         if 'description' in server_info:
             host_config['description'] = server_info['description']
         
@@ -107,8 +107,8 @@ def generate_github_actions_inventory(config: Dict[str, Any],
             host_config['server_alias'] = server_info['alias']
         if 'location' in server_info:
             host_config['location'] = server_info['location']
-        if 'environment' in server_info:
-            host_config['environment'] = server_info['environment']
+        if 'server_environment' in server_info:
+            host_config['server_environment'] = server_info['server_environment']
         
         # 将服务器添加到所有属于的组
         for group in server_info['groups']:
