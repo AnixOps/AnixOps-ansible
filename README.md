@@ -345,8 +345,9 @@ git push origin hotfix/critical-fix
 
 - 📖 **[快速开始指南](docs/QUICKSTART.md)** - 5 分钟快速部署
 - 🔧 **[GitHub Actions 配置](docs/GITHUB_ACTIONS_SETUP.md)** - CI/CD 自动部署设置
-- � **[GitHub Secrets 配置参考](docs/GITHUB_SECRETS_REFERENCE.md)** - 完整的环境变量和 Secrets 配置指南
-- �📊 **[可观测性部署指南](docs/OBSERVABILITY_SETUP.md)** - Prometheus + Loki + Grafana 完整部署
+- 🚀 **[Workflow 使用指南](docs/WORKFLOW_USAGE.md)** - 灵活的部署选项和场景示例
+- 🔑 **[GitHub Secrets 配置参考](docs/GITHUB_SECRETS_REFERENCE.md)** - 完整的环境变量和 Secrets 配置指南
+- 📊 **[可观测性部署指南](docs/OBSERVABILITY_SETUP.md)** - Prometheus + Loki + Grafana 完整部署
 - 🏷️ **[服务器别名管理](docs/SERVER_ALIASES.md)** - 统一管理服务器标签和别名
 - 📝 **[使用示例](docs/EXAMPLES.md)** - 10 个实际场景示例
 - 🔐 **[SSH 密钥管理方案](docs/SSH_KEY_MANAGEMENT.md)** - 多机器私钥管理完整方案

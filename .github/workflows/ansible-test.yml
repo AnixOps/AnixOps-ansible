@@ -2,6 +2,36 @@ name: Ansible Connection Test
 
 on:
   workflow_dispatch:
+    inputs:
+      playbook:
+        description: 'Playbook to run'
+        required: true
+        default: 'ping-only'
+        type: choice
+        options:
+          - ping-only
+          - site.yml
+          - web-servers.yml
+          - observability.yml
+          - quick-setup.yml
+          - firewall-setup.yml
+          - health-check.yml
+      target_group:
+        description: 'Target server group'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - web_servers
+          - observability
+          - dev
+          - prod
+      skip_roles:
+        description: 'Roles to skip (comma-separated, e.g., nginx,prometheus)'
+        required: false
+        type: string
+        default: ''
   push:
     branches: [ main ]
   pull_request:
@@ -12,7 +42,7 @@ on:
 
 jobs:
   ping-test:
-    name: Ansible Ping Test
+    name: Ansible Test & Deploy
     runs-on: ubuntu-latest
     
     steps:
@@ -57,6 +87,20 @@ jobs:
                     ansible_host: "${{ secrets.PL_1_V4_SSH }}"
                 vars:
                   server_role: observability
+              
+              dev:
+                hosts:
+                  de-test-1:
+                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
+                vars:
+                  environment: development
+              
+              prod:
+                hosts:
+                  pl-test-1:
+                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
+                vars:
+                  environment: production
             
             vars:
               ansible_user: "${{ secrets.ANSIBLE_USER }}"
@@ -69,7 +113,19 @@ jobs:
           echo "Generated inventory:"
           cat inventory/hosts.yml
 
+      - name: Display Workflow Parameters
+        run: |
+          echo "════════════════════════════════════════════════════════════"
+          echo "Workflow Configuration"
+          echo "════════════════════════════════════════════════════════════"
+          echo "Playbook: ${{ github.event.inputs.playbook || 'ping-only (auto)' }}"
+          echo "Target Group: ${{ github.event.inputs.target_group || 'all (auto)' }}"
+          echo "Skip Roles: ${{ github.event.inputs.skip_roles || 'none' }}"
+          echo "Trigger: ${{ github.event_name }}"
+          echo "════════════════════════════════════════════════════════════"
+
       - name: Ping All Hosts
+        if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
         run: |
@@ -79,6 +135,7 @@ jobs:
           ansible all -i inventory/hosts.yml -m ping -v
 
       - name: Ping Web Servers
+        if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
         run: |
@@ -88,6 +145,7 @@ jobs:
           ansible web_servers -i inventory/hosts.yml -m ping -v
 
       - name: Ping Observability Servers
+        if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
         run: |
@@ -97,6 +155,7 @@ jobs:
           ansible observability -i inventory/hosts.yml -m ping -v
 
       - name: Gather Facts Test
+        if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
         run: |
@@ -106,19 +165,50 @@ jobs:
           ansible all -i inventory/hosts.yml -m setup -a "filter=ansible_distribution*" -v
         continue-on-error: true
 
+      - name: Run Ansible Playbook
+        if: github.event.inputs.playbook != 'ping-only' && github.event.inputs.playbook != '' && github.event_name == 'workflow_dispatch'
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        run: |
+          TARGET="${{ github.event.inputs.target_group }}"
+          PLAYBOOK="${{ github.event.inputs.playbook }}"
+          SKIP_ROLES="${{ github.event.inputs.skip_roles }}"
+          
+          echo "════════════════════════════════════════════════════════════"
+          echo "Running Ansible Playbook"
+          echo "════════════════════════════════════════════════════════════"
+          echo "Playbook: playbooks/${PLAYBOOK}"
+          echo "Target: ${TARGET}"
+          echo "Skip Roles: ${SKIP_ROLES:-none}"
+          echo "════════════════════════════════════════════════════════════"
+          
+          # Build ansible-playbook command
+          CMD="ansible-playbook playbooks/${PLAYBOOK} -i inventory/hosts.yml --limit ${TARGET} -v"
+          
+          # Add skip-tags if roles are specified
+          if [ -n "$SKIP_ROLES" ]; then
+            CMD="$CMD --skip-tags ${SKIP_ROLES}"
+          fi
+          
+          echo "Executing: $CMD"
+          eval $CMD
+
       - name: Test Summary
         if: always()
         run: |
           echo "════════════════════════════════════════════════════════════"
-          echo "✓ Ansible Connection Test Completed"
+          echo "✓ Ansible Workflow Completed"
           echo "════════════════════════════════════════════════════════════"
           echo "Test Run: $(date)"
           echo "Workflow: ${{ github.workflow }}"
+          echo "Playbook: ${{ github.event.inputs.playbook || 'ping-only (auto)' }}"
+          echo "Target: ${{ github.event.inputs.target_group || 'all (auto)' }}"
           echo "════════════════════════════════════════════════════════════"
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "✗ Ansible ping test failed!"
-          echo "One or more hosts are unreachable."
+          echo "✗ Ansible workflow failed!"
+          echo "Playbook: ${{ github.event.inputs.playbook || 'ping test' }}"
+          echo "Target: ${{ github.event.inputs.target_group || 'all' }}"
           echo "Check the logs above for details."
