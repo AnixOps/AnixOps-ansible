@@ -1,17 +1,25 @@
----
-# 全局变量配置文件
-# 适用于所有主机组的通用变量
-# 所有敏感信息应存储在 GitHub Secrets 中
+# =============================================================================
+# 全局变量配置文件 | Global Variables Configuration
+# =============================================================================
+# 此文件定义适用于所有主机组的通用变量
+# This file defines common variables applicable to all host groups
+#
+# 安全提示 | Security Note:
+#   所有敏感信息应存储在 GitHub Secrets 或环境变量中
+#   All sensitive information should be stored in GitHub Secrets or environment variables
+# =============================================================================
 
-# ====================
-# 时区和本地化配置
-# ====================
+# -----------------------------------------------------------------------------
+# 时区和本地化配置 | Timezone and Localization Configuration
+# -----------------------------------------------------------------------------
 timezone: "Asia/Shanghai"
 locale: "en_US.UTF-8"
 
-# ====================
-# 常用软件包
-# ====================
+# -----------------------------------------------------------------------------
+# 常用软件包 | Common Packages
+# -----------------------------------------------------------------------------
+# 所有服务器默认安装的基础工具
+# Basic tools installed by default on all servers
 common_packages:
   - curl
   - wget
@@ -24,40 +32,43 @@ common_packages:
   - tar
   - python3
   - python3-pip
-  - chrony  # NTP 时间同步服务
+  - chrony  # NTP 时间同步服务 | NTP time synchronization service
 
-# ====================
-# NTP 服务器配置
-# ====================
+# -----------------------------------------------------------------------------
+# NTP 服务器配置 | NTP Server Configuration
+# -----------------------------------------------------------------------------
+# 用于时间同步的 NTP 服务器列表
+# NTP server list for time synchronization
 ntp_servers:
   - "ntp.aliyun.com"
   - "pool.ntp.org"
 
-# ====================
-# SSH 配置
-# ====================
+# -----------------------------------------------------------------------------
+# SSH 配置 | SSH Configuration
+# -----------------------------------------------------------------------------
 ssh_port: 22
-ssh_allow_root: true  # 生产环境建议设为 false
+ssh_allow_root: true  # 生产环境建议设为 false | Recommended to set to false in production
 ssh_password_authentication: false
 ssh_pubkey_authentication: true
 
-# ====================
-# 防火墙配置
-# ====================
+# -----------------------------------------------------------------------------
+# 防火墙配置 | Firewall Configuration
+# -----------------------------------------------------------------------------
 firewall_enabled: true
 
-# 公开访问端口（无需白名单）
+# 公开访问端口（无需白名单）| Public access ports (no whitelist required)
 firewall_public_ports:
   - 22     # SSH
   - 80     # HTTP
   - 443    # HTTPS
 
-# 基础防火墙允许端口（用于通用配置）
+# 基础防火墙允许端口 | Basic firewall allowed ports
 firewall_allowed_ports:
   - 80     # HTTP
   - 443    # HTTPS
 
 # 受限访问端口（需要白名单，仅监控服务器可访问）
+# Restricted access ports (whitelist required, accessible only to monitoring servers)
 firewall_restricted_ports:
   - 9100   # Prometheus Node Exporter
   - 9080   # Promtail (Loki agent)
@@ -65,47 +76,52 @@ firewall_restricted_ports:
   - 3100   # Loki Server
   - 3000   # Grafana
 
-# 监控服务白名单 IP 列表
+# 监控服务白名单 IP 列表 | Monitoring service whitelist IP list
 # 从环境变量读取服务器 IP，自动添加到白名单
-# 包含所有服务器的 IP 段
+# Read server IPs from environment variables, automatically added to whitelist
+# 包含所有服务器的 IP 段 | Contains IP ranges of all servers
 monitoring_allowed_ips:
   # 全局白名单 IP（从环境变量读取，支持逗号分隔的多个 IP/CIDR）
+  # Global whitelist IPs (from env vars, supports comma-separated IPs/CIDRs)
   - "{{ lookup('env', 'GLOBAL_WHITELIST_IPS') | default('') }}"
-  # 德国测试服务器
+  # 德国测试服务器 | Germany test server
   - "{{ lookup('env', 'DE_1_V4_SSH') | default('') }}"
-  # 波兰测试服务器（可观测性）
+  # 波兰测试服务器（可观测性）| Poland test server (observability)
   - "{{ lookup('env', 'PL_1_V4_SSH') | default('') }}"
-  # 可以继续添加更多服务器 IP
+  # 可以继续添加更多服务器 IP | Can continue to add more server IPs
   # - "{{ lookup('env', 'YOUR_SERVER_IP') | default('') }}"
 
 # 处理全局白名单（支持逗号分隔的多个 IP）
+# Process global whitelist (supports comma-separated multiple IPs)
 global_whitelist_raw: "{{ lookup('env', 'GLOBAL_WHITELIST_IPS') | default('') }}"
 global_whitelist_split: "{{ global_whitelist_raw.split(',') if global_whitelist_raw else [] }}"
 global_whitelist_cleaned: "{{ global_whitelist_split | map('trim') | select('string') | reject('equalto', '') | list }}"
 
 # 过滤掉空值的白名单列表，合并全局白名单和服务器 IP
+# Whitelist with empty values filtered out, merging global whitelist and server IPs
 monitoring_whitelist: "{{ (monitoring_allowed_ips + global_whitelist_cleaned) | select('string') | reject('equalto', '') | unique | list }}"
 
-# ====================
-# 用户管理
-# ====================
-# 注意：用户组会根据操作系统自动设置
-# - Debian/Ubuntu: sudo 组
-# - RedHat/CentOS: wheel 组
+# -----------------------------------------------------------------------------
+# 用户管理 | User Management
+# -----------------------------------------------------------------------------
+# 注意：用户组会根据操作系统自动设置 | Note: User groups are set automatically based on OS
+# - Debian/Ubuntu: sudo 组 | sudo group
+# - RedHat/CentOS: wheel 组 | wheel group
 admin_users:
   - name: ansible
     shell: /bin/bash
     state: present
 
-# ====================
-# 安全配置
-# ====================
+# -----------------------------------------------------------------------------
+# 安全配置 | Security Configuration
+# -----------------------------------------------------------------------------
 security:
+  # Fail2Ban 配置 | Fail2Ban configuration
   fail2ban_enabled: true
   fail2ban_max_retry: 5
-  fail2ban_ban_time: 3600
+  fail2ban_ban_time: 3600  # 秒 | seconds
   
-  # 系统限制
+  # 系统限制 | System limits
   limits:
     - domain: '*'
       limit_type: soft
@@ -116,9 +132,9 @@ security:
       limit_item: nofile
       value: 65535
 
-# ====================
-# 系统内核参数优化
-# ====================
+# -----------------------------------------------------------------------------
+# 系统内核参数优化 | System Kernel Parameter Optimization
+# -----------------------------------------------------------------------------
 sysctl_config:
   net.ipv4.tcp_tw_reuse: 1
   net.ipv4.ip_forward: 0
@@ -131,9 +147,9 @@ sysctl_config:
   net.core.somaxconn: 1024
   net.ipv4.tcp_max_syn_backlog: 2048
 
-# ====================
-# Prometheus 监控配置
-# ====================
+# -----------------------------------------------------------------------------
+# Prometheus 监控配置 | Prometheus Monitoring Configuration
+# -----------------------------------------------------------------------------
 prometheus:
   version: "2.45.0"
   port: 9090
@@ -143,11 +159,12 @@ prometheus:
     download_url: "https://github.com/prometheus/node_exporter/releases/download"
   
   # Prometheus 服务器地址 (从环境变量读取)
+  # Prometheus server URL (read from environment variables)
   server_url: "{{ lookup('env', 'PROMETHEUS_URL') | default('http://localhost:9090') }}"
 
-# ====================
-# Loki 日志配置
-# ====================
+# -----------------------------------------------------------------------------
+# Loki 日志配置 | Loki Logging Configuration
+# -----------------------------------------------------------------------------
 loki:
   version: "2.9.0"
   port: 3100
@@ -157,17 +174,20 @@ loki:
     download_url: "https://github.com/grafana/loki/releases/download"
   
   # Loki 服务器地址 (从环境变量读取)
+  # Loki server URL (read from environment variables)
   server_url: "{{ lookup('env', 'LOKI_URL') | default('http://localhost:3100') }}"
 
-# ====================
-# Grafana 配置
-# ====================
+# -----------------------------------------------------------------------------
+# Grafana 配置 | Grafana Configuration
+# -----------------------------------------------------------------------------
 grafana:
+  # Grafana 访问地址 (从环境变量读取)
+  # Grafana access URL (read from environment variables)
   url: "{{ lookup('env', 'GRAFANA_URL') | default('http://localhost:3000') }}"
 
-# ====================
-# Nginx 配置
-# ====================
+# -----------------------------------------------------------------------------
+# Nginx 配置 | Nginx Configuration
+# -----------------------------------------------------------------------------
 nginx:
   version: "latest"
   worker_processes: auto
@@ -175,9 +195,9 @@ nginx:
   client_max_body_size: "10M"
   keepalive_timeout: 65
 
-# ====================
-# 应用通用配置
-# ====================
+# -----------------------------------------------------------------------------
+# 应用通用配置 | Application Common Configuration
+# -----------------------------------------------------------------------------
 app:
   deploy_dir: /opt/apps
   log_dir: /var/log/apps

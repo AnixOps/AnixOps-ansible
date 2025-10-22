@@ -1,11 +1,15 @@
----
-# Node Exporter handlers
+# =============================================================================
+# Node Exporter Handlers - Node Exporter 处理器 | Node Exporter Handlers
+# =============================================================================
+# 定义 Node Exporter 服务的处理器
+# Define handlers for Node Exporter service
+# =============================================================================
 
-- name: reload systemd
+- name: reload systemd | 重载 systemd 配置
   systemd:
     daemon_reload: yes
 
-- name: restart node_exporter
+- name: restart node_exporter | 重启 Node Exporter 服务
   service:
     name: node_exporter
     state: restarted

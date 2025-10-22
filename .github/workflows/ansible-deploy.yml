@@ -4,70 +4,38 @@ on:
   workflow_dispatch:
     inputs:
       playbook:
-        description: 'Playbook to deploy'
+        description: 'Select playbook'
         required: true
         type: choice
         options:
+          - quick-setup.yml
           - site.yml
           - web-servers.yml
           - observability.yml
-          - quick-setup.yml
-          - firewall-setup.yml
-          - health-check.yml
         default: 'quick-setup.yml'
       
       target_group:
-        description: 'Target server group'
+        description: 'Target servers'
         required: true
         type: choice
         options:
           - all
           - web_servers
           - observability
-          - proxy_servers
-          - dev_servers
           - dev
           - prod
-        default: 'all'
-      
-      environment:
-        description: 'Deployment environment'
-        required: true
-        type: choice
-        options:
-          - development
-          - staging
-          - production
-        default: 'development'
-      
-      skip_roles:
-        description: 'Roles to skip (comma-separated, e.g., nginx,prometheus)'
-        required: false
-        type: string
-        default: ''
+        default: 'dev'
       
       dry_run:
-        description: 'Run in check mode (dry run)'
+        description: 'Test only (no changes)'
         required: false
         type: boolean
-        default: false
-      
-      verbose_level:
-        description: 'Ansible verbosity level'
-        required: false
-        type: choice
-        options:
-          - 'normal'
-          - 'verbose (-v)'
-          - 'very verbose (-vv)'
-          - 'debug (-vvv)'
-        default: 'normal'
+        default: true
 
 jobs:
   deploy:
-    name: Deploy to ${{ github.event.inputs.environment }}
+    name: Deploy (${{ github.event.inputs.target_group }})
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
     
     steps:
       - name: Checkout code
@@ -93,60 +61,15 @@ jobs:
           # Add SSH fingerprints to known_hosts (optional)
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Create inventory from secrets
+      - name: Create inventory from config
         run: |
-          echo "Creating dynamic inventory from GitHub Secrets..."
-          cat > inventory/hosts.yml << 'EOF'
-          ---
-          all:
-            children:
-              web_servers:
-                hosts:
-                  de-test-1:
-                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
-                    server_alias: "德国-测试-1"
-                    location: "Germany"
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                    server_alias: "波兰-测试-1"
-                    location: "Poland"
-                vars:
-                  server_role: web
-              
-              observability:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                    server_alias: "波兰-监控-1"
-                    location: "Poland"
-                vars:
-                  server_role: observability
-              
-              dev:
-                hosts:
-                  de-test-1:
-                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
-                vars:
-                  environment: development
-              
-              prod:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  environment: production
-            
-            vars:
-              ansible_user: "${{ secrets.ANSIBLE_USER }}"
-              ansible_port: "${{ secrets.ANSIBLE_PORT }}"
-              ansible_ssh_private_key_file: "~/.ssh/id_rsa"
-              ansible_python_interpreter: /usr/bin/python3
-              ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-              deployment_timestamp: "${{ github.run_number }}"
-              deployed_by: "${{ github.actor }}"
-          EOF
+          echo "Generating inventory from servers-config.yml..."
+          python3 tools/generate_inventory.py github-actions > inventory/hosts.yml
           
-          echo "✓ Inventory created successfully"
+          echo "✓ Inventory generated successfully"
+          echo ""
+          echo "Generated inventory:"
+          cat inventory/hosts.yml
 
       - name: Display Deployment Configuration
         run: |
@@ -155,14 +78,9 @@ jobs:
           echo "═══════════════════════════════════════════════════════════════"
           echo "Playbook:        ${{ github.event.inputs.playbook }}"
           echo "Target Group:    ${{ github.event.inputs.target_group }}"
-          echo "Environment:     ${{ github.event.inputs.environment }}"
-          echo "Skip Roles:      ${{ github.event.inputs.skip_roles || 'none' }}"
           echo "Dry Run:         ${{ github.event.inputs.dry_run }}"
-          echo "Verbosity:       ${{ github.event.inputs.verbose_level }}"
           echo "───────────────────────────────────────────────────────────────"
           echo "Triggered by:    ${{ github.actor }}"
-          echo "Run Number:      ${{ github.run_number }}"
-          echo "Commit SHA:      ${{ github.sha }}"
           echo "Branch:          ${{ github.ref_name }}"
           echo "═══════════════════════════════════════════════════════════════"
 
@@ -181,43 +99,20 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           ANSIBLE_FORCE_COLOR: 'True'
         run: |
-          # Set verbosity flag
-          VERBOSE_FLAG=""
-          case "${{ github.event.inputs.verbose_level }}" in
-            "verbose (-v)")
-              VERBOSE_FLAG="-v"
-              ;;
-            "very verbose (-vv)")
-              VERBOSE_FLAG="-vv"
-              ;;
-            "debug (-vvv)")
-              VERBOSE_FLAG="-vvv"
-              ;;
-          esac
-          
           # Build command
           CMD="ansible-playbook playbooks/${{ github.event.inputs.playbook }}"
           CMD="$CMD -i inventory/hosts.yml"
           CMD="$CMD --limit ${{ github.event.inputs.target_group }}"
+          CMD="$CMD -v"
           
-          # Add optional flags
+          # Add dry-run flag if enabled
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             CMD="$CMD --check --diff"
             echo "⚠️  Running in DRY RUN mode (no changes will be made)"
           fi
           
-          if [ -n "${{ github.event.inputs.skip_roles }}" ]; then
-            CMD="$CMD --skip-tags ${{ github.event.inputs.skip_roles }}"
-          fi
-          
-          if [ -n "$VERBOSE_FLAG" ]; then
-            CMD="$CMD $VERBOSE_FLAG"
-          fi
-          
           echo "═══════════════════════════════════════════════════════════════"
-          echo "🎯 Executing Ansible Playbook"
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "Command: $CMD"
+          echo "🎯 Executing: $CMD"
           echo "═══════════════════════════════════════════════════════════════"
           
           # Execute
@@ -254,23 +149,15 @@ jobs:
           echo "═══════════════════════════════════════════════════════════════"
           echo "Playbook:        ${{ github.event.inputs.playbook }}"
           echo "Target:          ${{ github.event.inputs.target_group }}"
-          echo "Environment:     ${{ github.event.inputs.environment }}"
           echo "Dry Run:         ${{ github.event.inputs.dry_run }}"
           echo "───────────────────────────────────────────────────────────────"
           echo "Completed at:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Duration:        ${{ job.duration }}s"
-          echo "Run ID:          ${{ github.run_id }}"
           echo "═══════════════════════════════════════════════════════════════"
 
       - name: Notify on Failure
         if: failure()
         run: |
           echo "❌ Deployment failed!"
-          echo ""
-          echo "Details:"
-          echo "  • Playbook: ${{ github.event.inputs.playbook }}"
-          echo "  • Target: ${{ github.event.inputs.target_group }}"
-          echo "  • Environment: ${{ github.event.inputs.environment }}"
-          echo ""
-          echo "Please check the logs above for error details."
-          echo "Run ID: ${{ github.run_id }}"
+          echo "Playbook: ${{ github.event.inputs.playbook }}"
+          echo "Target: ${{ github.event.inputs.target_group }}"
+          echo "Check the logs above for details."

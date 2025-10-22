@@ -1,51 +1,69 @@
----
-# Node Exporter role - Prometheus 主机监控
+# =============================================================================
+# Node Exporter Role - Prometheus 主机监控 | Prometheus Host Monitoring
+# =============================================================================
 # 安装和配置 Prometheus Node Exporter
+# Install and configure Prometheus Node Exporter
+#
+# 功能 | Features:
+#   - 自动检测系统架构 (amd64/arm64) | Auto-detect system architecture
+#   - 版本检查和更新 | Version checking and updates
+#   - Systemd 服务管理 | Systemd service management
+#   - 防火墙配置 | Firewall configuration
+# =============================================================================
 
-- name: Check if node_exporter is already installed
+# -----------------------------------------------------------------------------
+# 版本检查 | Version Check
+# -----------------------------------------------------------------------------
+- name: Check if node_exporter is already installed | 检查 node_exporter 是否已安装
   stat:
     path: /usr/local/bin/node_exporter
   register: node_exporter_binary
 
-- name: Get installed node_exporter version
+- name: Get installed node_exporter version | 获取已安装的 node_exporter 版本
   shell: /usr/local/bin/node_exporter --version 2>&1 | grep -oP 'version \K[0-9.]+'
   register: installed_version
   when: node_exporter_binary.stat.exists
   changed_when: false
   failed_when: false
 
-- name: Detect system architecture
+# -----------------------------------------------------------------------------
+# 系统架构检测 | System Architecture Detection
+# -----------------------------------------------------------------------------
+- name: Detect system architecture | 检测系统架构
   set_fact:
     node_exporter_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
 
-- name: Download and install node_exporter
+# -----------------------------------------------------------------------------
+# 下载和安装 | Download and Install
+# -----------------------------------------------------------------------------
+- name: Download and install node_exporter | 下载并安装 node_exporter
   block:
-    - name: Create temporary directory
+    - name: Create temporary directory | 创建临时目录
       file:
         path: /tmp/node_exporter
         state: directory
         mode: '0755'
 
-    - name: Download node_exporter
+    - name: Download node_exporter | 下载 node_exporter
       get_url:
         url: "{{ prometheus.node_exporter.download_url }}/v{{ prometheus.node_exporter.version }}/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}.tar.gz"
         dest: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}.tar.gz"
         mode: '0644'
 
-    - name: Extract node_exporter
+    - name: Extract node_exporter | 解压 node_exporter
       unarchive:
         src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}.tar.gz"
         dest: /tmp/node_exporter
         remote_src: yes
 
-    - name: Copy node_exporter binary
+    - name: Copy node_exporter binary | 复制 node_exporter 二进制文件
       copy:
         src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}/node_exporter"
         dest: /usr/local/bin/node_exporter
         mode: '0755'
         remote_src: yes
 
-    - name: Clean up temporary files
+    - name: Clean up temporary files | 清理临时文件
       file:
         path: /tmp/node_exporter
         state: absent
@@ -53,14 +71,17 @@
     not node_exporter_binary.stat.exists or
     (installed_version.stdout is defined and installed_version.stdout != prometheus.node_exporter.version)
 
-- name: Create node_exporter user
+# -----------------------------------------------------------------------------
+# 用户和服务配置 | User and Service Configuration
+# -----------------------------------------------------------------------------
+- name: Create node_exporter user | 创建 node_exporter 用户
   user:
     name: node_exporter
     system: yes
     shell: /bin/false
     create_home: no
 
-- name: Create node_exporter systemd service
+- name: Create node_exporter systemd service | 创建 node_exporter systemd 服务
   template:
     src: node_exporter.service.j2
     dest: /etc/systemd/system/node_exporter.service
@@ -69,13 +90,16 @@
     - reload systemd
     - restart node_exporter
 
-- name: Enable and start node_exporter
+- name: Enable and start node_exporter | 启用并启动 node_exporter
   service:
     name: node_exporter
     state: started
     enabled: yes
 
-- name: Allow node_exporter port in firewall
+# -----------------------------------------------------------------------------
+# 防火墙配置 | Firewall Configuration
+# -----------------------------------------------------------------------------
+- name: Allow node_exporter port in firewall | 在防火墙中允许 node_exporter 端口
   ufw:
     rule: allow
     port: "{{ prometheus.node_exporter.port }}"

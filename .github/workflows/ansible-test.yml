@@ -1,23 +1,19 @@
-name: Ansible Connection Test
+name: Ansible Test
 
 on:
   workflow_dispatch:
     inputs:
       playbook:
-        description: 'Playbook to run'
+        description: 'Select action'
         required: true
         default: 'ping-only'
         type: choice
         options:
           - ping-only
-          - site.yml
-          - web-servers.yml
-          - observability.yml
-          - quick-setup.yml
-          - firewall-setup.yml
           - health-check.yml
+          - quick-setup.yml
       target_group:
-        description: 'Target server group'
+        description: 'Target servers'
         required: true
         default: 'all'
         type: choice
@@ -27,17 +23,11 @@ on:
           - observability
           - dev
           - prod
-      skip_roles:
-        description: 'Roles to skip (comma-separated, e.g., nginx,prometheus)'
-        required: false
-        type: string
-        default: ''
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
   schedule:
-    # Run daily at 00:00 UTC to verify connectivity
     - cron: '0 0 * * *'
 
 jobs:
@@ -67,60 +57,20 @@ jobs:
 
       - name: Create inventory from secrets
         run: |
-          echo "Creating inventory from GitHub Secrets..."
-          cat > inventory/hosts.yml << 'EOF'
-          ---
-          all:
-            children:
-              web_servers:
-                hosts:
-                  de-test-1:
-                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  server_role: web
-              
-              observability:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  server_role: observability
-              
-              dev:
-                hosts:
-                  de-test-1:
-                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
-                vars:
-                  environment: development
-              
-              prod:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  environment: production
-            
-            vars:
-              ansible_user: "${{ secrets.ANSIBLE_USER }}"
-              ansible_port: "${{ secrets.ANSIBLE_PORT }}"
-              ansible_ssh_private_key_file: "~/.ssh/id_rsa"
-              ansible_python_interpreter: /usr/bin/python3
-              ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-          EOF
+      - name: Create inventory from config
+        run: |
+          echo "Generating inventory from servers-config.yml..."
+          python3 tools/generate_inventory.py github-actions > inventory/hosts.yml
           
-          echo "Generated inventory:"
-          cat inventory/hosts.yml
+          echo "✓ Inventory generated"
 
       - name: Display Workflow Parameters
         run: |
           echo "════════════════════════════════════════════════════════════"
           echo "Workflow Configuration"
           echo "════════════════════════════════════════════════════════════"
-          echo "Playbook: ${{ github.event.inputs.playbook || 'ping-only (auto)' }}"
-          echo "Target Group: ${{ github.event.inputs.target_group || 'all (auto)' }}"
-          echo "Skip Roles: ${{ github.event.inputs.skip_roles || 'none' }}"
+          echo "Action: ${{ github.event.inputs.playbook || 'ping-only (auto)' }}"
+          echo "Target: ${{ github.event.inputs.target_group || 'all (auto)' }}"
           echo "Trigger: ${{ github.event_name }}"
           echo "════════════════════════════════════════════════════════════"
 
@@ -172,23 +122,16 @@ jobs:
         run: |
           TARGET="${{ github.event.inputs.target_group }}"
           PLAYBOOK="${{ github.event.inputs.playbook }}"
-          SKIP_ROLES="${{ github.event.inputs.skip_roles }}"
           
           echo "════════════════════════════════════════════════════════════"
           echo "Running Ansible Playbook"
           echo "════════════════════════════════════════════════════════════"
           echo "Playbook: playbooks/${PLAYBOOK}"
           echo "Target: ${TARGET}"
-          echo "Skip Roles: ${SKIP_ROLES:-none}"
           echo "════════════════════════════════════════════════════════════"
           
-          # Build ansible-playbook command
+          # Build and execute command
           CMD="ansible-playbook playbooks/${PLAYBOOK} -i inventory/hosts.yml --limit ${TARGET} -v"
-          
-          # Add skip-tags if roles are specified
-          if [ -n "$SKIP_ROLES" ]; then
-            CMD="$CMD --skip-tags ${SKIP_ROLES}"
-          fi
           
           echo "Executing: $CMD"
           eval $CMD

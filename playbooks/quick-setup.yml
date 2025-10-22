@@ -1,8 +1,17 @@
----
-# Quick Setup Playbook
+# =============================================================================
+# 快速设置 Playbook | Quick Setup Playbook
+# =============================================================================
 # 仅部署基础配置、监控和防火墙，用于快速初始化新服务器
+# Only deploys basic configuration, monitoring, and firewall for quick server initialization
+#
+# 部署内容 | Deployment Content:
+#   - 通用配置 | Common configuration
+#   - Node Exporter | Node Exporter
+#   - Promtail | Promtail
+#   - 防火墙 | Firewall
+# =============================================================================
 
-- name: Quick server setup
+- name: Quick server setup | 快速服务器设置
   hosts: all
   become: yes
   gather_facts: yes
@@ -14,18 +23,19 @@
     - monitoring_firewall
 
   post_tasks:
-    - name: Display quick setup summary
+    - name: Display quick setup summary | 显示快速设置摘要
       debug:
         msg: |
           ═══════════════════════════════════════════════════════════
-          ✓ Quick setup completed for {{ inventory_hostname }}
+          ✓ 快速设置完成 | Quick setup completed
+          服务器 | Server: {{ inventory_hostname }}
           ═══════════════════════════════════════════════════════════
-          Components installed:
-          ✓ Common configuration applied
-          ✓ Node Exporter installed (port {{ prometheus.node_exporter.port }})
-          ✓ Promtail configured for log collection (port {{ loki.promtail.port }})
-          ✓ Firewall rules configured:
-            - Public ports: {{ firewall_public_ports | join(', ') }}
-            - Restricted ports: {{ firewall_restricted_ports | join(', ') }}
-            - Whitelisted IPs: {{ monitoring_whitelist | length }}
+          已安装组件 | Components installed:
+          ✓ 通用配置已应用 | Common configuration applied
+          ✓ Node Exporter 已安装（端口 {{ prometheus.node_exporter.port }}）| Node Exporter installed (port {{ prometheus.node_exporter.port }})
+          ✓ Promtail 配置完成（端口 {{ loki.promtail.port }}）| Promtail configured (port {{ loki.promtail.port }})
+          ✓ 防火墙规则已配置 | Firewall rules configured:
+            - 公开端口 | Public ports: {{ firewall_public_ports | join(', ') }}
+            - 受限端口 | Restricted ports: {{ firewall_restricted_ports | join(', ') }}
+            - 白名单 IP 数量 | Whitelisted IPs: {{ monitoring_whitelist | length }}
           ═══════════════════════════════════════════════════════════

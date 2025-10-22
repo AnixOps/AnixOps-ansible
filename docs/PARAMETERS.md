@@ -1,63 +1,69 @@
-# 📋 参数需求表 (Parameters Requirements)
+# 📋 参数需求表 | Parameters Requirements
 
-> 本文档列出了 AnixOps Ansible 项目所需的所有配置参数，包括环境变量、GitHub Secrets 和 Ansible 变量配置。
-
----
-
-## 📑 目录
-
-- [GitHub Secrets 配置](#github-secrets-配置)
-- [环境变量配置 (.env)](#环境变量配置-env)
-- [Ansible 全局变量](#ansible-全局变量)
-- [服务器节点配置](#服务器节点配置)
+> **中文说明：** 本文档列出了 AnixOps Ansible 项目所需的所有配置参数，包括环境变量、GitHub Secrets 和 Ansible 变量配置。
+>
+> **English Description:** This document lists all configuration parameters required for the AnixOps Ansible project, including environment variables, GitHub Secrets, and Ansible variable configurations.
 
 ---
 
-## 🔐 GitHub Secrets 配置
+## 📑 目录 | Table of Contents
 
-### 必需参数 (Required)
+- [GitHub Secrets 配置 | GitHub Secrets Configuration](#github-secrets-配置--github-secrets-configuration)
+- [环境变量配置 (.env) | Environment Variables Configuration (.env)](#环境变量配置-env--environment-variables-configuration-env)
+- [Ansible 全局变量 | Ansible Global Variables](#ansible-全局变量--ansible-global-variables)
+- [服务器节点配置 | Server Node Configuration](#服务器节点配置--server-node-configuration)
+
+---
+
+## 🔐 GitHub Secrets 配置 | GitHub Secrets Configuration
+
+### 必需参数 | Required Parameters
 
 在 GitHub 仓库的 Settings → Secrets and variables → Actions 中配置以下参数：
 
-| Secret 名称 | 类型 | 说明 | 示例值 | 是否必需 |
+Configure the following parameters in your GitHub repository: Settings → Secrets and variables → Actions:
+
+| Secret 名称<br>Secret Name | 类型<br>Type | 说明<br>Description | 示例值<br>Example | 是否必需<br>Required |
 |------------|------|------|--------|---------|
-| `SSH_PRIVATE_KEY` | SSH 密钥 | 用于连接服务器的 SSH 私钥（完整内容） | `-----BEGIN OPENSSH PRIVATE KEY-----\n...` | ✅ 必需 |
-| `ANSIBLE_USER` | 字符串 | SSH 连接用户名 | `root` 或 `ubuntu` | ✅ 必需 |
-| `ANSIBLE_PORT` | 数字 | SSH 连接端口 | `22` | ✅ 必需 |
+| `SSH_PRIVATE_KEY` | SSH 密钥<br>SSH Key | 用于连接服务器的 SSH 私钥（完整内容）<br>SSH private key for server connection (full content) | `-----BEGIN OPENSSH PRIVATE KEY-----\n...` | ✅ 必需<br>Required |
+| `ANSIBLE_USER` | 字符串<br>String | SSH 连接用户名<br>SSH connection username | `root` 或 or `ubuntu` | ✅ 必需<br>Required |
+| `ANSIBLE_PORT` | 数字<br>Number | SSH 连接端口<br>SSH connection port | `22` | ✅ 必需<br>Required |
 
-### 服务器 IP 地址
+### 服务器 IP 地址 | Server IP Addresses
 
-| Secret 名称 | 类型 | 说明 | 示例值 | 是否必需 |
+| Secret 名称<br>Secret Name | 类型<br>Type | 说明<br>Description | 示例值<br>Example | 是否必需<br>Required |
 |------------|------|------|--------|---------|
-| `DE_1_V4_SSH` | IP 地址 | 德国测试服务器 IPv4 地址 | `203.0.113.10` | ✅ 必需 |
-| `PL_1_V4_SSH` | IP 地址 | 波兰测试服务器 IPv4 地址（可观测性服务器） | `203.0.113.20` | ✅ 必需 |
+| `DE_1_V4_SSH` | IP 地址<br>IP Address | 德国测试服务器 IPv4 地址<br>Germany test server IPv4 address | `203.0.113.10` | ✅ 必需<br>Required |
+| `PL_1_V4_SSH` | IP 地址<br>IP Address | 波兰测试服务器 IPv4 地址（可观测性服务器）<br>Poland test server IPv4 (observability server) | `203.0.113.20` | ✅ 必需<br>Required |
 
-### 可观测性配置（可选）
+### 可观测性配置（可选）| Observability Configuration (Optional)
 
-| Secret 名称 | 类型 | 说明 | 示例值 | 是否必需 |
+| Secret 名称<br>Secret Name | 类型<br>Type | 说明<br>Description | 示例值<br>Example | 是否必需<br>Required |
 |------------|------|------|--------|---------|
-| `PROMETHEUS_URL` | URL | Prometheus 服务器地址 | `http://prometheus.example.com:9090` | ⚪ 可选 |
-| `LOKI_URL` | URL | Loki 日志服务器地址 | `http://loki.example.com:3100` | ⚪ 可选 |
-| `GRAFANA_URL` | URL | Grafana 仪表盘地址 | `http://grafana.example.com:3000` | ⚪ 可选 |
+| `PROMETHEUS_URL` | URL | Prometheus 服务器地址<br>Prometheus server address | `http://prometheus.example.com:9090` | ⚪ 可选<br>Optional |
+| `LOKI_URL` | URL | Loki 日志服务器地址<br>Loki log server address | `http://loki.example.com:3100` | ⚪ 可选<br>Optional |
+| `GRAFANA_URL` | URL | Grafana 仪表盘地址<br>Grafana dashboard address | `http://grafana.example.com:3000` | ⚪ 可选<br>Optional |
 
 ---
 
-## 🌍 环境变量配置 (.env)
+## 🌍 环境变量配置 (.env) | Environment Variables Configuration (.env)
 
 用于本地开发和测试，不要提交到 Git 仓库。
 
-### 创建 .env 文件
+For local development and testing, do not commit to Git repository.
+
+### 创建 .env 文件 | Create .env File
 
 ```bash
 cp .env.example .env
 vim .env
 ```
 
-### 必需环境变量
+### 必需环境变量 | Required Environment Variables
 
 ```bash
-# SSH 连接配置
-ANSIBLE_USER=root                      # SSH 用户名
+# SSH 连接配置 | SSH Connection Configuration
+ANSIBLE_USER=root                      # SSH 用户名 | SSH username
 ANSIBLE_PORT=22                        # SSH 端口
 SSH_KEY_PATH=~/.ssh/id_rsa            # SSH 私钥路径
 

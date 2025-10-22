@@ -1,98 +1,115 @@
----
-# Firewall Setup Playbook
+# =============================================================================
+# 防火墙设置 Playbook | Firewall Setup Playbook
+# =============================================================================
 # 统一配置所有服务器的防火墙规则和监控白名单
+# Unified configuration of firewall rules and monitoring whitelist for all servers
 # 
-# 功能：
+# 功能 | Features:
 # - 配置公开端口（22, 80, 443）无白名单访问
+#   Configure public ports (22, 80, 443) without whitelist access
 # - 配置监控端口（9100, 9080, 9090, 3100, 3000）白名单访问
+#   Configure monitoring ports (9100, 9080, 9090, 3100, 3000) with whitelist access
 # - 统一管理所有服务器的 IP 白名单
+#   Unified management of IP whitelist for all servers
 #
-# 使用方法：
+# 使用方法 | Usage:
 #   ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml
 #
-# 限制特定主机：
+# 限制特定主机 | Limit to specific hosts:
 #   ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml --limit web_servers
+# =============================================================================
 
-- name: Configure firewall rules and monitoring whitelist
+- name: Configure firewall rules and monitoring whitelist | 配置防火墙规则和监控白名单
   hosts: all
   become: yes
   gather_facts: yes
   
   pre_tasks:
-    - name: Display firewall configuration
+    - name: Display firewall configuration | 显示防火墙配置
       debug:
         msg: |
           ═══════════════════════════════════════════════════════════
-          Firewall Configuration
+          防火墙配置 | Firewall Configuration
           ═══════════════════════════════════════════════════════════
-          Target Host: {{ inventory_hostname }}
-          OS Family: {{ ansible_os_family }}
+          目标主机 | Target Host: {{ inventory_hostname }}
+          操作系统 | OS Family: {{ ansible_os_family }}
           
-          Public Ports (No whitelist):
+          公开端口（无白名单）| Public Ports (No whitelist):
             {{ firewall_public_ports | join(', ') }}
           
-          Restricted Ports (Whitelist only):
+          受限端口（仅白名单）| Restricted Ports (Whitelist only):
             {{ firewall_restricted_ports | join(', ') }}
           
-          Monitoring Whitelist IPs:
+          监控白名单 IP | Monitoring Whitelist IPs:
             {{ monitoring_whitelist | join('\n  ') if monitoring_whitelist | length > 0 else 'None configured' }}
           ═══════════════════════════════════════════════════════════
 
-    - name: Verify whitelist is not empty
+    - name: Verify whitelist is not empty | 验证白名单不为空
       fail:
         msg: |
+          错误：监控白名单为空！
           Error: Monitoring whitelist is empty!
-          Please configure monitoring_allowed_ips in inventory/group_vars/all/main.yml
-          or set environment variables (DE_1_V4_SSH, PL_1_V4_SSH, etc.)
+          
+          请在以下位置配置 monitoring_allowed_ips：
+          Please configure monitoring_allowed_ips in:
+          inventory/group_vars/all/main.yml
+          
+          或设置环境变量（或 | or set environment variables:
+          DE_1_V4_SSH, PL_1_V4_SSH, etc.)
       when: monitoring_whitelist | length == 0
 
   roles:
     - monitoring_firewall
 
   post_tasks:
-    - name: Verify firewall is active (UFW)
+    - name: Verify firewall is active (UFW) | 验证防火墙状态 (UFW)
       command: ufw status
       register: ufw_status
       changed_when: false
       failed_when: false
       when: ansible_os_family == "Debian"
 
-    - name: Display UFW status
+    - name: Display UFW status | 显示 UFW 状态
       debug:
         msg: "{{ ufw_status.stdout_lines }}"
       when: 
         - ansible_os_family == "Debian"
         - ufw_status.stdout_lines is defined
 
-    - name: Verify firewall is active (firewalld)
+    - name: Verify firewall is active (firewalld) | 验证防火墙状态 (firewalld)
       command: firewall-cmd --list-all
       register: firewalld_status
       changed_when: false
       failed_when: false
       when: ansible_os_family == "RedHat"
 
-    - name: Display firewalld status
+    - name: Display firewalld status | 显示 firewalld 状态
       debug:
         msg: "{{ firewalld_status.stdout_lines }}"
       when: 
         - ansible_os_family == "RedHat"
         - firewalld_status.stdout_lines is defined
 
-    - name: Firewall setup summary
+    - name: Firewall setup summary | 防火墙设置摘要
       debug:
         msg: |
           ═══════════════════════════════════════════════════════════
-          ✓ Firewall Setup Completed Successfully
+          ✓ 防火墙设置成功完成 | Firewall Setup Completed Successfully
           ═══════════════════════════════════════════════════════════
-          Host: {{ inventory_hostname }}
+          主机 | Host: {{ inventory_hostname }}
           
-          Configuration Applied:
-          ✓ Public services (SSH, HTTP, HTTPS) are accessible from anywhere
-          ✓ Monitoring services restricted to {{ monitoring_whitelist | length }} whitelisted IPs
-          ✓ Default deny policy applied for restricted ports
+          已应用配置 | Configuration Applied:
+          ✓ 公开服务（SSH, HTTP, HTTPS）可从任何地方访问
+            Public services (SSH, HTTP, HTTPS) are accessible from anywhere
+          ✓ 监控服务限制为 {{ monitoring_whitelist | length }} 个白名单 IP
+            Monitoring services restricted to {{ monitoring_whitelist | length }} whitelisted IPs
+          ✓ 受限端口应用默认拒绝策略
+            Default deny policy applied for restricted ports
           
-          Next Steps:
-          1. Test public service access: curl http://{{ ansible_host }}
-          2. Test monitoring from whitelisted server: curl http://{{ ansible_host }}:9100/metrics
-          3. Verify blocked access from non-whitelisted IPs
+          下一步 | Next Steps:
+          1. 测试公开服务访问 | Test public service access: 
+             curl http://{{ ansible_host }}
+          2. 从白名单服务器测试监控 | Test monitoring from whitelisted server:
+             curl http://{{ ansible_host }}:9100/metrics
+          3. 验证非白名单 IP 被阻止 | Verify blocked access from non-whitelisted IPs
           ═══════════════════════════════════════════════════════════

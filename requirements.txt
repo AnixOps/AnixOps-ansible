@@ -1,18 +1,30 @@
-# AnixOps Ansible 依赖
+# =============================================================================
+# AnixOps Ansible 依赖 | AnixOps Ansible Dependencies
+# =============================================================================
+# Python 包依赖列表 | Python package dependencies list
+# =============================================================================
 
-# Ansible Core
-ansible>=2.15.0
-ansible-lint>=6.0.0
+# -----------------------------------------------------------------------------
+# Ansible 核心 | Ansible Core
+# -----------------------------------------------------------------------------
+ansible>=2.15.0        # Ansible 自动化引擎 | Ansible automation engine
+ansible-lint>=6.0.0    # Ansible 代码质量检查工具 | Ansible code quality checker
 
-# YAML 工具
-yamllint>=1.32.0
+# -----------------------------------------------------------------------------
+# YAML 工具 | YAML Tools
+# -----------------------------------------------------------------------------
+yamllint>=1.32.0       # YAML 文件格式检查工具 | YAML file format checker
 
-# SSH 密钥管理工具依赖
-PyNaCl>=1.5.0
-requests>=2.31.0
-paramiko>=3.0.0
-scp>=0.14.0
+# -----------------------------------------------------------------------------
+# SSH 密钥管理工具依赖 | SSH Key Management Tool Dependencies
+# -----------------------------------------------------------------------------
+PyNaCl>=1.5.0          # 加密库 | Cryptography library
+requests>=2.31.0       # HTTP 请求库 | HTTP requests library
+paramiko>=3.0.0        # SSH 协议实现 | SSH protocol implementation
+scp>=0.14.0            # SCP 文件传输 | SCP file transfer
 
-# 可选：性能和调试工具
-ansible-runner>=2.3.0
-mitogen>=0.3.4
+# -----------------------------------------------------------------------------
+# 可选：性能和调试工具 | Optional: Performance and Debugging Tools
+# -----------------------------------------------------------------------------
+ansible-runner>=2.3.0  # Ansible 运行器 | Ansible runner
+mitogen>=0.3.4         # 性能优化插件 | Performance optimization plugin

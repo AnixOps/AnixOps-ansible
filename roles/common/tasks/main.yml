@@ -1,41 +1,65 @@
----
-# Common role - 基础配置任务
-# 这个角色负责服务器的基础配置和安全加固
+# =============================================================================
+# Common Role - 基础配置任务 | Common Role - Basic Configuration Tasks
+# =============================================================================
+# 此角色负责服务器的基础配置和安全加固
+# This role is responsible for basic server configuration and security hardening
+#
+# 功能 | Features:
+#   - 系统包管理 | System package management
+#   - 时区和本地化 | Timezone and localization
+#   - NTP 时间同步 | NTP time synchronization
+#   - 用户管理 | User management
+#   - SSH 安全配置 | SSH security configuration
+#   - Fail2Ban 防护 | Fail2Ban protection
+#   - 系统参数优化 | System parameter optimization
+# =============================================================================
 
-- name: Update apt cache (Debian/Ubuntu)
+# -----------------------------------------------------------------------------
+# 更新包缓存 | Update Package Cache
+# -----------------------------------------------------------------------------
+- name: Update apt cache (Debian/Ubuntu) | 更新 apt 缓存 (Debian/Ubuntu)
   apt:
     update_cache: yes
     cache_valid_time: 3600
   when: ansible_os_family == "Debian"
 
-- name: Update yum cache (RedHat/CentOS)
+- name: Update yum cache (RedHat/CentOS) | 更新 yum 缓存 (RedHat/CentOS)
   yum:
     update_cache: yes
   when: ansible_os_family == "RedHat"
 
-- name: Install common packages
+# -----------------------------------------------------------------------------
+# 安装常用软件包 | Install Common Packages
+# -----------------------------------------------------------------------------
+- name: Install common packages | 安装常用软件包
   package:
     name: "{{ common_packages }}"
     state: present
 
-- name: Set timezone
+# -----------------------------------------------------------------------------
+# 时区和本地化配置 | Timezone and Localization Configuration
+# -----------------------------------------------------------------------------
+- name: Set timezone | 设置时区
   timezone:
     name: "{{ timezone }}"
 
-- name: Set system locale
+- name: Set system locale | 设置系统区域设置
   locale_gen:
     name: "{{ locale }}"
     state: present
   when: ansible_os_family == "Debian"
 
-- name: Ensure chrony config directory exists
+# -----------------------------------------------------------------------------
+# NTP 时间同步配置 | NTP Time Synchronization Configuration
+# -----------------------------------------------------------------------------
+- name: Ensure chrony config directory exists | 确保 chrony 配置目录存在
   file:
     path: /etc/chrony
     state: directory
     mode: '0755'
   when: ansible_os_family == "Debian"
 
-- name: Configure NTP servers (Debian/Ubuntu)
+- name: Configure NTP servers (Debian/Ubuntu) | 配置 NTP 服务器 (Debian/Ubuntu)
   template:
     src: chrony.conf.j2
     dest: /etc/chrony/chrony.conf
@@ -43,7 +67,7 @@
   notify: restart chrony
   when: ansible_os_family == "Debian"
 
-- name: Configure NTP servers (RedHat/CentOS)
+- name: Configure NTP servers (RedHat/CentOS) | 配置 NTP 服务器 (RedHat/CentOS)
   template:
     src: chrony.conf.j2
     dest: /etc/chrony.conf
@@ -51,21 +75,24 @@
   notify: restart chrony
   when: ansible_os_family == "RedHat"
 
-- name: Ensure chrony is running
+- name: Ensure chrony is running (RedHat/CentOS) | 确保 chrony 运行中 (RedHat/CentOS)
   service:
     name: chronyd
     state: started
     enabled: yes
   when: ansible_os_family == "RedHat"
 
-- name: Ensure chrony is running (Debian/Ubuntu)
+- name: Ensure chrony is running (Debian/Ubuntu) | 确保 chrony 运行中 (Debian/Ubuntu)
   service:
     name: chrony
     state: started
     enabled: yes
   when: ansible_os_family == "Debian"
 
-- name: Create admin users (Debian/Ubuntu)
+# -----------------------------------------------------------------------------
+# 用户管理 | User Management
+# -----------------------------------------------------------------------------
+- name: Create admin users (Debian/Ubuntu) | 创建管理员用户 (Debian/Ubuntu)
   user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"
@@ -77,7 +104,7 @@
     - admin_users is defined
     - ansible_os_family == "Debian"
 
-- name: Create admin users (RedHat/CentOS)
+- name: Create admin users (RedHat/CentOS) | 创建管理员用户 (RedHat/CentOS)
   user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"

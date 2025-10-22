@@ -1,0 +1,237 @@
+# =============================================================================
+# 服务器配置中心 | Server Configuration Center
+# =============================================================================
+# 此文件是服务器配置的唯一真实来源 (Single Source of Truth)
+# This file is the single source of truth for all server configurations
+#
+# 用途 | Purpose:
+#   - 本地环境配置 | Local environment configuration
+#   - GitHub Actions 自动化部署 | GitHub Actions automated deployment
+#   - 服务器清单生成 | Server inventory generation
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# GitHub Actions 测试服务器 | GitHub Actions Test Servers
+# -----------------------------------------------------------------------------
+# 用于 CI/CD 流程的测试服务器配置
+# Test server configurations for CI/CD workflows
+github_actions_servers:
+  de-test-1:
+    secret_name: DE_1_V4_SSH
+    alias: "德国-测试-1 | Germany-Test-1"
+    location: "Germany"
+    groups:
+      - web_servers
+      - dev
+    roles:
+      - web
+    environment: development
+    
+  pl-test-1:
+    secret_name: PL_1_V4_SSH
+    alias: "波兰-测试-1 | Poland-Test-1"
+    location: "Poland"
+    groups:
+      - web_servers
+      - observability
+      - prod
+    roles:
+      - web
+      - observability
+    environment: production
+
+# -----------------------------------------------------------------------------
+# 生产环境服务器 | Production Environment Servers
+# -----------------------------------------------------------------------------
+# 完整的生产服务器配置列表
+# Complete list of production server configurations
+production_servers:
+  
+  # ---------------------------------------------------------------------------
+  # Web 服务器组 | Web Server Group
+  # ---------------------------------------------------------------------------
+  # 部署 Web 应用和静态资源的服务器
+  # Servers for deploying web applications and static resources
+  
+  de-1:
+    env_var: DE_1_V4_SSH
+    alias: "德国-1 | Germany-1"
+    description: "德国 Web 服务器 - NubeCloud | Germany Web Server - NubeCloud"
+    location: "Germany"
+    groups:
+      - web_servers
+    roles:
+      - web
+    environment: test
+    
+  jp-1:
+    env_var: JP_1_V4_SSH
+    alias: "日本-1 | Japan-1"
+    description: "日本 Web 服务器 - Oracle | Japan Web Server - Oracle"
+    location: "Japan"
+    groups:
+      - web_servers
+    roles:
+      - web
+    environment: test
+    
+  uk-1:
+    env_var: UK_1_V4_SSH
+    alias: "英国-1 | UK-1"
+    description: "英国 Web 服务器 - Oracle | UK Web Server - Oracle"
+    location: "United Kingdom"
+    groups:
+      - web_servers
+    roles:
+      - web
+    environment: test
+    
+  us-w-1:
+    env_var: US_W_1_V4_SSH
+    alias: "美国西-1 | US-West-1"
+    description: "美国西 Web 服务器 - Oracle | US West Web Server - Oracle"
+    location: "United States"
+    groups:
+      - web_servers
+    roles:
+      - web
+    environment: production
+  
+  # ---------------------------------------------------------------------------
+  # Proxy 服务器组 (PLG Stack) | Proxy Server Group (PLG Stack)
+  # ---------------------------------------------------------------------------
+  # 部署 Prometheus、Loki、Grafana 栈的代理服务器
+  # Proxy servers deploying Prometheus, Loki, and Grafana stack
+  
+  sg-1:
+    env_var: SG_1_V4_SSH
+    alias: "新加坡-1 | Singapore-1"
+    description: "新加坡 Proxy 服务器 - PLG Stack - Aliyun | Singapore Proxy Server - PLG Stack - Aliyun"
+    location: "Singapore"
+    groups:
+      - proxy_servers
+    roles:
+      - proxy
+      - plg_stack
+    environment: production
+    
+  jp-2:
+    env_var: JP_2_V4_SSH
+    alias: "日本-2 | Japan-2"
+    description: "日本 Proxy 服务器 - PLG Stack - Churros | Japan Proxy Server - PLG Stack - Churros"
+    location: "Japan"
+    groups:
+      - proxy_servers
+    roles:
+      - proxy
+      - plg_stack
+    environment: production
+    
+  hk-1:
+    env_var: HK_1_V4_SSH
+    alias: "香港-1 | Hong Kong-1"
+    description: "香港 Proxy 服务器 - PLG Stack - Zouter | Hong Kong Proxy Server - PLG Stack - Zouter"
+    location: "Hong Kong"
+    groups:
+      - proxy_servers
+    roles:
+      - proxy
+      - plg_stack
+    environment: production
+    
+  uk-2:
+    env_var: UK_2_V4_SSH
+    alias: "英国-2 | UK-2"
+    description: "英国 Proxy 服务器 - PLG Stack - Akko | UK Proxy Server - PLG Stack - Akko"
+    location: "United Kingdom"
+    groups:
+      - proxy_servers
+    roles:
+      - proxy
+      - plg_stack
+    environment: production
+  
+  # ---------------------------------------------------------------------------
+  # 开发服务器组 | Development Server Group
+  # ---------------------------------------------------------------------------
+  # 用于开发和测试的服务器环境
+  # Server environments for development and testing
+  
+  fr-1:
+    env_var: FR_1_V4_SSH
+    alias: "法国-1 | France-1"
+    description: "法国 Development 服务器 - OVH | France Development Server - OVH"
+    location: "France"
+    groups:
+      - dev_servers
+      - dev
+    roles:
+      - development
+    environment: development
+  
+  # ---------------------------------------------------------------------------
+  # 可观测性服务器组 | Observability Server Group
+  # ---------------------------------------------------------------------------
+  # 部署监控和日志系统的中心服务器
+  # Central servers for monitoring and logging systems
+  
+  pl-1:
+    env_var: PL_1_V4_SSH
+    alias: "波兰-1 | Poland-1"
+    description: "波兰 Observability 服务器 - PLG Stack - OVH | Poland Observability Server - PLG Stack - OVH"
+    location: "Poland"
+    groups:
+      - observability
+    roles:
+      - observability
+      - prometheus
+      - grafana
+      - loki
+    environment: production
+
+# =============================================================================
+# 组别定义 | Group Definitions
+# =============================================================================
+# 定义服务器组和相关变量
+# Define server groups and their associated variables
+group_definitions:
+  
+  web_servers:
+    description: "Web 应用服务器 | Web Application Servers"
+    vars:
+      server_role: web
+      
+  proxy_servers:
+    description: "代理服务器 (PLG Stack) | Proxy Servers (PLG Stack)"
+    vars:
+      server_role: proxy
+      
+  dev_servers:
+    description: "开发测试服务器 | Development Test Servers"
+    vars:
+      server_role: development
+      
+  observability:
+    description: "监控系统服务器 (Prometheus + Loki + Grafana) | Monitoring System Servers (PLG)"
+    vars:
+      server_role: observability
+  
+  # 环境分组 | Environment Groups
+  dev:
+    description: "开发环境 | Development Environment"
+    vars:
+      environment: development
+      
+  prod:
+    description: "生产环境 | Production Environment"
+    vars:
+      environment: production
+
+# =============================================================================
+# 全局变量 | Global Variables
+# =============================================================================
+# 适用于所有服务器的全局配置
+# Global configurations applicable to all servers
+global_vars:
+  ansible_python_interpreter: /usr/bin/python3
+  ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

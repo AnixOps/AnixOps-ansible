@@ -1,17 +1,21 @@
----
-# Common role handlers
+# =============================================================================
+# Common Role Handlers - 通用角色处理器 | Common Role Handlers
+# =============================================================================
+# 定义服务重启和重载的处理器
+# Define handlers for service restart and reload operations
+# =============================================================================
 
-- name: restart sshd
+- name: restart sshd | 重启 SSH 服务
   service:
     name: sshd
     state: restarted
 
-- name: restart chrony
+- name: restart chrony | 重启 Chrony 时间同步服务
   service:
     name: chrony
     state: restarted
 
-- name: restart fail2ban
+- name: restart fail2ban | 重启 Fail2Ban 防护服务
   service:
     name: fail2ban
     state: restarted

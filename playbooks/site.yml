@@ -1,64 +1,93 @@
----
-# AnixOps Main Playbook
-# 这是主 playbook，用于完整部署所有服务器配置
+# =============================================================================
+# AnixOps 主 Playbook | AnixOps Main Playbook
+# =============================================================================
+# 用于完整部署所有服务器配置
+# Used for complete deployment of all server configurations
+#
+# 部署内容 | Deployment Content:
+#   - 通用配置（安全、时区、用户）| Common configuration (security, timezone, users)
+#   - Node Exporter（监控）| Node Exporter (monitoring)
+#   - Promtail（日志收集）| Promtail (log collection)
+#   - 防火墙配置 | Firewall configuration
+#   - Nginx（Web 服务器）| Nginx (Web servers)
+# =============================================================================
 
-- name: Deploy Common Configuration
+# -----------------------------------------------------------------------------
+# 部署通用配置 | Deploy Common Configuration
+# -----------------------------------------------------------------------------
+- name: Deploy Common Configuration | 部署通用配置
   hosts: all
   become: yes
   gather_facts: yes
   roles:
     - common
 
-- name: Deploy Node Exporter (Monitoring)
+# -----------------------------------------------------------------------------
+# 部署 Node Exporter | Deploy Node Exporter
+# -----------------------------------------------------------------------------
+- name: Deploy Node Exporter (Monitoring) | 部署 Node Exporter（监控）
   hosts: all
   become: yes
   roles:
     - node_exporter
 
-- name: Deploy Promtail (Log Collection)
+# -----------------------------------------------------------------------------
+# 部署 Promtail | Deploy Promtail
+# -----------------------------------------------------------------------------
+- name: Deploy Promtail (Log Collection) | 部署 Promtail（日志收集）
   hosts: all
   become: yes
   roles:
     - promtail
 
-- name: Configure Firewall and Monitoring Whitelist
+# -----------------------------------------------------------------------------
+# 配置防火墙和监控白名单 | Configure Firewall and Monitoring Whitelist
+# -----------------------------------------------------------------------------
+- name: Configure Firewall and Monitoring Whitelist | 配置防火墙和监控白名单
   hosts: all
   become: yes
   roles:
     - monitoring_firewall
 
-- name: Deploy Nginx (Web Servers)
+# -----------------------------------------------------------------------------
+# 部署 Nginx | Deploy Nginx
+# -----------------------------------------------------------------------------
+- name: Deploy Nginx (Web Servers) | 部署 Nginx（Web 服务器）
   hosts: web_servers
   become: yes
   roles:
     - nginx
 
-- name: Final Health Check
+# -----------------------------------------------------------------------------
+# 最终健康检查 | Final Health Check
+# -----------------------------------------------------------------------------
+- name: Final Health Check | 最终健康检查
   hosts: all
   become: yes
   gather_facts: no
   tasks:
-    - name: Display deployment summary
+    - name: Display deployment summary | 显示部署摘要
       debug:
         msg: |
           ═══════════════════════════════════════════════════════════
-          ✓ Deployment completed successfully for {{ inventory_hostname }}
+          ✓ 部署成功完成 | Deployment completed successfully
+          服务器 | Server: {{ inventory_hostname }}
           ═══════════════════════════════════════════════════════════
-          Hostname: {{ ansible_hostname }}
-          IP Address: {{ ansible_default_ipv4.address | default('N/A') }}
-          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          主机名 | Hostname: {{ ansible_hostname }}
+          IP 地址 | IP Address: {{ ansible_default_ipv4.address | default('N/A') }}
+          操作系统 | OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
           
-          Services Deployed:
-          ✓ Common configuration (security, timezone, users)
-          ✓ Node Exporter (port {{ prometheus.node_exporter.port }})
-          ✓ Promtail (log collection)
-          ✓ Firewall configured with monitoring whitelist
+          已部署服务 | Deployed Services:
+          ✓ 通用配置（安全、时区、用户）| Common configuration (security, timezone, users)
+          ✓ Node Exporter（端口 {{ prometheus.node_exporter.port }}）| Node Exporter (port {{ prometheus.node_exporter.port }})
+          ✓ Promtail（日志收集）| Promtail (log collection)
+          ✓ 防火墙（监控白名单）| Firewall (monitoring whitelist)
           {% if inventory_hostname in groups['web_servers'] %}
-          ✓ Nginx (HTTP/HTTPS)
+          ✓ Nginx（HTTP/HTTPS）| Nginx (HTTP/HTTPS)
           {% endif %}
           
-          Next Steps:
-          1. Verify in Grafana: {{ grafana.url }}
-          2. Check Prometheus metrics: {{ prometheus.server_url }}
-          3. Review logs in Loki: {{ loki.server_url }}
+          下一步 | Next Steps:
+          1. 在 Grafana 中验证 | Verify in Grafana: {{ grafana.url }}
+          2. 检查 Prometheus 指标 | Check Prometheus metrics: {{ prometheus.server_url }}
+          3. 查看 Loki 日志 | Review logs in Loki: {{ loki.server_url }}
           ═══════════════════════════════════════════════════════════

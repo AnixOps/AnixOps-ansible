@@ -1,62 +1,66 @@
----
-# Health Check Playbook
+# =============================================================================
+# 健康检查 Playbook | Health Check Playbook
+# =============================================================================
 # 检查所有服务器和服务的健康状态
+# Check the health status of all servers and services
+# =============================================================================
 
-- name: Health check for all servers
+- name: Health check for all servers | 所有服务器健康检查
   hosts: all
   become: yes
   gather_facts: yes
   
   tasks:
-    - name: Check system uptime
+    - name: Check system uptime | 检查系统运行时间
       command: uptime
       register: uptime_result
       changed_when: false
       
-    - name: Check disk usage
+    - name: Check disk usage | 检查磁盘使用率
       shell: df -h / | tail -1 | awk '{print $5}' | sed 's/%//'
       register: disk_usage
       changed_when: false
       
-    - name: Check memory usage
+    - name: Check memory usage | 检查内存使用率
       shell: free | grep Mem | awk '{printf "%.0f", $3/$2 * 100.0}'
       register: memory_usage
       changed_when: false
       
-    - name: Check if node_exporter is running
+    - name: Check if node_exporter is running | 检查 node_exporter 运行状态
       systemd:
         name: node_exporter
       register: node_exporter_status
       
-    - name: Check if promtail is running
+    - name: Check if promtail is running | 检查 promtail 运行状态
       systemd:
         name: promtail
       register: promtail_status
       
-    - name: Check if nginx is running (web servers only)
+    - name: Check if nginx is running (web servers only) | 检查 nginx 运行状态（仅 Web 服务器）
       systemd:
         name: nginx
       register: nginx_status
       when: inventory_hostname in groups['web_servers']
       
-    - name: Display health check results
+    - name: Display health check results | 显示健康检查结果
       debug:
         msg: |
           ═══════════════════════════════════════════════════════════
-          Health Check Report for {{ inventory_hostname }}
+          健康检查报告 | Health Check Report
+          服务器 | Server: {{ inventory_hostname }}
           ═══════════════════════════════════════════════════════════
           
-          System Info:
-          - Hostname: {{ ansible_hostname }}
-          - IP: {{ ansible_default_ipv4.address | default('N/A') }}
-          - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
-          - Uptime: {{ uptime_result.stdout }}
+          系统信息 | System Info:
+          - 主机名 | Hostname: {{ ansible_hostname }}
+          - IP 地址 | IP: {{ ansible_default_ipv4.address | default('N/A') }}
+          - 操作系统 | OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          - 运行时间 | Uptime: {{ uptime_result.stdout }}
           
-          Resource Usage:
-          - Disk Usage: {{ disk_usage.stdout }}%
-          - Memory Usage: {{ memory_usage.stdout }}%
+          资源使用 | Resource Usage:
+          - 磁盘使用率 | Disk Usage: {{ disk_usage.stdout }}%
+          - 内存使用率 | Memory Usage: {{ memory_usage.stdout }}%
           
-          Services:
+          服务状态 | Services:
           - Node Exporter: {{ node_exporter_status.status.ActiveState }}
           - Promtail: {{ promtail_status.status.ActiveState }}
           {% if inventory_hostname in groups['web_servers'] %}

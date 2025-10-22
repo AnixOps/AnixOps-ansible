@@ -1,51 +1,69 @@
----
-# Promtail role - Loki 日志收集代理
+# =============================================================================
+# Promtail Role - Loki 日志收集代理 | Loki Log Collection Agent
+# =============================================================================
 # 安装和配置 Grafana Loki Promtail
+# Install and configure Grafana Loki Promtail
+#
+# 功能 | Features:
+#   - 自动检测系统架构 | Auto-detect system architecture
+#   - 版本检查和更新 | Version checking and updates
+#   - 日志文件读取权限配置 | Log file read permission configuration
+#   - Systemd 服务管理 | Systemd service management
+# =============================================================================
 
-- name: Check if promtail is already installed
+# -----------------------------------------------------------------------------
+# 版本检查 | Version Check
+# -----------------------------------------------------------------------------
+- name: Check if promtail is already installed | 检查 promtail 是否已安装
   stat:
     path: /usr/local/bin/promtail
   register: promtail_binary
 
-- name: Get installed promtail version
+- name: Get installed promtail version | 获取已安装的 promtail 版本
   shell: /usr/local/bin/promtail --version 2>&1 | grep -oP 'version \K[0-9.]+'
   register: installed_version
   when: promtail_binary.stat.exists
   changed_when: false
   failed_when: false
 
-- name: Detect system architecture
+# -----------------------------------------------------------------------------
+# 系统架构检测 | System Architecture Detection
+# -----------------------------------------------------------------------------
+- name: Detect system architecture | 检测系统架构
   set_fact:
     promtail_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
 
-- name: Download and install promtail
+# -----------------------------------------------------------------------------
+# 下载和安装 | Download and Install
+# -----------------------------------------------------------------------------
+- name: Download and install promtail | 下载并安装 promtail
   block:
-    - name: Create temporary directory
+    - name: Create temporary directory | 创建临时目录
       file:
         path: /tmp/promtail
         state: directory
         mode: '0755'
 
-    - name: Download promtail
+    - name: Download promtail | 下载 promtail
       get_url:
         url: "{{ loki.promtail.download_url }}/v{{ loki.promtail.version }}/promtail-linux-{{ promtail_arch }}.zip"
         dest: "/tmp/promtail/promtail-linux-{{ promtail_arch }}.zip"
         mode: '0644'
 
-    - name: Extract promtail
+    - name: Extract promtail | 解压 promtail
       unarchive:
         src: "/tmp/promtail/promtail-linux-{{ promtail_arch }}.zip"
         dest: /tmp/promtail
         remote_src: yes
 
-    - name: Copy promtail binary
+    - name: Copy promtail binary | 复制 promtail 二进制文件
       copy:
         src: "/tmp/promtail/promtail-linux-{{ promtail_arch }}"
         dest: /usr/local/bin/promtail
         mode: '0755'
         remote_src: yes
 
-    - name: Clean up temporary files
+    - name: Clean up temporary files | 清理临时文件
       file:
         path: /tmp/promtail
         state: absent
@@ -53,15 +71,18 @@
     not promtail_binary.stat.exists or
     (installed_version.stdout is defined and installed_version.stdout != loki.promtail.version)
 
-- name: Create promtail user
+# -----------------------------------------------------------------------------
+# 用户和目录配置 | User and Directory Configuration
+# -----------------------------------------------------------------------------
+- name: Create promtail user | 创建 promtail 用户
   user:
     name: promtail
     system: yes
     shell: /bin/false
     create_home: no
-    groups: adm  # Add to adm group to read log files
+    groups: adm  # 添加到 adm 组以读取日志文件 | Add to adm group to read log files
 
-- name: Create promtail config directory
+- name: Create promtail config directory | 创建 promtail 配置目录
   file:
     path: /etc/promtail
     state: directory
@@ -69,7 +90,7 @@
     owner: promtail
     group: promtail
 
-- name: Create promtail positions directory
+- name: Create promtail positions directory | 创建 promtail positions 目录
   file:
     path: /var/lib/promtail
     state: directory
@@ -77,7 +98,10 @@
     owner: promtail
     group: promtail
 
-- name: Deploy promtail configuration
+# -----------------------------------------------------------------------------
+# 配置文件部署 | Configuration Deployment
+# -----------------------------------------------------------------------------
+- name: Deploy promtail configuration | 部署 promtail 配置
   template:
     src: promtail-config.yml.j2
     dest: /etc/promtail/config.yml
@@ -86,7 +110,7 @@
     group: promtail
   notify: restart promtail
 
-- name: Create promtail systemd service
+- name: Create promtail systemd service | 创建 promtail systemd 服务
   template:
     src: promtail.service.j2
     dest: /etc/systemd/system/promtail.service
@@ -95,7 +119,10 @@
     - reload systemd
     - restart promtail
 
-- name: Enable and start promtail
+# -----------------------------------------------------------------------------
+# 服务启动 | Service Start
+# -----------------------------------------------------------------------------
+- name: Enable and start promtail | 启用并启动 promtail
   service:
     name: promtail
     state: started

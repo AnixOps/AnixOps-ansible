@@ -1,52 +1,58 @@
-# 🎉 AnixOps Ansible 项目创建完成！
+# 🎉 AnixOps Ansible 项目创建完成！| AnixOps Ansible Project Created!
 
-## ✅ 已完成的工作
+## ✅ 已完成的工作 | Completed Work
 
-### 1. 项目结构 ✓
+### 1. 项目结构 | Project Structure ✓
 
 完整的 GitOps Ansible 项目结构已创建：
 
+Complete GitOps Ansible project structure created:
+
 ```
 AnixOps-ansible/
-├── .github/workflows/        # CI/CD 自动化
-│   ├── lint.yml             # 代码质量检查
-│   └── deploy.yml           # 自动部署
+├── .github/workflows/        # CI/CD 自动化 | CI/CD Automation
+│   ├── lint.yml             # 代码质量检查 | Code Quality Check
+│   └── deploy.yml           # 自动部署 | Automated Deployment
 │
-├── inventory/                # 主机清单
-│   ├── hosts.yml            # 支持环境变量配置
+├── inventory/                # 主机清单 | Host Inventory
+│   ├── hosts.yml            # 支持环境变量配置 | Supports environment variables
+│   ├── servers-config.yml   # 服务器配置中心 | Server Configuration Center
 │   └── group_vars/all/
-│       └── main.yml         # 全局变量（完整配置）
+│       └── main.yml         # 全局变量（完整配置）| Global Variables (Full Config)
 │
-├── roles/                    # Ansible 角色（4个）
-│   ├── common/              # ✓ 基础配置、安全加固
-│   ├── nginx/               # ✓ Web 服务器
-│   ├── node_exporter/       # ✓ Prometheus 监控
-│   └── promtail/            # ✓ Loki 日志收集
+├── roles/                    # Ansible 角色（4个）| Ansible Roles (4)
+│   ├── common/              # ✓ 基础配置、安全加固 | Basic Config, Security Hardening
+│   ├── nginx/               # ✓ Web 服务器 | Web Server
+│   ├── node_exporter/       # ✓ Prometheus 监控 | Prometheus Monitoring
+│   └── promtail/            # ✓ Loki 日志收集 | Loki Log Collection
 │
-├── playbooks/               # Playbook 文件（4个）
-│   ├── site.yml            # ✓ 完整部署
-│   ├── quick-setup.yml     # ✓ 快速初始化
-│   ├── web-servers.yml     # ✓ Web 服务器部署
-│   └── health-check.yml    # ✓ 健康检查
+├── playbooks/               # Playbook 文件（5个）| Playbook Files (5)
+│   ├── site.yml            # ✓ 完整部署 | Full Deployment
+│   ├── quick-setup.yml     # ✓ 快速初始化 | Quick Initialization
+│   ├── web-servers.yml     # ✓ Web 服务器部署 | Web Server Deployment
+│   ├── health-check.yml    # ✓ 健康检查 | Health Check
+│   └── firewall-setup.yml  # ✓ 防火墙设置 | Firewall Setup
 │
-├── observability/           # 可观测性配置
-│   ├── prometheus/rules/   # ✓ 告警规则（2个）
-│   └── grafana/dashboards/ # ✓ 仪表盘模板
+├── observability/           # 可观测性配置 | Observability Configuration
+│   ├── prometheus/rules/   # ✓ 告警规则（2个）| Alert Rules (2)
+│   └── grafana/dashboards/ # ✓ 仪表盘模板 | Dashboard Templates
 │
-├── tools/
-│   └── ssh_key_manager.py  # ✓ SSH 密钥管理工具
+├── tools/                   # 工具脚本 | Tool Scripts
+│   ├── ssh_key_manager.py  # ✓ SSH 密钥管理工具 | SSH Key Manager
+│   ├── secrets_uploader.py # ✓ GitHub Secrets 批量上传 | Batch Secrets Uploader
+│   └── generate_inventory.py # ✓ Inventory 生成器 | Inventory Generator
 │
-├── ansible.cfg              # ✓ Ansible 优化配置
-├── requirements.txt         # ✓ Python 依赖
-├── .yamllint.yml           # ✓ YAML lint 配置
-├── README.md                # ✓ 完整文档（双语）
-├── QUICKSTART.md            # ✓ 快速开始指南
-└── CHANGELOG.md             # ✓ 更新日志
+├── ansible.cfg              # ✓ Ansible 优化配置 | Ansible Optimized Config
+├── requirements.txt         # ✓ Python 依赖 | Python Dependencies
+├── Makefile                 # ✓ 快捷命令 | Shortcuts
+├── .yamllint.yml           # ✓ YAML lint 配置 | YAML Lint Config
+├── README.md                # ✓ 完整文档（双语）| Complete Docs (Bilingual)
+└── docs/                    # ✓ 详细文档 | Detailed Documentation
 ```
 
-### 2. 核心功能 ✓
+### 2. 核心功能 | Core Features ✓
 
-#### A. Ansible Roles（完全实现）
+#### A. Ansible Roles（完全实现）| Ansible Roles (Fully Implemented)
 
 **common role** - 基础配置
 - ✅ 系统软件包安装
