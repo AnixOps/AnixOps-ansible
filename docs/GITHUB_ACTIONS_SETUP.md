@@ -124,6 +124,54 @@ python tools/ssh_key_manager.py \
    - 点对点连接：确保 GitHub Actions runner 能直接访问该 IP
    - 内网服务器：确保 `_SSH_IP` 可从外网访问，且能路由到内网 IP
 
+## GitHub Actions 工作流说明
+
+### 1. Deploy to Production (deploy.yml)
+**主部署工作流** - 包含完整的 CI/CD 流程
+
+触发条件：
+- 推送到 `deploy` 分支
+- 针对 `deploy` 或 `main` 分支的 Pull Request
+- 手动触发（workflow_dispatch）
+
+工作流程：
+1. **Lint (代码质量检查)**
+   - 运行 yamllint 检查 YAML 语法
+   - 运行 ansible-lint 检查 Ansible 最佳实践
+   - 验证 playbook 语法
+
+2. **Test (连接测试)**
+   - 使用 `ansible ping` 测试所有主机连接
+   - 仅在非 PR 时运行（需要真实 secrets）
+   
+3. **Deploy (部署)**
+   - 执行完整的 Ansible playbook 部署
+   - 仅在通过所有测试后运行
+   - 仅在非 PR 时运行
+
+### 2. Ansible Connection Test (ansible-test.yml)
+**独立的连接测试工作流**
+
+触发条件：
+- 手动触发（workflow_dispatch）
+- 定时任务（每天 00:00 UTC）
+
+测试内容：
+- Ping 所有主机
+- Ping web_servers 组
+- Ping observability 组
+- 收集系统信息（setup 模块）
+
+用途：
+- 日常健康检查
+- 验证 SSH 连接和凭证
+- 监控服务器可用性
+
+### 3. Ansible CI/CD Pipeline (ansible-ci.yml)
+**独立的 CI 工作流** - 已被整合到 deploy.yml 中
+
+> **注意**: 此工作流的功能已完全整合到 `deploy.yml` 中，建议删除此文件以避免重复运行。
+
 ## 触发部署
 
 ### 自动触发
@@ -132,9 +180,36 @@ python tools/ssh_key_manager.py \
 git push origin main:deploy
 ```
 
-### 手动触发
+### 手动触发部署
 1. 进入 GitHub 仓库的 **Actions** 标签
 2. 选择 **Deploy to Production** workflow
 3. 点击 **Run workflow**
-4. 选择目标主机组（`all`、`web_servers`、`app_servers` 等）
+4. 选择目标主机组（`all`、`web_servers`、`observability` 等）
 5. 点击运行
+
+### 手动触发连接测试
+1. 进入 GitHub 仓库的 **Actions** 标签
+2. 选择 **Ansible Connection Test** workflow
+3. 点击 **Run workflow**
+4. 点击运行
+
+## 工作流最佳实践
+
+### Pull Request 流程
+1. 创建功能分支进行开发
+2. 提交 PR 到 `main` 或 `deploy` 分支
+3. 自动运行 Lint 检查（不需要 secrets）
+4. 代码审查通过后合并
+5. 合并到 `deploy` 分支触发完整部署
+
+### 紧急部署
+```bash
+# 直接推送到 deploy 分支
+git push origin HEAD:deploy
+```
+
+### 测试连接
+```bash
+# 可以随时在 GitHub Actions 界面手动触发
+# Ansible Connection Test 工作流
+```

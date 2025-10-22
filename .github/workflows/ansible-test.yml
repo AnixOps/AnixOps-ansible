@@ -1,0 +1,120 @@
+name: Ansible Connection Test
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run daily at 00:00 UTC to verify connectivity
+    - cron: '0 0 * * *'
+
+jobs:
+  ping-test:
+    name: Ansible Ping Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Create inventory from secrets
+        run: |
+          echo "Creating inventory from GitHub Secrets..."
+          cat > inventory/hosts.yml << 'EOF'
+          ---
+          all:
+            children:
+              web_servers:
+                hosts:
+                  de-test-1:
+                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
+                  pl-test-1:
+                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
+                vars:
+                  server_role: web
+              
+              observability:
+                hosts:
+                  pl-test-1:
+                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
+                vars:
+                  server_role: observability
+            
+            vars:
+              ansible_user: "${{ secrets.ANSIBLE_USER }}"
+              ansible_port: "${{ secrets.ANSIBLE_PORT }}"
+              ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+              ansible_python_interpreter: /usr/bin/python3
+              ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+          EOF
+          
+          echo "Generated inventory:"
+          cat inventory/hosts.yml
+
+      - name: Ping All Hosts
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        run: |
+          echo "════════════════════════════════════════════════════════════"
+          echo "Testing connectivity to ALL hosts..."
+          echo "════════════════════════════════════════════════════════════"
+          ansible all -i inventory/hosts.yml -m ping -v
+
+      - name: Ping Web Servers
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        run: |
+          echo "════════════════════════════════════════════════════════════"
+          echo "Testing connectivity to WEB SERVERS..."
+          echo "════════════════════════════════════════════════════════════"
+          ansible web_servers -i inventory/hosts.yml -m ping -v
+
+      - name: Ping Observability Servers
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        run: |
+          echo "════════════════════════════════════════════════════════════"
+          echo "Testing connectivity to OBSERVABILITY SERVERS..."
+          echo "════════════════════════════════════════════════════════════"
+          ansible observability -i inventory/hosts.yml -m ping -v
+
+      - name: Gather Facts Test
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        run: |
+          echo "════════════════════════════════════════════════════════════"
+          echo "Testing fact gathering (setup module)..."
+          echo "════════════════════════════════════════════════════════════"
+          ansible all -i inventory/hosts.yml -m setup -a "filter=ansible_distribution*" -v
+        continue-on-error: true
+
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "════════════════════════════════════════════════════════════"
+          echo "✓ Ansible Connection Test Completed"
+          echo "════════════════════════════════════════════════════════════"
+          echo "Test Run: $(date)"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "════════════════════════════════════════════════════════════"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "✗ Ansible ping test failed!"
+          echo "One or more hosts are unreachable."
+          echo "Check the logs above for details."
