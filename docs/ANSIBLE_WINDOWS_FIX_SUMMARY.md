@@ -1,61 +1,16 @@
-# Ansible Windows Compatibility Fix - Summary
+> NOTE: This project is Linux-only. All Windows-related notes have been removed.
 
-## Issue Encountered
+# Windows 内容已移除
 
-You encountered a series of errors when trying to run Ansible on Windows:
+本仓库不再提供 Windows/WSL 支持或兼容性说明。请在 Linux/Mac 上作为控制节点使用 Ansible。
 
-1. **OSError: [WinError 1] 函数不正确** - `os.get_blocking()` function not available on Windows
-2. **Locale encoding error** - Ansible detecting code page 936 instead of UTF-8
-3. **ModuleNotFoundError: No module named 'fcntl'** - Unix-only module required by Ansible
+- 控制节点支持：Linux、macOS
+- 运行方式：使用 Python venv + Ansible CLI 或 Makefile
 
-## Root Cause
-
-**Ansible is not designed to run as a control node on Windows.** It relies on Unix-specific Python modules like `fcntl` that don't exist on Windows.
-
-## What Was Fixed
-
-### 1. Created Windows Patch Utility (`tools/patch_ansible_windows.py`)
-
-This script patches Ansible to fix two issues:
-- **os.get_blocking() error** - Wrapped in try/except to skip on Windows
-- **Locale encoding check** - Forces UTF-8 instead of checking system locale
-
-### 2. Updated `run.ps1` and `activate.ps1`
-
-Added environment variables for UTF-8 support:
-```powershell
-$env:PYTHONIOENCODING = "utf-8"
-$env:PYTHONUTF8 = "1"
-$env:ANSIBLE_FORCE_COLOR = "true"
-```
-
-### 3. Created Comprehensive Solution (`run-wsl.ps1`)
-
-A new helper script that:
-- Checks if WSL is installed
-- Guides users through WSL setup
-- Runs Ansible commands through WSL
-- Provides seamless integration
-
-## Files Created/Modified
-
-### New Files:
-- `tools/patch_ansible_windows.py` - Patches Ansible for partial Windows support
-- `run-wsl.ps1` - WSL helper script (RECOMMENDED)
-- `docs/WINDOWS_ANSIBLE_SOLUTIONS.md` - Comprehensive guide
-- `WINDOWS_USERS_READ_THIS.md` - Quick start for Windows users
-
-### Modified Files:
-- `run.ps1` - Added UTF-8 environment variables
-- `activate.ps1` - Added UTF-8 environment variables
-
-## Recommended Solution
-
-**Use Windows Subsystem for Linux (WSL)** - This is the only fully supported way to run Ansible on Windows.
-
-### Quick Start:
-
-```powershell
+相关文档请参阅：`README.md`、`QUICKSTART.md`、`docs/SSH_KEY_MANAGEMENT.md`
+#
+<!-- Windows legacy content below is intentionally commented out (Linux-only) -->
+<!--
 # 1. Setup (one-time)
 .\run-wsl.ps1 setup
 

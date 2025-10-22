@@ -13,7 +13,7 @@
 ✅ **安全** - 私钥加密存储  
 ✅ **便捷** - 一次配置，处处使用  
 ✅ **便宜** - 个人版 $3/月，团队版 $8/月  
-✅ **跨平台** - Windows/Mac/Linux 都支持  
+✅ **跨平台** - Mac/Linux 都支持  
 ✅ **团队协作** - 可以共享给团队成员  
 
 ---
@@ -22,30 +22,22 @@
 
 ### 第 1 步：准备 SSH 密钥（如果还没有）
 
-```powershell
-# Windows PowerShell
-ssh-keygen -t ed25519 -C "ansible@anixops" -f $HOME\.ssh\anixops_ed25519
+```bash
+# Linux/Mac
+ssh-keygen -t ed25519 -C "ansible@anixops" -f "$HOME/.ssh/anixops_ed25519"
 
 # 将公钥复制到目标服务器
-Get-Content $HOME\.ssh\anixops_ed25519.pub | ssh root@YOUR_SERVER_IP "cat >> ~/.ssh/authorized_keys"
+ssh-copy-id -i "$HOME/.ssh/anixops_ed25519.pub" root@YOUR_SERVER_IP || \
+  cat "$HOME/.ssh/anixops_ed25519.pub" | ssh root@YOUR_SERVER_IP "cat >> ~/.ssh/authorized_keys"
 ```
 
 ### 第 2 步：安装 1Password（可选但推荐）
 
-1. 下载 1Password：https://1password.com/downloads/windows
+1. 下载 1Password：https://1password.com/downloads
 2. 安装 1Password CLI：
-   ```powershell
-   # 使用 Scoop（推荐）
-   scoop install 1password-cli
-   
-   # 或下载 .exe 安装包
-   # https://1password.com/downloads/command-line/
-   ```
-
-3. 登录 1Password：
-   ```powershell
-   op signin
-   ```
+  - macOS: `brew install --cask 1password-cli`
+  - Linux: 参考官方文档 https://developer.1password.com/docs/cli/get-started/
+3. 登录 1Password：`op signin`
 
 ### 第 3 步：存储私钥到 1Password
 
@@ -57,51 +49,33 @@ Get-Content $HOME\.ssh\anixops_ed25519.pub | ssh root@YOUR_SERVER_IP "cat >> ~/.
 5. 保存
 
 **方法 B：通过 CLI**
-```powershell
+```bash
 # 创建新的 SSH Key 项
-op item create `
-  --category "SSH Key" `
-  --title "AnixOps Ansible SSH Key" `
-  --vault "Private" `
-  "private key[file]=$HOME\.ssh\anixops_ed25519"
+op item create \
+  --category "SSH Key" \
+  --title "AnixOps Ansible SSH Key" \
+  --vault "Private" \
+  "private key[file]=$HOME/.ssh/anixops_ed25519"
 ```
 
 ### 第 4 步：上传私钥到 GitHub Secrets
 
-使用我们的工具：
+使用我们的工具（交互式或传参）：
 
-```powershell
-# Windows PowerShell
-python tools/ssh_key_manager.py `
-  --key-file $HOME\.ssh\anixops_ed25519 `
-  --repo AnixOps/AnixOps-ansible `
-  --token YOUR_GITHUB_TOKEN `
+```bash
+python tools/ssh_key_manager.py \
+  --key-file "$HOME/.ssh/anixops_ed25519" \
+  --repo AnixOps/AnixOps-ansible \
+  --token YOUR_GITHUB_TOKEN \
   --secret-name SSH_PRIVATE_KEY
-```
 
-或交互式：
-```powershell
+# 或仅运行并按提示操作
 python tools/ssh_key_manager.py
 ```
 
 ### 第 5 步：在不同机器上使用
 
-#### 机器 A（开发机 - Windows）
-
-```powershell
-# 从 1Password 获取密钥
-op read "op://Private/AnixOps Ansible SSH Key/private key" | `
-  Out-File -FilePath $HOME\.ssh\anixops_temp -Encoding ASCII
-
-# 使用 Ansible
-ansible-playbook -i inventory/hosts.yml playbooks/site.yml `
-  --private-key $HOME\.ssh\anixops_temp
-
-# 使用完毕后删除
-Remove-Item $HOME\.ssh\anixops_temp
-```
-
-#### 机器 B（开发机 - Linux/Mac）
+#### 开发机（Linux/Mac）
 
 ```bash
 # 从 1Password 获取密钥
@@ -116,7 +90,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/site.yml \
 rm /tmp/ansible_key
 ```
 
-#### 机器 C（GitHub Actions - 自动）
+#### CI/CD（GitHub Actions - 自动）
 
 已自动配置！密钥会从 GitHub Secrets 自动注入：
 
@@ -129,7 +103,7 @@ rm /tmp/ansible_key
     chmod 600 ~/.ssh/id_rsa
 ```
 
-#### 机器 D（跳板机/堡垒机）
+#### 跳板机/堡垒机（Linux/Mac）
 
 ```bash
 # 一次性从 1Password 获取并永久保存
@@ -146,30 +120,7 @@ EOF
 
 ---
 
-## 🚀 使用 PowerShell 脚本简化操作（Windows）
-
-我为您创建了 `run.ps1` 脚本：
-
-```powershell
-# 查看帮助
-.\run.ps1 help
-
-# 安装依赖
-.\run.ps1 install
-
-# 上传 SSH 密钥
-.\run.ps1 upload-key
-
-# 测试连接
-.\run.ps1 ping
-
-# 部署
-.\run.ps1 deploy
-
-# 健康检查
-.\run.ps1 health-check
-```
-
+<!-- Windows 专用脚本已移除：本仓库仅支持 Linux/Mac -->
 ---
 
 ## 🔐 进阶方案：HashiCorp Vault（如果需要更强控制）
@@ -183,54 +134,36 @@ EOF
 
 ### 快速部署
 
-```powershell
-# 使用 Docker 部署 Vault
-docker run -d --name=vault `
-  --cap-add=IPC_LOCK `
-  -e VAULT_DEV_ROOT_TOKEN_ID=myroot `
-  -p 8200:8200 `
+```bash
+# 使用 Docker 部署 Vault（开发测试）
+docker run -d --name=vault \
+  --cap-add=IPC_LOCK \
+  -e VAULT_DEV_ROOT_TOKEN_ID=myroot \
+  -p 8200:8200 \
   vault:latest
 
 # 设置环境变量
-$env:VAULT_ADDR = "http://localhost:8200"
-$env:VAULT_TOKEN = "myroot"
+export VAULT_ADDR="http://localhost:8200"
+export VAULT_TOKEN="myroot"
 
 # 存储 SSH 密钥
-vault kv put anixops/ssh/ansible `
-  private_key=@"$HOME\.ssh\anixops_ed25519"
+vault kv put anixops/ssh/ansible \
+  private_key=@"$HOME/.ssh/anixops_ed25519"
 ```
 
-### 创建 Vault 获取脚本
+### 从 Vault 获取并使用密钥
 
-创建 `tools/get_key_from_vault.ps1`:
+```bash
+# 从 Vault 读取并保存到临时文件
+tmp_key="/tmp/ansible_key_$(date +%s)"
+vault kv get -field=private_key anixops/ssh/ansible > "$tmp_key"
+chmod 600 "$tmp_key"
 
-```powershell
-param(
-    [string]$VaultAddr = $env:VAULT_ADDR,
-    [string]$VaultToken = $env:VAULT_TOKEN,
-    [string]$KeyPath = "anixops/ssh/ansible"
-)
+# 使用 Ansible
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml --private-key "$tmp_key"
 
-# 从 Vault 获取密钥
-$response = Invoke-RestMethod `
-    -Uri "$VaultAddr/v1/$KeyPath" `
-    -Headers @{ "X-Vault-Token" = $VaultToken } `
-    -Method GET
-
-# 保存到临时文件
-$keyFile = "$env:TEMP\ansible_key_$(Get-Random)"
-$response.data.data.private_key | Out-File -FilePath $keyFile -Encoding ASCII
-
-# 输出文件路径
-Write-Output $keyFile
-```
-
-使用：
-
-```powershell
-$keyFile = .\tools\get_key_from_vault.ps1
-ansible-playbook -i inventory/hosts.yml playbooks/site.yml --private-key $keyFile
-Remove-Item $keyFile
+# 使用完毕后删除
+rm -f "$tmp_key"
 ```
 
 ---
@@ -251,8 +184,7 @@ Remove-Item $keyFile
 ### 方案 A：个人/小团队（1-5人）
 
 ```
-开发机(Windows):   1Password CLI + run.ps1
-开发机(Linux):     1Password CLI
+开发机(Linux/Mac): 1Password CLI
 GitHub Actions:    GitHub Secrets (自动)
 总成本:           $3/月
 ```
@@ -279,18 +211,7 @@ CI/CD:            GitHub Secrets
 
 ## 🎬 立即开始（2 分钟快速配置）
 
-### Windows 用户：
-
-```powershell
-# 1. 上传密钥到 GitHub Secrets
-python tools/ssh_key_manager.py
-
-# 2. 测试连接
-.\run.ps1 ping
-
-# 3. 部署
-.\run.ps1 deploy
-```
+<!-- 已移除 Windows 快速步骤：请参考 Linux/Mac 步骤 -->
 
 ### Linux/Mac 用户：
 

@@ -1,0 +1,98 @@
+---
+# Firewall Setup Playbook
+# 统一配置所有服务器的防火墙规则和监控白名单
+# 
+# 功能：
+# - 配置公开端口（22, 80, 443）无白名单访问
+# - 配置监控端口（9100, 9080, 9090, 3100, 3000）白名单访问
+# - 统一管理所有服务器的 IP 白名单
+#
+# 使用方法：
+#   ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml
+#
+# 限制特定主机：
+#   ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml --limit web_servers
+
+- name: Configure firewall rules and monitoring whitelist
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Display firewall configuration
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          Firewall Configuration
+          ═══════════════════════════════════════════════════════════
+          Target Host: {{ inventory_hostname }}
+          OS Family: {{ ansible_os_family }}
+          
+          Public Ports (No whitelist):
+            {{ firewall_public_ports | join(', ') }}
+          
+          Restricted Ports (Whitelist only):
+            {{ firewall_restricted_ports | join(', ') }}
+          
+          Monitoring Whitelist IPs:
+            {{ monitoring_whitelist | join('\n  ') if monitoring_whitelist | length > 0 else 'None configured' }}
+          ═══════════════════════════════════════════════════════════
+
+    - name: Verify whitelist is not empty
+      fail:
+        msg: |
+          Error: Monitoring whitelist is empty!
+          Please configure monitoring_allowed_ips in inventory/group_vars/all/main.yml
+          or set environment variables (DE_1_V4_SSH, PL_1_V4_SSH, etc.)
+      when: monitoring_whitelist | length == 0
+
+  roles:
+    - monitoring_firewall
+
+  post_tasks:
+    - name: Verify firewall is active (UFW)
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family == "Debian"
+
+    - name: Display UFW status
+      debug:
+        msg: "{{ ufw_status.stdout_lines }}"
+      when: 
+        - ansible_os_family == "Debian"
+        - ufw_status.stdout_lines is defined
+
+    - name: Verify firewall is active (firewalld)
+      command: firewall-cmd --list-all
+      register: firewalld_status
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family == "RedHat"
+
+    - name: Display firewalld status
+      debug:
+        msg: "{{ firewalld_status.stdout_lines }}"
+      when: 
+        - ansible_os_family == "RedHat"
+        - firewalld_status.stdout_lines is defined
+
+    - name: Firewall setup summary
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          ✓ Firewall Setup Completed Successfully
+          ═══════════════════════════════════════════════════════════
+          Host: {{ inventory_hostname }}
+          
+          Configuration Applied:
+          ✓ Public services (SSH, HTTP, HTTPS) are accessible from anywhere
+          ✓ Monitoring services restricted to {{ monitoring_whitelist | length }} whitelisted IPs
+          ✓ Default deny policy applied for restricted ports
+          
+          Next Steps:
+          1. Test public service access: curl http://{{ ansible_host }}
+          2. Test monitoring from whitelisted server: curl http://{{ ansible_host }}:9100/metrics
+          3. Verify blocked access from non-whitelisted IPs
+          ═══════════════════════════════════════════════════════════

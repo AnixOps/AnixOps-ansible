@@ -2,70 +2,104 @@
 
 ## 🎯 5 分钟快速上手
 
-### 步骤 1: 准备 SSH 密钥
+### 步骤 1: 配置服务器 IP
+
+复制环境变量模板并填入你的服务器 IP：
+
+```bash
+cd AnixOps-ansible
+cp .env.example .env
+vim .env  # 填入真实 IP
+```
+
+**.env 配置示例：**
+
+```bash
+# 点对点连接 (/31 或 /127 段) - 直接连接
+US_W_1_V4=203.0.113.10/31
+US_W_1_V6=2001:db8::1/127
+
+# 内网段 - 需要指定SSH连接IP
+JP_1_V4=10.10.0.50/27
+JP_1_V6=2001:19f0:5001::1/120
+JP_1_SSH_IP=45.76.123.45  # 公网IP用于SSH连接
+
+# SSH 配置
+ANSIBLE_USER=root
+SSH_KEY_PATH=~/.ssh/id_rsa
+```
+
+**说明：**
+- **`/31` (IPv4) 或 `/127` (IPv6) 段**：点对点连接，直接使用该IP
+  - 示例：`203.0.113.10/31` → 直接 SSH 到 `203.0.113.10`
+- **其他网段**：必须设置 `_SSH_IP` 变量指定SSH连接地址
+  - 示例：`JP_1_V4=10.10.0.50/27` + `JP_1_SSH_IP=45.76.123.45`
+  - SSH 连接到 `45.76.123.45`，内网IP用于配置管理
+
+**网段判断规则：**
+- IPv4: `/31` = 点对点，其他 = 需要 SSH_IP
+- IPv6: `/127` = 点对点，其他 = 需要 SSH_IP
+
+### 步骤 2: 准备 SSH 密钥
+
+### 步骤 2: 准备 SSH 密钥
 
 在你的本地机器上生成 SSH 密钥对（如果还没有）：
 
 ```bash
-ssh-keygen -t rsa -b 4096 -C "ansible@anixops.com" -f ~/.ssh/anixops_rsa
+ssh-keygen -t rsa -b 4096 -C "ansible@anixops.com" -f ~/.ssh/id_rsa
 ```
 
-将公钥复制到目标服务器：
+将公钥复制到**所有**目标服务器（根据 .env 中配置的 IP）：
 
 ```bash
-ssh-copy-id -i ~/.ssh/anixops_rsa.pub root@YOUR_SERVER_IP
+# 示例：复制到美西服务器
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@203.0.113.10
+
+# 示例：复制到日本服务器
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@45.76.123.45
 ```
 
-### 步骤 2: 克隆项目并安装依赖
+### 步骤 3: 克隆项目并安装依赖（Linux-only）
 
 ```bash
 # 克隆仓库
 git clone https://github.com/AnixOps/AnixOps-ansible.git
 cd AnixOps-ansible
 
-# 安装 Python 依赖
-pip install -r requirements.txt
+# 使用启动脚本创建虚拟环境并安装依赖
+./scripts/anixops.sh setup-venv
 ```
 
-### 步骤 3: 上传 SSH 密钥到 GitHub Secrets
+### 步骤 4: 上传 SSH 密钥到 GitHub Secrets（可选，用于 CI/CD）
+
+如果需要使用 GitHub Actions 自动部署：
 
 ```bash
 python tools/ssh_key_manager.py
 ```
 
 按照提示输入：
-- SSH 私钥路径：`~/.ssh/anixops_rsa`
-- GitHub 仓库：`AnixOps/AnixOps-ansible`
+- SSH 私钥路径：`~/.ssh/id_rsa`
+- GitHub 仓库：`YourUsername/AnixOps-ansible`
 - GitHub Token：在 https://github.com/settings/tokens/new 创建（需要 `repo` 权限）
 - Secret 名称：`SSH_PRIVATE_KEY`
 
-### 步骤 4: 配置服务器清单
-
-编辑 `inventory/hosts.yml`：
-
-```yaml
-all:
-  children:
-    web_servers:
-      hosts:
-        web-01:
-          ansible_host: "YOUR_SERVER_IP_HERE"
-  
-  vars:
-    ansible_user: root
-    ansible_port: 22
-    ansible_ssh_private_key_file: ~/.ssh/anixops_rsa
-```
+**另外需要在 GitHub Secrets 中添加服务器 IP 变量**（参考 .env.example）
 
 ### 步骤 5: 测试连接
 
 ```bash
-ansible all -m ping
+./scripts/anixops.sh ping
 ```
 
 预期输出：
 ```
-web-01 | SUCCESS => {
+us-w-1 | SUCCESS => {
+    "changed": false,
+    "ping": "pong"
+}
+jp-1 | SUCCESS => {
     "changed": false,
     "ping": "pong"
 }
@@ -75,15 +109,15 @@ web-01 | SUCCESS => {
 
 ```bash
 # 快速初始化（安装基础配置 + 监控）
-ansible-playbook playbooks/quick-setup.yml
+./scripts/anixops.sh quick-setup
 
 # 或完整部署（包括 Nginx）
-ansible-playbook playbooks/site.yml
+./scripts/anixops.sh deploy
 ```
 
 ### 步骤 7: 验证部署
 
-访问你的服务器查看结果：
+访问你的服务器查看结果（替换为 .env 中配置的真实 IP）：
 
 ```bash
 # 查看 Nginx 欢迎页
@@ -151,7 +185,7 @@ ansible-playbook playbooks/site.yml --check
 
 ```bash
 # 运行健康检查 playbook
-ansible-playbook playbooks/health-check.yml
+./scripts/anixops.sh health-check
 
 # 快速 ping 测试
 ansible all -m ping

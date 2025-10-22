@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'Target hosts (all, web_servers, app_servers)'
+        description: 'Target hosts (all, web_servers, observability)'
         required: true
         default: 'all'
 
@@ -34,18 +34,48 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
 
-      - name: Create inventory from secrets
+      - name: Create dynamic inventory from secrets
         run: |
-          # This is a placeholder - adjust based on your GitHub Secrets structure
           echo "Creating dynamic inventory from GitHub Secrets..."
-          # You can use secrets to generate hosts.yml dynamically
+          cat > inventory/hosts.yml << 'EOF'
+          ---
+          all:
+            children:
+              web_servers:
+                hosts:
+                  de-test-1:
+                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
+                  pl-test-1:
+                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
+                vars:
+                  server_role: web
+              
+              observability:
+                hosts:
+                  pl-test-1:
+                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
+                vars:
+                  server_role: observability
+            
+            vars:
+              ansible_user: "${{ secrets.ANSIBLE_USER }}"
+              ansible_port: "${{ secrets.ANSIBLE_PORT }}"
+              ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+              ansible_python_interpreter: /usr/bin/python3
+              ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+          EOF
+          
+          echo "Generated inventory:"
+          cat inventory/hosts.yml
 
       - name: Run Ansible Playbook
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
           SSH_KEY_PATH: ~/.ssh/id_rsa
           PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
           LOKI_URL: ${{ secrets.LOKI_URL }}

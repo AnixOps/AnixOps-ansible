@@ -24,6 +24,7 @@ common_packages:
   - tar
   - python3
   - python3-pip
+  - chrony  # NTP 时间同步服务
 
 # ====================
 # NTP 服务器配置
@@ -44,19 +45,56 @@ ssh_pubkey_authentication: true
 # 防火墙配置
 # ====================
 firewall_enabled: true
-firewall_allowed_ports:
+
+# 公开访问端口（无需白名单）
+firewall_public_ports:
   - 22     # SSH
   - 80     # HTTP
   - 443    # HTTPS
-  - 9100   # Node Exporter
+
+# 基础防火墙允许端口（用于通用配置）
+firewall_allowed_ports:
+  - 80     # HTTP
+  - 443    # HTTPS
+
+# 受限访问端口（需要白名单，仅监控服务器可访问）
+firewall_restricted_ports:
+  - 9100   # Prometheus Node Exporter
+  - 9080   # Promtail (Loki agent)
+  - 9090   # Prometheus Server
+  - 3100   # Loki Server
+  - 3000   # Grafana
+
+# 监控服务白名单 IP 列表
+# 从环境变量读取服务器 IP，自动添加到白名单
+# 包含所有服务器的 IP 段
+monitoring_allowed_ips:
+  # 全局白名单 IP（从环境变量读取，支持逗号分隔的多个 IP/CIDR）
+  - "{{ lookup('env', 'GLOBAL_WHITELIST_IPS') | default('') }}"
+  # 德国测试服务器
+  - "{{ lookup('env', 'DE_1_V4_SSH') | default('') }}"
+  # 波兰测试服务器（可观测性）
+  - "{{ lookup('env', 'PL_1_V4_SSH') | default('') }}"
+  # 可以继续添加更多服务器 IP
+  # - "{{ lookup('env', 'YOUR_SERVER_IP') | default('') }}"
+
+# 处理全局白名单（支持逗号分隔的多个 IP）
+global_whitelist_raw: "{{ lookup('env', 'GLOBAL_WHITELIST_IPS') | default('') }}"
+global_whitelist_split: "{{ global_whitelist_raw.split(',') if global_whitelist_raw else [] }}"
+global_whitelist_cleaned: "{{ global_whitelist_split | map('trim') | select('string') | reject('equalto', '') | list }}"
+
+# 过滤掉空值的白名单列表，合并全局白名单和服务器 IP
+monitoring_whitelist: "{{ (monitoring_allowed_ips + global_whitelist_cleaned) | select('string') | reject('equalto', '') | unique | list }}"
 
 # ====================
 # 用户管理
 # ====================
+# 注意：用户组会根据操作系统自动设置
+# - Debian/Ubuntu: sudo 组
+# - RedHat/CentOS: wheel 组
 admin_users:
   - name: ansible
     shell: /bin/bash
-    groups: sudo,wheel
     state: present
 
 # ====================
@@ -97,6 +135,8 @@ sysctl_config:
 # Prometheus 监控配置
 # ====================
 prometheus:
+  version: "2.45.0"
+  port: 9090
   node_exporter:
     version: "1.7.0"
     port: 9100
@@ -109,6 +149,8 @@ prometheus:
 # Loki 日志配置
 # ====================
 loki:
+  version: "2.9.0"
+  port: 3100
   promtail:
     version: "2.9.3"
     port: 9080

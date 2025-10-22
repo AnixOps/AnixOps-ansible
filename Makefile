@@ -1,4 +1,4 @@
-.PHONY: help install lint syntax check deploy quick-setup health-check ping clean
+.PHONY: help install lint syntax check deploy quick-setup health-check ping clean firewall-setup
 
 # 默认目标
 help:
@@ -9,7 +9,8 @@ help:
 	@echo "  make syntax        - 检查 playbook 语法"
 	@echo "  make ping          - 测试服务器连接"
 	@echo "  make deploy        - 完整部署"
-	@echo "  make quick-setup   - 快速初始化"
+	@echo "  make quick-setup   - 快速初始化（含监控和防火墙）"
+	@echo "  make firewall-setup - 配置防火墙和监控白名单"
 	@echo "  make health-check  - 健康检查"
 	@echo "  make clean         - 清理临时文件"
 	@echo ""
@@ -34,6 +35,7 @@ syntax:
 	ansible-playbook --syntax-check playbooks/site.yml
 	ansible-playbook --syntax-check playbooks/quick-setup.yml
 	ansible-playbook --syntax-check playbooks/health-check.yml
+	ansible-playbook --syntax-check playbooks/firewall-setup.yml
 	@echo "✓ Syntax check passed"
 
 # 测试连接
@@ -48,11 +50,17 @@ deploy:
 	ansible-playbook -i inventory/hosts.yml playbooks/site.yml
 	@echo "✓ Deployment completed"
 
-# 快速初始化
+# 快速初始化（含监控和防火墙）
 quick-setup:
-	@echo "Starting quick setup..."
+	@echo "Starting quick setup (common + monitoring + firewall)..."
 	ansible-playbook -i inventory/hosts.yml playbooks/quick-setup.yml
 	@echo "✓ Quick setup completed"
+
+# 防火墙配置
+firewall-setup:
+	@echo "Configuring firewall and monitoring whitelist..."
+	ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml
+	@echo "✓ Firewall setup completed"
 
 # 健康检查
 health-check:

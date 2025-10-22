@@ -1,0 +1,125 @@
+---
+# Observability Firewall Configuration
+# 配置 UFW 防火墙规则，关闭直接端口访问，只允许白名单 IP
+
+- name: Install UFW
+  apt:
+    name: ufw
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Reset UFW to default (deny incoming)
+  ufw:
+    state: reset
+  when: ansible_os_family == "Debian"
+
+- name: Set UFW default policies
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: 'incoming', policy: 'deny' }
+    - { direction: 'outgoing', policy: 'allow' }
+  when: ansible_os_family == "Debian"
+
+- name: Allow SSH from anywhere
+  ufw:
+    rule: allow
+    port: "{{ ansible_port | default('22') }}"
+    proto: tcp
+  when: ansible_os_family == "Debian"
+
+- name: Allow HTTP (for ACME challenges)
+  ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+  when: ansible_os_family == "Debian"
+
+- name: Allow HTTPS
+  ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+  when: ansible_os_family == "Debian"
+
+- name: Parse whitelist IPs
+  set_fact:
+    whitelist_ips: "{{ observability_whitelist_ips.split(',') | map('trim') | list }}"
+  when: 
+    - observability_whitelist_ips is defined
+    - observability_whitelist_ips | length > 0
+    - observability_whitelist_ips != 'any'
+
+- name: Allow Prometheus port from whitelist IPs
+  ufw:
+    rule: allow
+    port: '9090'
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ whitelist_ips | default([]) }}"
+  when: 
+    - whitelist_ips is defined
+    - whitelist_ips | length > 0
+  tags: [firewall, prometheus]
+
+- name: Allow Loki port from whitelist IPs
+  ufw:
+    rule: allow
+    port: '3100'
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ whitelist_ips | default([]) }}"
+  when: 
+    - whitelist_ips is defined
+    - whitelist_ips | length > 0
+  tags: [firewall, loki]
+
+- name: Allow Grafana port from whitelist IPs
+  ufw:
+    rule: allow
+    port: '3000'
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ whitelist_ips | default([]) }}"
+  when: 
+    - whitelist_ips is defined
+    - whitelist_ips | length > 0
+  tags: [firewall, grafana]
+
+- name: Allow Node Exporter port from whitelist IPs
+  ufw:
+    rule: allow
+    port: '9100'
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ whitelist_ips | default([]) }}"
+  when: 
+    - whitelist_ips is defined
+    - whitelist_ips | length > 0
+  tags: [firewall, node-exporter]
+
+- name: Allow localhost to access all ports
+  ufw:
+    rule: allow
+    from_ip: '127.0.0.1'
+  when: ansible_os_family == "Debian"
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+  when: ansible_os_family == "Debian"
+
+- name: Display firewall status
+  command: ufw status verbose
+  register: ufw_status
+  changed_when: false
+  when: ansible_os_family == "Debian"
+
+- name: Show firewall configuration
+  debug:
+    msg: "{{ ufw_status.stdout_lines }}"
+  when: 
+    - ansible_os_family == "Debian"
+    - ufw_status.stdout_lines is defined

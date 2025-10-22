@@ -1,0 +1,212 @@
+---
+# Observability Stack Deployment Playbook
+# 部署 Prometheus + Loki + Grafana (PLG) 可观测性栈
+# 支持 SSL/TLS 加密，提供 ACME.sh 和 Cloudflare 两种证书获取方式
+
+- name: Deploy Observability Stack (Prometheus + Loki + Grafana)
+  hosts: observability
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # SSL/TLS 配置
+    observability_ssl_enabled: "{{ lookup('env', 'OBSERVABILITY_SSL_ENABLED') | default('false') | bool }}"
+    observability_ssl_method: "{{ lookup('env', 'OBSERVABILITY_SSL_METHOD') | default('acme') }}"  # acme, custom
+    
+    # 域名配置
+    grafana_domain: "{{ lookup('env', 'GRAFANA_DOMAIN') | default('grafana.example.com') }}"
+    prometheus_domain: "{{ lookup('env', 'PROMETHEUS_DOMAIN') | default('prometheus.example.com') }}"
+    loki_domain: "{{ lookup('env', 'LOKI_DOMAIN') | default('loki.example.com') }}"
+    
+    # 自定义 SSL 证书配置
+    ssl_certificate_pem: "{{ lookup('env', 'SSL_CERTIFICATE_PEM') }}"
+    ssl_certificate_key_pem: "{{ lookup('env', 'SSL_CERTIFICATE_KEY_PEM') }}"
+    
+    # ACME.sh 配置
+    acme_email: "{{ lookup('env', 'ACME_EMAIL') | default('admin@example.com') }}"
+    acme_ca_server: "{{ lookup('env', 'ACME_CA_SERVER') | default('letsencrypt') }}"  # letsencrypt 或 letsencrypt_test
+    
+    # Cloudflare 配置
+    cloudflare_email: "{{ lookup('env', 'CLOUDFLARE_EMAIL') }}"
+    cloudflare_api_key: "{{ lookup('env', 'CLOUDFLARE_API_KEY') }}"
+    cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') }}"
+    cloudflare_zone_id: "{{ lookup('env', 'CLOUDFLARE_ZONE_ID') }}"
+    
+    # 防火墙白名单配置
+    observability_whitelist_ips: "{{ lookup('env', 'OBSERVABILITY_WHITELIST_IPS') | default('') }}"
+    
+    # Grafana 认证配置
+    grafana_admin_user: "{{ lookup('env', 'GRAFANA_ADMIN_USER') | default('admin') }}"
+    grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') | default('admin') }}"
+
+  pre_tasks:
+    - name: Validate SSL configuration
+      assert:
+        that:
+          - observability_ssl_method in ['acme', 'custom']
+          - not observability_ssl_enabled or (observability_ssl_enabled and acme_email != 'admin@example.com')
+        fail_msg: "Please configure proper email for SSL certificates"
+      when: observability_ssl_enabled
+
+    - name: Validate custom SSL certificates
+      assert:
+        that:
+          - ssl_certificate_pem != ''
+          - ssl_certificate_key_pem != ''
+        fail_msg: "Please set SSL_CERTIFICATE_PEM and SSL_CERTIFICATE_KEY_PEM in .env"
+      when:
+        - observability_ssl_enabled
+        - observability_ssl_method == 'custom'
+
+    - name: Validate Cloudflare credentials
+      assert:
+        that:
+          - cloudflare_api_token != '' or (cloudflare_email != '' and cloudflare_api_key != '')
+          - cloudflare_zone_id != ''
+        fail_msg: "Please set CLOUDFLARE_API_TOKEN (or EMAIL+KEY) and CLOUDFLARE_ZONE_ID"
+      when: 
+        - observability_ssl_enabled
+        - observability_ssl_method == 'acme'
+
+  roles:
+    - role: nginx
+      tags: [nginx]
+    
+    - role: prometheus_server
+      tags: [prometheus]
+    
+    - role: loki_server
+      tags: [loki]
+    
+    - role: grafana_server
+      tags: [grafana]
+    
+    - role: custom_ssl
+      vars:
+        ssl_domains:
+          - "{{ grafana_domain }}"
+          - "{{ prometheus_domain }}"
+          - "{{ loki_domain }}"
+      when: 
+        - observability_ssl_enabled
+        - observability_ssl_method == 'custom'
+      tags: [ssl, custom]
+    
+    - role: acme_ssl
+      vars:
+        acme_dns_provider: "cloudflare"
+        acme_domains:
+          - "{{ grafana_domain }}"
+          - "{{ prometheus_domain }}"
+          - "{{ loki_domain }}"
+      when: 
+        - observability_ssl_enabled
+        - observability_ssl_method == 'acme'
+      tags: [ssl, acme]
+    
+    - role: observability_firewall
+      tags: [firewall]
+
+  tasks:
+    - name: Deploy Nginx reverse proxy for Grafana
+      template:
+        src: ../roles/nginx/templates/observability/grafana.conf.j2
+        dest: /etc/nginx/sites-available/grafana
+        mode: '0644'
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Enable Grafana site
+      file:
+        src: /etc/nginx/sites-available/grafana
+        dest: /etc/nginx/sites-enabled/grafana
+        state: link
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Deploy Nginx reverse proxy for Prometheus
+      template:
+        src: ../roles/nginx/templates/observability/prometheus.conf.j2
+        dest: /etc/nginx/sites-available/prometheus
+        mode: '0644'
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Enable Prometheus site
+      file:
+        src: /etc/nginx/sites-available/prometheus
+        dest: /etc/nginx/sites-enabled/prometheus
+        state: link
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Deploy Nginx reverse proxy for Loki
+      template:
+        src: ../roles/nginx/templates/observability/loki.conf.j2
+        dest: /etc/nginx/sites-available/loki
+        mode: '0644'
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Enable Loki site
+      file:
+        src: /etc/nginx/sites-available/loki
+        dest: /etc/nginx/sites-enabled/loki
+        state: link
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Test Nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+      tags: [nginx, config]
+
+    - name: Reload Nginx if configuration is valid
+      service:
+        name: nginx
+        state: reloaded
+      when: nginx_test.rc == 0
+      tags: [nginx, config]
+
+  handlers:
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          🎉 Observability Stack Deployed Successfully!
+          ═══════════════════════════════════════════════════════════
+          
+          Services:
+          {% if observability_ssl_enabled %}
+          ✓ Grafana:    https://{{ grafana_domain }}
+          ✓ Prometheus: https://{{ prometheus_domain }}
+          ✓ Loki:       https://{{ loki_domain }}
+          
+          SSL: Enabled ({{ observability_ssl_method | upper }})
+          {% else %}
+          ✓ Grafana:    http://{{ ansible_host }}:3000
+          ✓ Prometheus: http://{{ ansible_host }}:9090
+          ✓ Loki:       http://{{ ansible_host }}:3100
+          
+          SSL: Disabled
+          {% endif %}
+          
+          Grafana Credentials:
+          - Username: {{ grafana_admin_user }}
+          - Password: {{ grafana_admin_password }}
+          {% if grafana_admin_password == 'admin' %}
+          ⚠  WARNING: Using default password! Please change it after first login.
+          {% endif %}
+          
+          Next Steps:
+          1. Configure data sources in Grafana
+          2. Import dashboards from /observability/grafana/dashboards/
+          3. Set up alert rules
+          ═══════════════════════════════════════════════════════════

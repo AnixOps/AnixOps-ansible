@@ -1,63 +1,15 @@
-# Ansible on Windows - Solutions and Workarounds
+# Windows 内容已移除（Linux-only）
 
-## ⚠️ Important Note
+本页面已下线。项目仅支持在 Linux/Mac 上作为控制节点运行 Ansible。
+<!-- Windows legacy content below is intentionally commented out (Linux-only) -->
+<!--
 
-**Ansible does not officially support Windows as a control node.** While we can patch some issues, the fundamental problem is that Ansible relies on Unix-specific modules like `fcntl` which don't exist on Windows.
+请参考以下文档开始使用：
 
-## The Problem
+- README.md / QUICKSTART.md（快速开始）
+- docs/SSH_KEY_MANAGEMENT.md（多机密钥管理）
 
-When running Ansible on Windows, you'll encounter several issues:
-
-1. ✅ **FIXED**: `OSError: [WinError 1]` - `os.get_blocking()` not supported on Windows
-2. ✅ **FIXED**: Locale encoding errors (Code Page 936 vs UTF-8)
-3. ❌ **CANNOT FIX**: `ModuleNotFoundError: No module named 'fcntl'` - Unix-only module
-
-## Recommended Solutions
-
-### Solution 1: Windows Subsystem for Linux (WSL) - **RECOMMENDED**
-
-This is the best and officially supported way to run Ansible on Windows.
-
-#### Setup Steps:
-
-1. **Install WSL 2:**
-   ```powershell
-   wsl --install
-   ```
-
-2. **Restart your computer when prompted**
-
-3. **Open Ubuntu (or your chosen Linux distro) from Start Menu**
-
-4. **Install Ansible in WSL:**
-   ```bash
-   # Update package lists
-   sudo apt update
-   
-   # Install Python and pip
-   sudo apt install python3 python3-pip python3-venv -y
-   
-   # Navigate to your project (Windows drives are under /mnt/)
-   cd /mnt/c/Users/z7299/Documents/GitHub/AnixOps-ansible
-   
-   # Create virtual environment
-   python3 -m venv venv
-   
-   # Activate virtual environment
-   source venv/bin/activate
-   
-   # Install dependencies
-   pip install -r requirements.txt
-   ```
-
-5. **Run Ansible:**
-   ```bash
-   ansible all -m ping
-   ansible-playbook playbooks/site.yml
-   ```
-
-#### Advantages:
-- ✅ Full Ansible support
+如需在 Windows 机器上开发，请使用远程 Linux 主机或容器作为控制节点。
 - ✅ No compatibility issues
 - ✅ Native Linux environment
 - ✅ Can still edit files with Windows tools (VS Code)

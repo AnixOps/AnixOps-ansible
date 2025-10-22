@@ -21,6 +21,12 @@
   roles:
     - promtail
 
+- name: Configure Firewall and Monitoring Whitelist
+  hosts: all
+  become: yes
+  roles:
+    - monitoring_firewall
+
 - name: Deploy Nginx (Web Servers)
   hosts: web_servers
   become: yes
@@ -46,6 +52,7 @@
           ✓ Common configuration (security, timezone, users)
           ✓ Node Exporter (port {{ prometheus.node_exporter.port }})
           ✓ Promtail (log collection)
+          ✓ Firewall configured with monitoring whitelist
           {% if inventory_hostname in groups['web_servers'] %}
           ✓ Nginx (HTTP/HTTPS)
           {% endif %}

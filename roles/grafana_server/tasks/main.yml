@@ -1,0 +1,89 @@
+---
+# Grafana Server Installation Tasks
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install Grafana dependencies
+  apt:
+    name:
+      - apt-transport-https
+      - software-properties-common
+      - wget
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add Grafana GPG key (Debian/Ubuntu)
+  apt_key:
+    url: https://apt.grafana.com/gpg.key
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add Grafana repository (Debian/Ubuntu)
+  apt_repository:
+    repo: deb https://apt.grafana.com stable main
+    state: present
+    filename: grafana
+  when: ansible_os_family == "Debian"
+
+- name: Install Grafana
+  package:
+    name: grafana
+    state: present
+    update_cache: yes
+
+- name: Configure Grafana
+  template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    owner: root
+    group: grafana
+    mode: '0640'
+  notify: restart grafana
+
+- name: Create Grafana provisioning directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: '0755'
+  loop:
+    - /etc/grafana/provisioning/datasources
+    - /etc/grafana/provisioning/dashboards
+
+- name: Provision Prometheus datasource
+  template:
+    src: datasource-prometheus.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: grafana
+    group: grafana
+    mode: '0644'
+  notify: restart grafana
+
+- name: Provision Loki datasource
+  template:
+    src: datasource-loki.yml.j2
+    dest: /etc/grafana/provisioning/datasources/loki.yml
+    owner: grafana
+    group: grafana
+    mode: '0644'
+  notify: restart grafana
+
+- name: Enable and start Grafana service
+  systemd:
+    name: grafana-server
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Display Grafana info
+  debug:
+    msg: |
+      Grafana installed successfully
+      Access: http://{{ ansible_host }}:3000
+      Default credentials: admin / admin (change on first login)
+      Config: /etc/grafana/grafana.ini

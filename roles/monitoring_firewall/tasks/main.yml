@@ -1,0 +1,139 @@
+---
+# Monitoring Firewall Role
+# 管理监控服务的防火墙规则和白名单
+
+- name: Ensure UFW is installed (Debian/Ubuntu)
+  apt:
+    name: ufw
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Ensure firewalld is installed (RedHat/CentOS)
+  yum:
+    name: firewalld
+    state: present
+  when: ansible_os_family == "RedHat"
+
+# ====================
+# 配置公开访问端口（无白名单限制）
+# ====================
+- name: Allow public ports without restrictions (UFW)
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ firewall_public_ports }}"
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled
+
+- name: Allow public ports without restrictions (firewalld)
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop: "{{ firewall_public_ports }}"
+  when: 
+    - ansible_os_family == "RedHat"
+    - firewall_enabled
+
+# ====================
+# 配置受限访问端口（需要白名单）
+# 重要：UFW 规则顺序很重要，必须先 ALLOW 后 DENY
+# ====================
+- name: Display monitoring whitelist IPs
+  debug:
+    msg: "Monitoring whitelist IPs: {{ monitoring_whitelist }}"
+  when: monitoring_whitelist | length > 0
+
+# 步骤 1: 清理现有的受限端口规则（确保干净的状态）
+- name: Delete existing rules for restricted ports (UFW)
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    delete: yes
+  loop: "{{ firewall_restricted_ports }}"
+  ignore_errors: yes
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled
+
+- name: Delete existing deny rules for restricted ports (UFW)
+  ufw:
+    rule: deny
+    port: "{{ item }}"
+    proto: tcp
+    delete: yes
+  loop: "{{ firewall_restricted_ports }}"
+  ignore_errors: yes
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled
+
+# 步骤 2: 先为白名单 IP 添加 ALLOW 规则
+- name: Allow restricted ports from whitelisted IPs (UFW)
+  ufw:
+    rule: allow
+    port: "{{ item.1 }}"
+    proto: tcp
+    from_ip: "{{ item.0 }}"
+    comment: "Monitoring access from {{ item.0 }}"
+  loop: "{{ monitoring_whitelist | product(firewall_restricted_ports) | list }}"
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled
+    - monitoring_whitelist | length > 0
+
+- name: Create firewalld rich rules for restricted ports (firewalld)
+  firewalld:
+    rich_rule: "rule family='ipv4' source address='{{ item.0 }}' port port='{{ item.1 }}' protocol='tcp' accept"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop: "{{ monitoring_whitelist | product(firewall_restricted_ports) | list }}"
+  when: 
+    - ansible_os_family == "RedHat"
+    - firewall_enabled
+    - monitoring_whitelist | length > 0
+
+# 步骤 3: 最后添加默认 DENY 规则（拒绝所有其他访问）
+- name: Set default deny policy for restricted ports (UFW)
+  ufw:
+    rule: deny
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ firewall_restricted_ports }}"
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled
+
+# ====================
+# 启用防火墙
+# ====================
+- name: Enable UFW
+  ufw:
+    state: enabled
+    policy: allow
+  when: 
+    - ansible_os_family == "Debian"
+    - firewall_enabled
+
+- name: Enable and start firewalld
+  service:
+    name: firewalld
+    state: started
+    enabled: yes
+  when: 
+    - ansible_os_family == "RedHat"
+    - firewall_enabled
+
+- name: Display firewall status
+  debug:
+    msg: |
+      ✓ Firewall configuration completed
+      - Public ports ({{ firewall_public_ports | join(', ') }}) are accessible from anywhere
+      - Restricted ports ({{ firewall_restricted_ports | join(', ') }}) are accessible only from whitelisted IPs
+      - Whitelisted IPs: {{ monitoring_whitelist | join(', ') }}

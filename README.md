@@ -1,5 +1,7 @@
 # AnixOps-ansible
 
+> 注意：本仓库仅支持 Linux/Mac 作为 Ansible 控制节点（Linux-only）。不再提供任何 Windows/WSL 启动脚本或指南。
+
 <div align="center">
 
 ![AnixOps](https://img.shields.io/badge/AnixOps-GitOps-blue?style=for-the-badge)
@@ -89,15 +91,64 @@ git clone https://github.com/AnixOps/AnixOps-ansible.git
 cd AnixOps-ansible
 ```
 
-### 2. 安装依赖
+### 2. 配置服务器 IP (.env 文件)
+
+复制环境变量模板并填入真实 IP：
 
 ```bash
-pip install -r requirements.txt
+cp .env.example .env
+# 编辑 .env 文件，填入你的服务器 IP
+vim .env
 ```
 
-### 3. 配置 SSH 密钥
+**.env 示例配置：**
 
-使用我们提供的工具安全地将 SSH 私钥上传到 GitHub Secrets：
+```bash
+# 点对点连接 (/31 或 /127) - 直接连接
+US_W_1_V4=203.0.113.10/31        # 直接SSH到这个IP
+US_W_1_V6=2001:db8::1/127
+
+# 内网段 - 需要SSH_IP (公网IP或网关)
+JP_1_V4=10.10.0.50/27            # 内网IP，用于配置管理
+JP_1_V6=2001:19f0:5001::1/120
+JP_1_SSH_IP=45.76.123.45         # SSH连接到这个公网IP
+
+# SSH 配置
+ANSIBLE_USER=root
+SSH_KEY_PATH=~/.ssh/id_rsa
+```
+
+**连接逻辑：**
+- **`/31` (IPv4) 或 `/127` (IPv6) 段**：点对点连接，直接使用该IP
+  - 示例：`203.0.113.10/31` → 直接 SSH 到 `203.0.113.10`
+- **其他网段**：必须设置 `_SSH_IP` 变量指定SSH连接地址
+  - 示例：`JP_1_V4=10.10.0.50/27` + `JP_1_SSH_IP=45.76.123.45`
+  - SSH 连接到 `45.76.123.45`，内网IP用于配置管理
+
+### 3. 安装依赖（推荐：使用启动脚本创建虚拟环境）
+
+```bash
+# 一次性创建并激活虚拟环境、安装依赖
+./scripts/anixops.sh setup-venv
+```
+
+### 3. SSH 密钥管理
+
+#### 方式一：本地使用（推荐新手）
+
+生成 SSH 密钥并复制到服务器：
+
+```bash
+# 生成密钥
+ssh-keygen -t rsa -b 4096 -C "ansible@anixops" -f ~/.ssh/id_rsa
+
+# 复制公钥到所有服务器（根据 .env 中的 IP）
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@YOUR_SERVER_IP
+```
+
+#### 方式二：GitHub Actions 自动部署
+
+使用工具安全地将 SSH 私钥上传到 GitHub Secrets：
 
 ```bash
 python tools/ssh_key_manager.py
@@ -119,72 +170,62 @@ python tools/ssh_key_manager.py \
   --secret-name SSH_PRIVATE_KEY
 ```
 
-### 4. 配置 GitHub Secrets
+### 4. 配置 GitHub Secrets（可选，用于 CI/CD）
 
-在 GitHub 仓库设置中配置以下 Secrets：
+如果使用 GitHub Actions 自动部署，在仓库设置中配置：
 
 | Secret 名称 | 说明 | 示例 |
 |------------|------|------|
 | `SSH_PRIVATE_KEY` | SSH 私钥 | 通过 ssh_key_manager.py 上传 |
 | `ANSIBLE_USER` | SSH 用户名 | `root` 或 `ubuntu` |
-| `PROMETHEUS_URL` | Prometheus 服务器地址 | `http://prometheus.example.com:9090` |
-| `LOKI_URL` | Loki 服务器地址 | `http://loki.example.com:3100` |
-| `GRAFANA_URL` | Grafana 服务器地址 | `http://grafana.example.com:3000` |
+| `US_W_1_V4` | 美西服务器1 IPv4 | `203.0.113.10/31` |
+| `US_W_1_V6` | 美西服务器1 IPv6 | `2001:db8::1/127` |
+| （其他服务器 IP 变量） | 参考 .env.example | |
+| `PROMETHEUS_URL` | Prometheus 地址（可选） | `http://prometheus.example.com:9090` |
+| `LOKI_URL` | Loki 地址（可选） | `http://loki.example.com:3100` |
 
-### 5. 配置服务器清单
-
-编辑 `inventory/hosts.yml`，添加你的服务器信息：
-
-```yaml
-all:
-  children:
-    web_servers:
-      hosts:
-        web-01:
-          ansible_host: "{{ lookup('env', 'WEB_01_IP') | default('192.168.1.10') }}"
-```
-
-**提示**：可以使用环境变量或直接在 GitHub Actions 中设置服务器 IP。
-
-### 6. 测试连接
+### 5. 测试连接
 
 ```bash
-ansible all -m ping -i inventory/hosts.yml
+./scripts/anixops.sh ping
 ```
 
-### 7. 执行部署
+### 6. 执行部署
 
 #### 本地执行 (Linux/Mac)
 
 ```bash
 # 完整部署
-ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+./scripts/anixops.sh deploy
 
-# 快速初始化
-ansible-playbook -i inventory/hosts.yml playbooks/quick-setup.yml
+# 快速初始化（包含基础配置、监控和防火墙）
+./scripts/anixops.sh quick-setup
+
+# 单独配置防火墙和监控白名单
+./scripts/anixops.sh firewall-setup
 
 # 健康检查
-ansible-playbook -i inventory/hosts.yml playbooks/health-check.yml
+./scripts/anixops.sh health-check
 ```
 
 **或使用 Makefile**:
 
 ```bash
-make deploy
-make quick-setup
-make health-check
+make deploy              # 完整部署
+make quick-setup        # 快速初始化（含监控和防火墙）
+make firewall-setup     # 单独配置防火墙规则
+make health-check       # 健康检查
 ```
 
-#### 本地执行 (Windows)
+**Quick Setup 包含的功能**：
+- ✅ 基础系统配置（时区、软件包、SSH 加固）
+- ✅ Prometheus Node Exporter（端口 9100）
+- ✅ Promtail 日志收集（端口 9080）
+- ✅ 防火墙白名单配置
+  - 公开端口：22 (SSH), 80 (HTTP), 443 (HTTPS)
+  - 受限端口：9100, 9080, 9090, 3100, 3000（仅白名单 IP 可访问）
 
-```powershell
-# 使用 PowerShell 脚本
-.\run.ps1 deploy
-.\run.ps1 quick-setup
-.\run.ps1 health-check
-```
-
-**Windows 用户提示**: 项目包含 `run.ps1` PowerShell 脚本，提供与 Makefile 相同的功能。
+<!-- 已移除 Windows 支持：本仓库为 Linux-only -->
 
 #### 通过 GitHub Actions
 
@@ -267,17 +308,18 @@ git push origin hotfix/critical-fix
 
 ### 核心文档
 
-- 📖 **[快速开始指南](QUICKSTART.md)** - 5 分钟快速部署
-- 📝 **[使用示例](EXAMPLES.md)** - 10 个实际场景示例
+- 📖 **[快速开始指南](docs/QUICKSTART.md)** - 5 分钟快速部署
+- 🔧 **[GitHub Actions 配置](docs/GITHUB_ACTIONS_SETUP.md)** - CI/CD 自动部署设置
+- � **[可观测性部署指南](docs/OBSERVABILITY_SETUP.md)** - Prometheus + Loki + Grafana 完整部署
+- �📝 **[使用示例](docs/EXAMPLES.md)** - 10 个实际场景示例
 - 🔐 **[SSH 密钥管理方案](docs/SSH_KEY_MANAGEMENT.md)** - 多机器私钥管理完整方案
-- 🖥️ **[多机器操作指南](docs/MULTI_MACHINE_SETUP.md)** - Windows/Linux/Mac 多平台配置
-- 📋 **[项目总结](PROJECT_SUMMARY.md)** - 完整功能清单
+- 🖥️ **[多机器操作指南](docs/MULTI_MACHINE_SETUP.md)** - Linux/Mac 多平台配置
+- 📋 **[项目总结](docs/PROJECT_SUMMARY.md)** - 完整功能清单
 - 📜 **[更新日志](CHANGELOG.md)** - 版本历史
 
 ### 命令参考
 
 - **Linux/Mac**: 使用 `Makefile` - 运行 `make help` 查看所有命令
-- **Windows**: 使用 `run.ps1` - 运行 `.\run.ps1 help` 查看所有命令
 
 ---
 

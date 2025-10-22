@@ -28,13 +28,28 @@
     state: present
   when: ansible_os_family == "Debian"
 
-- name: Configure NTP servers
+- name: Ensure chrony config directory exists
+  file:
+    path: /etc/chrony
+    state: directory
+    mode: '0755'
+  when: ansible_os_family == "Debian"
+
+- name: Configure NTP servers (Debian/Ubuntu)
   template:
     src: chrony.conf.j2
     dest: /etc/chrony/chrony.conf
     mode: '0644'
   notify: restart chrony
   when: ansible_os_family == "Debian"
+
+- name: Configure NTP servers (RedHat/CentOS)
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    mode: '0644'
+  notify: restart chrony
+  when: ansible_os_family == "RedHat"
 
 - name: Ensure chrony is running
   service:
@@ -50,15 +65,29 @@
     enabled: yes
   when: ansible_os_family == "Debian"
 
-- name: Create admin users
+- name: Create admin users (Debian/Ubuntu)
   user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"
-    groups: "{{ item.groups }}"
+    groups: sudo
     state: "{{ item.state }}"
     create_home: yes
   loop: "{{ admin_users }}"
-  when: admin_users is defined
+  when: 
+    - admin_users is defined
+    - ansible_os_family == "Debian"
+
+- name: Create admin users (RedHat/CentOS)
+  user:
+    name: "{{ item.name }}"
+    shell: "{{ item.shell }}"
+    groups: wheel
+    state: "{{ item.state }}"
+    create_home: yes
+  loop: "{{ admin_users }}"
+  when: 
+    - admin_users is defined
+    - ansible_os_family == "RedHat"
 
 - name: Configure SSH
   template:
@@ -74,6 +103,7 @@
     value: "{{ item.value }}"
     state: present
     reload: yes
+    ignoreerrors: yes
   loop: "{{ sysctl_config | dict2items }}"
   when: sysctl_config is defined
 
@@ -106,6 +136,14 @@
     state: started
     enabled: yes
   when: security.fail2ban_enabled | default(false)
+
+- name: Install UFW (Ubuntu/Debian)
+  package:
+    name: ufw
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(false)
 
 - name: Configure UFW firewall (Ubuntu/Debian)
   block:

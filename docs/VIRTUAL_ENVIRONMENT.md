@@ -9,44 +9,26 @@
 
 ---
 
-## 🚀 快速开始
+### 快速上手（Linux/Mac）
 
-### Windows (PowerShell)
-
-```powershell
-# 1. 创建虚拟环境
-python -m venv venv
-
-# 2. 激活虚拟环境
-.\venv\Scripts\Activate.ps1
-
-# 3. 安装依赖
-pip install -r requirements.txt
-
-# 4. 使用项目
-.\run.ps1 help
-
-# 5. 退出虚拟环境
-deactivate
-```
-
-### Linux/Mac (Bash/Zsh)
+当其他人克隆项目时：
 
 ```bash
-# 1. 创建虚拟环境
-python3 -m venv venv
+# 1. 克隆项目并进入目录
+git clone https://github.com/AnixOps/AnixOps-ansible.git
+cd AnixOps-ansible
 
-# 2. 激活虚拟环境
+# 2. 创建并激活虚拟环境
+python3 -m venv venv
 source venv/bin/activate
 
 # 3. 安装依赖
 pip install -r requirements.txt
 
-# 4. 使用项目
+# 4. 验证并开始工作
+pip list
 make help
-
-# 5. 退出虚拟环境
-deactivate
+make ping
 ```
 
 ---
@@ -57,35 +39,17 @@ deactivate
 
 #### 创建虚拟环境
 
-```powershell
-# Windows
-python -m venv venv
-
+```bash
 # Linux/Mac
 python3 -m venv venv
 ```
 
 这会在项目根目录创建 `venv` 文件夹，包含：
-- `Scripts/` (Windows) 或 `bin/` (Linux/Mac) - 可执行文件
+- `bin/` - 可执行文件
 - `Lib/` - Python 库
 - `Include/` - C 头文件
 
 #### 激活虚拟环境
-
-**Windows PowerShell**:
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-如果遇到权限错误，运行：
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-**Windows CMD**:
-```cmd
-venv\Scripts\activate.bat
-```
 
 **Linux/Mac**:
 ```bash
@@ -96,21 +60,21 @@ source venv/bin/activate
 
 #### 验证虚拟环境
 
-```powershell
+```bash
 # 查看 Python 路径（应该指向 venv）
-Get-Command python | Select-Object Source
+command -v python3
 
 # 或
-python -c "import sys; print(sys.prefix)"
+python3 -c "import sys; print(sys.prefix)"
 ```
 
 应该显示包含 `venv` 的路径。
 
 #### 安装依赖
 
-```powershell
+```bash
 # 升级 pip
-python -m pip install --upgrade pip
+python3 -m pip install --upgrade pip
 
 # 安装项目依赖
 pip install -r requirements.txt
@@ -201,41 +165,13 @@ env/
 ---
 
 ## 🎨 自动化脚本
-
-### Windows PowerShell 脚本增强版
-
-我为您更新了 `run.ps1`，添加了自动虚拟环境检测和创建功能。
-
+ 
 ### Linux/Mac Makefile 增强版
 
 我为您创建了 `setup.sh` 脚本来自动处理虚拟环境。
 
 ---
 
-## 💡 最佳实践
-
-### 1. 永远在虚拟环境中工作
-
-```powershell
-# 创建别名（Windows PowerShell）
-# 添加到 $PROFILE
-function Start-AnixOps {
-    Set-Location "C:\Users\z7299\Documents\GitHub\AnixOps-ansible"
-    .\venv\Scripts\Activate.ps1
-}
-Set-Alias anix Start-AnixOps
-
-# 使用
-anix
-```
-
-```bash
-# 创建别名（Linux/Mac）
-# 添加到 ~/.bashrc 或 ~/.zshrc
-alias anix='cd ~/projects/AnixOps-ansible && source venv/bin/activate'
-
-# 使用
-anix
 ```
 
 ### 2. 使用 `.envrc` (direnv)
@@ -267,7 +203,7 @@ layout python python3
 1. File → Settings → Project → Python Interpreter
 2. 点击齿轮图标 → Add
 3. 选择 "Existing environment"
-4. 选择 `venv/bin/python` 或 `venv\Scripts\python.exe`
+4. 选择 `venv/bin/python`
 
 ---
 
@@ -275,21 +211,21 @@ layout python python3
 
 ### 启动工作
 
-```powershell
-# Windows
-cd C:\Users\z7299\Documents\GitHub\AnixOps-ansible
-.\venv\Scripts\Activate.ps1
+```bash
+# Linux/Mac
+cd ~/projects/AnixOps-ansible
+source venv/bin/activate
 
 # 确认环境
 pip list
 
 # 开始工作
-.\run.ps1 ping
+make ping
 ```
 
 ### 更新依赖
 
-```powershell
+```bash
 # 安装新包
 pip install package-name
 
@@ -301,27 +237,7 @@ git add requirements.txt
 git commit -m "chore: update dependencies"
 ```
 
-### 共享环境
-
-当其他人克隆项目时：
-
-```powershell
-# 1. 克隆项目
-git clone https://github.com/AnixOps/AnixOps-ansible.git
-cd AnixOps-ansible
-
-# 2. 创建虚拟环境
-python -m venv venv
-
-# 3. 激活
-.\venv\Scripts\Activate.ps1
-
-# 4. 安装依赖
-pip install -r requirements.txt
-
-# 5. 立即开始工作
-.\run.ps1 help
-```
+<!-- Windows 指南和 PowerShell 示例已移除：本仓库仅支持 Linux/Mac -->
 
 ---
 
@@ -329,40 +245,29 @@ pip install -r requirements.txt
 
 ### 完全清理虚拟环境
 
-```powershell
-# Windows
+```bash
 deactivate  # 先退出虚拟环境
-Remove-Item -Recurse -Force venv
-
-# Linux/Mac
-deactivate
 rm -rf venv
 ```
 
 ### 重建虚拟环境
 
-```powershell
-# 删除旧环境
-Remove-Item -Recurse -Force venv
-
-# 创建新环境
-python -m venv venv
-
-# 激活
-.\venv\Scripts\Activate.ps1
-
-# 重新安装
+```bash
+# 删除旧环境并重建
+rm -rf venv
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ### 升级所有包
 
-```powershell
+```bash
 # 列出过期的包
 pip list --outdated
 
 # 升级所有包（谨慎使用！）
-pip list --outdated --format=json | ConvertFrom-Json | ForEach-Object { pip install --upgrade $_.name }
+pip list --outdated | awk 'NR>2 {print $1}' | xargs -n1 pip install -U
 
 # 更新 requirements.txt
 pip freeze > requirements.txt
@@ -372,32 +277,18 @@ pip freeze > requirements.txt
 
 ## 🐛 故障排查
 
-### PowerShell 执行策略错误
-
-```powershell
-# 错误: 无法加载文件 Activate.ps1，因为在此系统上禁止运行脚本
-
-# 解决方案
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
 ### Python 找不到
 
-```powershell
+```bash
 # 确认 Python 已安装
-python --version
-
-# 如果没有，下载安装：
-# https://www.python.org/downloads/
-# 或使用 winget
-winget install Python.Python.3.11
+python3 --version
 ```
 
 ### pip 安装失败
 
-```powershell
+```bash
 # 升级 pip
-python -m pip install --upgrade pip setuptools wheel
+python3 -m pip install --upgrade pip setuptools wheel
 
 # 使用清华镜像（国内用户）
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
@@ -405,11 +296,11 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 ### 虚拟环境激活后 Python 版本不对
 
-```powershell
+```bash
 # 删除并使用指定 Python 版本重建
-Remove-Item -Recurse -Force venv
-C:\Python311\python.exe -m venv venv
-.\venv\Scripts\Activate.ps1
+rm -rf venv
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 ---
@@ -428,17 +319,17 @@ C:\Python311\python.exe -m venv venv
 
 ## ✅ 推荐配置（本项目）
 
-```powershell
+```bash
 # 1. 一次性设置
-cd C:\Users\z7299\Documents\GitHub\AnixOps-ansible
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+cd ~/projects/AnixOps-ansible
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 
 # 2. 每次使用
-cd C:\Users\z7299\Documents\GitHub\AnixOps-ansible
-.\venv\Scripts\Activate.ps1
-.\run.ps1 <command>
+cd ~/projects/AnixOps-ansible
+source venv/bin/activate
+make help
 
 # 3. 完成后
 deactivate
@@ -447,36 +338,6 @@ deactivate
 ---
 
 ## 🎁 额外福利
-
-### 自动激活脚本（Windows）
-
-创建 `activate.ps1`:
-
-```powershell
-# 检查虚拟环境是否存在
-if (-not (Test-Path "venv\Scripts\Activate.ps1")) {
-    Write-Host "Creating virtual environment..." -ForegroundColor Yellow
-    python -m venv venv
-    Write-Host "✓ Virtual environment created" -ForegroundColor Green
-}
-
-# 激活
-.\venv\Scripts\Activate.ps1
-Write-Host "✓ Virtual environment activated: $(python --version)" -ForegroundColor Green
-
-# 检查依赖
-$installed = pip list --format=freeze
-if (-not ($installed -match "ansible")) {
-    Write-Host "Installing dependencies..." -ForegroundColor Yellow
-    pip install -r requirements.txt
-    Write-Host "✓ Dependencies installed" -ForegroundColor Green
-}
-```
-
-使用：
-```powershell
-.\activate.ps1
-```
 
 ---
 

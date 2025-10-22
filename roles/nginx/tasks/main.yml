@@ -2,10 +2,23 @@
 # Nginx role - Web 服务器
 # 安装和配置 Nginx
 
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
 - name: Install Nginx
+  apt:
+    name: nginx
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Nginx (RedHat)
   package:
     name: nginx
     state: present
+  when: ansible_os_family == "RedHat"
 
 - name: Create Nginx configuration directories
   file:
@@ -66,6 +79,21 @@
     name: nginx
     state: started
     enabled: yes
+
+- name: Check if UFW is installed
+  stat:
+    path: /usr/sbin/ufw
+  register: ufw_installed
+  when: ansible_os_family == "Debian"
+
+- name: Install UFW if firewall is enabled
+  apt:
+    name: ufw
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(false)
+    - not ufw_installed.stat.exists
 
 - name: Allow HTTP in firewall
   ufw:

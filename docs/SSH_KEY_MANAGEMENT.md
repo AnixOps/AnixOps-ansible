@@ -272,7 +272,6 @@ if __name__ == '__main__':
 
 ```bash
 # 安装 1Password CLI
-# Windows: scoop install 1password-cli
 # Mac: brew install 1password-cli
 # Linux: 从官网下载
 
@@ -293,7 +292,7 @@ op read "op://Private/AnixOps SSH Key/private key" | \
 
 **优势**:
 - ✅ 极其简单易用
-- ✅ 跨平台（Windows/Mac/Linux）
+- ✅ 跨平台（Mac/Linux）
 - ✅ 浏览器插件 + CLI
 - ✅ 团队共享和权限管理
 - ✅ 审计日志

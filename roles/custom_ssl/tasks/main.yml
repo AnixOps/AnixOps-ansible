@@ -1,0 +1,56 @@
+---
+# Custom SSL Certificate Role Tasks
+# 部署自定义 SSL 证书（PEM 格式）
+
+- name: Create SSL certificate directory
+  file:
+    path: /etc/nginx/ssl
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Check if SSL certificate is provided
+  set_fact:
+    ssl_cert_provided: "{{ ssl_certificate_pem | default('') | length > 0 }}"
+    ssl_key_provided: "{{ ssl_certificate_key_pem | default('') | length > 0 }}"
+
+- name: Validate SSL certificate configuration
+  assert:
+    that:
+      - ssl_cert_provided
+      - ssl_key_provided
+    fail_msg: "SSL_CERTIFICATE_PEM and SSL_CERTIFICATE_KEY_PEM must be set in .env when using custom SSL method"
+
+- name: Decode and deploy SSL certificate
+  copy:
+    content: "{{ ssl_certificate_pem | b64decode }}"
+    dest: "/etc/nginx/ssl/{{ item }}.crt"
+    mode: '0644'
+    owner: root
+    group: root
+  loop: "{{ ssl_domains }}"
+  when: ssl_cert_provided
+  no_log: true
+
+- name: Decode and deploy SSL private key
+  copy:
+    content: "{{ ssl_certificate_key_pem | b64decode }}"
+    dest: "/etc/nginx/ssl/{{ item }}.key"
+    mode: '0600'
+    owner: root
+    group: root
+  loop: "{{ ssl_domains }}"
+  when: ssl_key_provided
+  no_log: true
+  notify: reload nginx
+
+- name: Verify SSL certificate
+  command: "openssl x509 -in /etc/nginx/ssl/{{ ssl_domains[0] }}.crt -noout -text"
+  register: ssl_verify
+  changed_when: false
+  failed_when: ssl_verify.rc != 0
+
+- name: Display SSL certificate info
+  debug:
+    msg: "SSL certificate deployed successfully for domains: {{ ssl_domains | join(', ') }}"

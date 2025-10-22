@@ -1,88 +1,8 @@
-# 🚀 Windows 用户快速开始指南
+# Windows 快速开始（已移除）
 
-## 第一次使用（一次性设置）
-
-### 步骤 1: 创建虚拟环境
-
-```powershell
-# 打开 PowerShell，进入项目目录
-cd C:\Users\z7299\Documents\GitHub\AnixOps-ansible
-
-# 自动创建虚拟环境并安装依赖
-.\run.ps1 setup-venv
-```
-
-这会：
-- ✅ 创建 Python 虚拟环境（`venv` 文件夹）
-- ✅ 激活虚拟环境
-- ✅ 升级 pip
-- ✅ 安装所有依赖（Ansible, ansible-lint 等）
-
-### 步骤 2: 配置 SSH 密钥
-
-```powershell
-# 上传 SSH 密钥到 GitHub Secrets
-.\run.ps1 upload-key
-```
-
-按照提示输入您的 SSH 密钥路径和 GitHub 信息。
-
-### 步骤 3: 配置服务器清单
-
-编辑 `inventory\hosts.yml`，添加您的服务器信息。
-
-### 步骤 4: 测试连接
-
-```powershell
-.\run.ps1 ping
-```
-
----
-
-## 日常使用
-
-### 方式 A: 使用 run.ps1（推荐，自动管理虚拟环境）
-
-```powershell
-cd C:\Users\z7299\Documents\GitHub\AnixOps-ansible
-
-# 所有命令自动使用虚拟环境
-.\run.ps1 ping
-.\run.ps1 deploy
-.\run.ps1 health-check
-```
-
-### 方式 B: 手动激活虚拟环境
-
-```powershell
-cd C:\Users\z7299\Documents\GitHub\AnixOps-ansible
-
-# 激活虚拟环境
-.\activate.ps1
-# 或
-.\venv\Scripts\Activate.ps1
-
-# 然后使用 Ansible 命令
-ansible all -m ping
-ansible-playbook playbooks/site.yml
-
-# 完成后退出
-deactivate
-```
-
----
-
-## 常用命令
-
-```powershell
-# 查看帮助
-.\run.ps1 help
-
-# 测试服务器连接
-.\run.ps1 ping
-
-# 完整部署
-.\run.ps1 deploy
+本页已移除。请改用 Linux/Mac 快速开始文档：`QUICKSTART.md`。
+<!-- Windows legacy content below is intentionally commented out (Linux-only) -->
+<!--
 
 # 快速初始化新服务器
 .\run.ps1 quick-setup
@@ -284,4 +204,7 @@ deactivate
 
 **现在您可以在干净、隔离的环境中工作了！** 🎉
 
-有问题？运行 `.\run.ps1 help` 查看所有可用命令。
+有问题？运行 `.\\run.ps1 help` 查看所有可用命令。
+
+````
+-->

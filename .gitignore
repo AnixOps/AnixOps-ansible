@@ -6,6 +6,12 @@
 # Ansible Vault 密码文件 (非常重要！)
 .vault_password.txt
 
+# 环境变量文件 (包含真实 IP 地址)
+.env
+
+# 证书文件
+*.pem
+
 # 本地配置文件 (如果需要)
 *.local
 ansible.local.cfg
