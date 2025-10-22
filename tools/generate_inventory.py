@@ -5,6 +5,7 @@ Inventory Generator - 从统一配置生成 Ansible Inventory
 """
 
 import sys
+import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any
@@ -12,7 +13,13 @@ from typing import Dict, Any
 
 def load_config(config_file: str = "inventory/servers-config.yml") -> Dict[str, Any]:
     """加载服务器配置"""
-    with open(config_file, 'r', encoding='utf-8') as f:
+    # 获取脚本所在目录的父目录（项目根目录）
+    # Get the parent directory of the script (project root)
+    script_dir = Path(__file__).parent
+    project_root = script_dir.parent
+    config_path = project_root / config_file
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
@@ -22,9 +29,9 @@ def generate_local_inventory(config: Dict[str, Any]) -> Dict[str, Any]:
         'all': {
             'children': {},
             'vars': {
-                "ansible_user": "{{ lookup('env', 'ANSIBLE_USER') | default('root') }}",
-                "ansible_port": "{{ lookup('env', 'ANSIBLE_PORT') | default('22') }}",
-                "ansible_ssh_private_key_file": "{{ lookup('env', 'SSH_KEY_PATH') | default('~/.ssh/id_rsa') }}",
+                "ansible_user": "{{ lookup('env', 'ANSIBLE_USER') | default('root', true) }}",
+                "ansible_port": "{{ lookup('env', 'ANSIBLE_PORT') | default('22', true) | int }}",
+                "ansible_ssh_private_key_file": "{{ lookup('env', 'SSH_KEY_PATH') | default('~/.ssh/id_rsa', true) }}",
                 **config['global_vars']
             }
         }
@@ -85,8 +92,8 @@ def generate_github_actions_inventory(config: Dict[str, Any],
     # 使用环境变量查找 (在 GitHub Actions 中，secrets 会被设置为环境变量)
     # Use environment variable lookups (in GitHub Actions, secrets are set as env vars)
     inventory['all']['vars'].update({
-        'ansible_user': "{{ lookup('env', 'ANSIBLE_USER') | default('root') }}",
-        'ansible_port': "{{ lookup('env', 'ANSIBLE_PORT') | default('22') }}",
+        'ansible_user': "{{ lookup('env', 'ANSIBLE_USER') | default('root', true) }}",
+        'ansible_port': "{{ lookup('env', 'ANSIBLE_PORT') | default('22', true) | int }}",
         'ansible_ssh_private_key_file': "~/.ssh/id_rsa"
     })
     
