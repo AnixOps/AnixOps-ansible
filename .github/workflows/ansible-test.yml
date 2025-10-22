@@ -78,6 +78,11 @@ jobs:
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          # 设置服务器 IP 环境变量 | Set server IP environment variables
+          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           echo "════════════════════════════════════════════════════════════"
           echo "Testing connectivity to ALL hosts..."
@@ -88,6 +93,11 @@ jobs:
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          # 设置服务器 IP 环境变量 | Set server IP environment variables
+          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           echo "════════════════════════════════════════════════════════════"
           echo "Testing connectivity to WEB SERVERS..."
@@ -98,6 +108,11 @@ jobs:
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          # 设置服务器 IP 环境变量 | Set server IP environment variables
+          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           echo "════════════════════════════════════════════════════════════"
           echo "Testing connectivity to OBSERVABILITY SERVERS..."
@@ -108,6 +123,11 @@ jobs:
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          # 设置服务器 IP 环境变量 | Set server IP environment variables
+          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           echo "════════════════════════════════════════════════════════════"
           echo "Testing fact gathering (setup module)..."
@@ -119,6 +139,11 @@ jobs:
         if: github.event.inputs.playbook != 'ping-only' && github.event.inputs.playbook != '' && github.event_name == 'workflow_dispatch'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          # 设置服务器 IP 环境变量 | Set server IP environment variables
+          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           TARGET="${{ github.event.inputs.target_group }}"
           PLAYBOOK="${{ github.event.inputs.playbook }}"
