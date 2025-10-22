@@ -65,7 +65,16 @@ def generate_local_inventory(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def generate_github_actions_inventory(config: Dict[str, Any], 
                                       use_secrets: bool = True) -> Dict[str, Any]:
-    """生成 GitHub Actions 的 inventory"""
+    """生成 GitHub Actions 的 inventory
+    
+    注意：GitHub Actions 只在 workflow 文件中处理 ${{ secrets.xxx }} 语法
+    在 inventory 文件中必须使用 Ansible 的 lookup('env', ...) 语法
+    Secrets 应该在 workflow 中设置为环境变量
+    
+    Note: GitHub Actions only processes ${{ secrets.xxx }} syntax in workflow files
+    In inventory files, must use Ansible's lookup('env', ...) syntax
+    Secrets should be set as environment variables in the workflow
+    """
     inventory = {
         'all': {
             'children': {},
@@ -73,15 +82,13 @@ def generate_github_actions_inventory(config: Dict[str, Any],
         }
     }
     
-    if use_secrets:
-        # 使用 GitHub Secrets
-        inventory['all']['vars'].update({
-            'ansible_user': "${{ secrets.ANSIBLE_USER }}",
-            'ansible_port': "${{ secrets.ANSIBLE_PORT }}",
-            'ansible_ssh_private_key_file': "~/.ssh/id_rsa",
-            'deployment_timestamp': "${{ github.run_number }}",
-            'deployed_by': "${{ github.actor }}"
-        })
+    # 使用环境变量查找 (在 GitHub Actions 中，secrets 会被设置为环境变量)
+    # Use environment variable lookups (in GitHub Actions, secrets are set as env vars)
+    inventory['all']['vars'].update({
+        'ansible_user': "{{ lookup('env', 'ANSIBLE_USER') | default('root') }}",
+        'ansible_port': "{{ lookup('env', 'ANSIBLE_PORT') | default('22') }}",
+        'ansible_ssh_private_key_file': "~/.ssh/id_rsa"
+    })
     
     # 创建所有组
     groups = {}
@@ -93,10 +100,9 @@ def generate_github_actions_inventory(config: Dict[str, Any],
     
     # 添加 GitHub Actions 服务器
     for server_name, server_info in config['github_actions_servers'].items():
-        if use_secrets:
-            ansible_host = f"${{{{ secrets.{server_info['secret_name']} }}}}"
-        else:
-            ansible_host = f"{{{{ lookup('env', '{server_info['secret_name']}') }}}}"
+        # 使用 Ansible 环境变量查找语法
+        # Use Ansible environment variable lookup syntax
+        ansible_host = f"{{{{ lookup('env', '{server_info['secret_name']}') }}}}"
         
         host_config = {
             'ansible_host': ansible_host
