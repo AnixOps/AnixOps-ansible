@@ -4,10 +4,12 @@
 
 <div align="center">
 
+![Version](https://img.shields.io/badge/version-v0.0.2-blue?style=for-the-badge)
 ![AnixOps](https://img.shields.io/badge/AnixOps-GitOps-blue?style=for-the-badge)
 ![Ansible](https://img.shields.io/badge/Ansible-EE0000?style=for-the-badge&logo=ansible&logoColor=white)
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
 ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 
 **基于 GitOps 理念的全球分布式服务器自动化运维平台**
 
@@ -66,7 +68,9 @@ AnixOps-ansible/
 │       └── dashboards/       # Grafana 仪表盘
 │
 ├── tools/
-│   └── ssh_key_manager.py    # SSH 密钥管理工具
+│   ├── ssh_key_manager.py    # SSH 密钥管理工具
+│   ├── secrets_uploader.py   # 🆕 GitHub Secrets 批量上传工具
+│   └── cloudflare_manager.py # Cloudflare DNS 管理工具
 │
 ├── ansible.cfg                # Ansible 配置
 ├── requirements.txt           # Python 依赖
@@ -172,17 +176,48 @@ python tools/ssh_key_manager.py \
 
 ### 4. 配置 GitHub Secrets（可选，用于 CI/CD）
 
-如果使用 GitHub Actions 自动部署，在仓库设置中配置：
+如果使用 GitHub Actions 自动部署，需要配置 GitHub Secrets。
+
+#### 🆕 方式一：批量上传工具（推荐）
+
+使用新增的 `secrets_uploader.py` 工具，一键从 `.env` 批量上传所有 Secrets：
+
+```bash
+# 交互式模式
+python tools/secrets_uploader.py
+
+# 或命令行模式
+python tools/secrets_uploader.py \
+  --repo AnixOps/AnixOps-ansible \
+  --token ghp_your_token_here \
+  --yes
+```
+
+**功能特性**：
+- ✅ 一次性上传所有环境变量
+- ✅ 自动加密安全传输
+- ✅ 支持过滤和排除变量
+- ✅ 实时进度显示
+- ✅ 详细错误提示
+
+详细使用说明：[Secrets Uploader 文档](tools/README_SECRETS_UPLOADER.md)
+
+#### 方式二：手动配置（传统方式）
+
+在仓库 Settings → Secrets → Actions 中手动配置：
 
 | Secret 名称 | 说明 | 示例 |
 |------------|------|------|
 | `SSH_PRIVATE_KEY` | SSH 私钥 | 通过 ssh_key_manager.py 上传 |
 | `ANSIBLE_USER` | SSH 用户名 | `root` 或 `ubuntu` |
+| `ANSIBLE_PORT` | SSH 端口 | `22` |
 | `US_W_1_V4` | 美西服务器1 IPv4 | `203.0.113.10/31` |
 | `US_W_1_V6` | 美西服务器1 IPv6 | `2001:db8::1/127` |
-| （其他服务器 IP 变量） | 参考 .env.example | |
+| （其他变量） | 参考 `.env.example` | |
 | `PROMETHEUS_URL` | Prometheus 地址（可选） | `http://prometheus.example.com:9090` |
 | `LOKI_URL` | Loki 地址（可选） | `http://loki.example.com:3100` |
+
+完整的 Secrets 配置参考：[GitHub Secrets 配置指南](docs/GITHUB_SECRETS_REFERENCE.md)
 
 ### 5. 测试连接
 
@@ -310,12 +345,14 @@ git push origin hotfix/critical-fix
 
 - 📖 **[快速开始指南](docs/QUICKSTART.md)** - 5 分钟快速部署
 - 🔧 **[GitHub Actions 配置](docs/GITHUB_ACTIONS_SETUP.md)** - CI/CD 自动部署设置
-- 📊 **[可观测性部署指南](docs/OBSERVABILITY_SETUP.md)** - Prometheus + Loki + Grafana 完整部署
+- � **[GitHub Secrets 配置参考](docs/GITHUB_SECRETS_REFERENCE.md)** - 完整的环境变量和 Secrets 配置指南
+- �📊 **[可观测性部署指南](docs/OBSERVABILITY_SETUP.md)** - Prometheus + Loki + Grafana 完整部署
 - 🏷️ **[服务器别名管理](docs/SERVER_ALIASES.md)** - 统一管理服务器标签和别名
 - 📝 **[使用示例](docs/EXAMPLES.md)** - 10 个实际场景示例
 - 🔐 **[SSH 密钥管理方案](docs/SSH_KEY_MANAGEMENT.md)** - 多机器私钥管理完整方案
 - 🖥️ **[多机器操作指南](docs/MULTI_MACHINE_SETUP.md)** - Linux/Mac 多平台配置
 - 📋 **[项目总结](docs/PROJECT_SUMMARY.md)** - 完整功能清单
+- 🚀 **[版本发布指南](docs/RELEASE_GUIDE.md)** - 版本发布流程和检查清单
 - 📜 **[更新日志](CHANGELOG.md)** - 版本历史
 
 ### 命令参考

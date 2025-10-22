@@ -2,9 +2,9 @@ name: Ansible Lint
 
 on:
   pull_request:
-    branches: [ main, staging ]
+    branches: [ main, staging, deploy ]
   push:
-    branches: [ main, staging ]
+    branches: [ main, staging, deploy ]
 
 jobs:
   lint:
@@ -19,10 +19,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
           pip install ansible ansible-lint yamllint
 
       - name: Run yamllint
@@ -35,10 +37,21 @@ jobs:
           ansible-lint --force-color playbooks/*.yml roles/*/tasks/*.yml
         continue-on-error: true
 
-      - name: Syntax check
+      - name: Syntax check all playbooks
         run: |
           ansible-playbook --syntax-check playbooks/site.yml
+          ansible-playbook --syntax-check playbooks/quick-setup.yml
+          ansible-playbook --syntax-check playbooks/web-servers.yml
+          ansible-playbook --syntax-check playbooks/health-check.yml
+          ansible-playbook --syntax-check playbooks/firewall-setup.yml
+          ansible-playbook --syntax-check playbooks/observability.yml
 
-      - name: Display lint results
+      - name: Lint Summary
+        if: always()
         run: |
-          echo "✓ Ansible code lint completed"
+          echo "════════════════════════════════════════════"
+          echo "✓ Ansible Code Lint Completed"
+          echo "════════════════════════════════════════════"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "════════════════════════════════════════════"

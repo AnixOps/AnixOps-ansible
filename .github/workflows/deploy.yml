@@ -72,14 +72,50 @@ jobs:
       - name: Run Ansible Playbook
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          # Server IP Configuration
           DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          US_W_1_V4: ${{ secrets.US_W_1_V4 }}
+          US_W_1_V6: ${{ secrets.US_W_1_V6 }}
+          US_W_2_V4: ${{ secrets.US_W_2_V4 }}
+          US_W_2_V6: ${{ secrets.US_W_2_V6 }}
+          US_W_2_SSH_IP: ${{ secrets.US_W_2_SSH_IP }}
+          US_E_1_V4: ${{ secrets.US_E_1_V4 }}
+          US_E_1_V6: ${{ secrets.US_E_1_V6 }}
+          JP_1_V4: ${{ secrets.JP_1_V4 }}
+          JP_1_V6: ${{ secrets.JP_1_V6 }}
+          JP_1_SSH_IP: ${{ secrets.JP_1_SSH_IP }}
+          EU_1_V4: ${{ secrets.EU_1_V4 }}
+          EU_1_V6: ${{ secrets.EU_1_V6 }}
+          # Ansible Connection Configuration
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
           SSH_KEY_PATH: ~/.ssh/id_rsa
+          # Observability Configuration
           PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
           LOKI_URL: ${{ secrets.LOKI_URL }}
           GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          # SSL/TLS Configuration
+          OBSERVABILITY_SSL_ENABLED: ${{ secrets.OBSERVABILITY_SSL_ENABLED }}
+          OBSERVABILITY_SSL_METHOD: ${{ secrets.OBSERVABILITY_SSL_METHOD }}
+          GRAFANA_DOMAIN: ${{ secrets.GRAFANA_DOMAIN }}
+          PROMETHEUS_DOMAIN: ${{ secrets.PROMETHEUS_DOMAIN }}
+          LOKI_DOMAIN: ${{ secrets.LOKI_DOMAIN }}
+          SSL_CERTIFICATE_PEM: ${{ secrets.SSL_CERTIFICATE_PEM }}
+          SSL_CERTIFICATE_KEY_PEM: ${{ secrets.SSL_CERTIFICATE_KEY_PEM }}
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
+          ACME_CA_SERVER: ${{ secrets.ACME_CA_SERVER }}
+          # Cloudflare Configuration
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_BASE_DOMAIN: ${{ secrets.CLOUDFLARE_BASE_DOMAIN }}
+          # Grafana Authentication
+          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          # Firewall Whitelist Configuration
+          FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
         run: |
           ansible-playbook -i inventory/hosts.yml playbooks/site.yml \
             --limit ${{ github.event.inputs.target || 'all' }} \
