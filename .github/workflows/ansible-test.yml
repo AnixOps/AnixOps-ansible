@@ -2,6 +2,10 @@ name: Ansible Connection Test
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   schedule:
     # Run daily at 00:00 UTC to verify connectivity
     - cron: '0 0 * * *'
