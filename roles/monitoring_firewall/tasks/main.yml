@@ -2,6 +2,13 @@
 # Monitoring Firewall Role
 # 管理监控服务的防火墙规则和白名单
 
+# ====================
+# 合并组特定的额外端口
+# ====================
+- name: Merge additional ports if defined
+  set_fact:
+    merged_public_ports: "{{ firewall_public_ports + (proxy_additional_ports | default([])) }}"
+
 - name: Ensure UFW is installed (Debian/Ubuntu)
   apt:
     name: ufw
@@ -23,7 +30,7 @@
     rule: allow
     port: "{{ item }}"
     proto: tcp
-  loop: "{{ firewall_public_ports }}"
+  loop: "{{ merged_public_ports }}"
   when: 
     - ansible_os_family == "Debian"
     - firewall_enabled
@@ -34,7 +41,7 @@
     permanent: yes
     state: enabled
     immediate: yes
-  loop: "{{ firewall_public_ports }}"
+  loop: "{{ merged_public_ports }}"
   when: 
     - ansible_os_family == "RedHat"
     - firewall_enabled

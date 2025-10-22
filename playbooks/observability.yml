@@ -8,6 +8,9 @@
   become: yes
   gather_facts: yes
 
+  vars_files:
+    - ../inventory/server_aliases.yml
+
   vars:
     # SSL/TLS 配置
     observability_ssl_enabled: "{{ lookup('env', 'OBSERVABILITY_SSL_ENABLED') | default('false') | bool }}"

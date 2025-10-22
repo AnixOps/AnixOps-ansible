@@ -1,0 +1,83 @@
+---
+# Server Aliases Configuration
+# 服务器别名配置文件 - 用于统一管理服务器的显示名称
+# 
+# 当服务器别名发生变化时，运行 update-observability-labels 会自动更新：
+# - Prometheus 配置中的 job labels
+# - Grafana dashboards 中的 instance labels
+# - Loki 配置中的 server labels
+#
+# 使用方法：
+#   1. 修改此文件中的别名
+#   2. 运行: ansible-playbook playbooks/update-observability-labels.yml
+#
+# 格式：
+#   server_aliases:
+#     <inventory_hostname>:
+#       alias: "显示名称"
+#       description: "服务器描述"
+#       location: "物理位置/区域"
+#       environment: "环境标签 (prod/staging/dev)"
+
+server_aliases:
+  # Web 服务器
+  de-1:
+    alias: "德国-测试-1"
+    description: "德国 Web 服务器 - 测试环境 - NubeCloud"
+    location: "Germany"
+    environment: "test"
+    
+  # Observability 服务器
+  pl-1:
+    alias: "波兰-1"
+    description: "波兰 Observability 服务器 - PLG Stack - OVH"
+    location: "Poland"
+    environment: "production"
+
+  sg-1:
+    alias: "新加坡-1"
+    description: "新加坡 Proxy 服务器 - PLG Stack - Aliyun"
+    location: "Singapore"
+    environment: "production"
+
+  jp-1:
+    alias: "日本-1"
+    description: "日本 web 服务器 - 测试环境 - Oracle"
+    location: "Japan"
+    environment: "test"
+
+  jp-2:
+    alias: "日本-2"
+    description: "日本 Proxy 服务器 - PLG Stack - Churros"
+    location: "Japan"
+    environment: "production"
+    
+  hk-1:
+    alias: "香港-1"
+    description: "香港 Proxy 服务器 - PLG Stack - Zouter"
+    location: "Hong Kong"
+    environment: "production"
+
+  uk-1:
+    alias: "英国-1"
+    description: "英国 web 服务器 - 测试环境 - Oracle"
+    location: "United Kingdom"
+    environment: "test"
+
+  uk-2:
+    alias: "英国-2"
+    description: "英国 Proxy 服务器 - PLG Stack - Akko"
+    location: "United Kingdom"
+    environment: "production"
+
+  fr-1:
+    alias: "法国-1"
+    description: "法国 Development 服务器 - DEV - OVH"
+    location: "France"
+    environment: "development"
+
+  us-w-1:
+    alias: "美国西-1"
+    description: "美国西 Web 服务器 - PLG Stack - Oracle"
+    location: "United States"
+    environment: "production"

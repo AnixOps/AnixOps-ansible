@@ -1,0 +1,180 @@
+---
+# Update Observability Labels Playbook
+# 当服务器别名变化时，自动更新所有 Observability 配置
+#
+# 功能：
+# - 重新生成 Prometheus 配置（带新的 labels）
+# - 更新 Grafana datasources 配置
+# - 重启相关服务使配置生效
+#
+# 使用方法：
+#   ansible-playbook -i inventory/hosts.yml playbooks/update-observability-labels.yml
+
+- name: Load server aliases configuration
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Load server aliases from file
+      include_vars:
+        file: ../inventory/server_aliases.yml
+        name: server_aliases_config
+      
+    - name: Display loaded aliases
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          Loaded Server Aliases
+          ═══════════════════════════════════════════════════════════
+          {% for host, config in server_aliases_config.server_aliases.items() %}
+          {{ host }}:
+            Alias: {{ config.alias }}
+            Location: {{ config.location }}
+            Environment: {{ config.environment }}
+            Description: {{ config.description }}
+          {% endfor %}
+          ═══════════════════════════════════════════════════════════
+
+- name: Update Prometheus configuration with new labels
+  hosts: observability
+  become: yes
+  gather_facts: yes
+  
+  vars_files:
+    - ../inventory/server_aliases.yml
+  
+  tasks:
+    - name: Update Prometheus configuration
+      template:
+        src: ../roles/prometheus_server/templates/prometheus.yml.j2
+        dest: /etc/prometheus/prometheus.yml
+        owner: prometheus
+        group: prometheus
+        mode: '0644'
+        backup: yes
+      register: prometheus_config_changed
+      tags: [prometheus]
+    
+    - name: Validate Prometheus configuration
+      command: /usr/local/bin/promtool check config /etc/prometheus/prometheus.yml
+      register: promtool_check
+      changed_when: false
+      failed_when: promtool_check.rc != 0
+      tags: [prometheus]
+    
+    - name: Display Prometheus validation result
+      debug:
+        msg: "✓ Prometheus configuration is valid"
+      when: promtool_check.rc == 0
+      tags: [prometheus]
+    
+    - name: Check if Prometheus data directory exists
+      stat:
+        path: /var/lib/prometheus
+      register: prometheus_data_dir
+      tags: [prometheus]
+    
+    - name: Stop Prometheus service before cleaning data
+      systemd:
+        name: prometheus
+        state: stopped
+      when: prometheus_data_dir.stat.exists
+      tags: [prometheus]
+    
+    - name: Clean old Prometheus data to remove duplicate time series
+      shell: |
+        rm -rf /var/lib/prometheus/*
+        mkdir -p /var/lib/prometheus
+        chown -R prometheus:prometheus /var/lib/prometheus
+      when: prometheus_data_dir.stat.exists
+      tags: [prometheus]
+    
+    - name: Start Prometheus service with clean data
+      systemd:
+        name: prometheus
+        state: started
+      when: prometheus_data_dir.stat.exists
+      tags: [prometheus]
+    
+    - name: Update Grafana datasource configurations
+      template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: grafana
+        group: grafana
+        mode: '0644'
+      loop:
+        - src: ../roles/grafana_server/templates/datasource-prometheus.yml.j2
+          dest: /etc/grafana/provisioning/datasources/prometheus.yml
+        - src: ../roles/grafana_server/templates/datasource-loki.yml.j2
+          dest: /etc/grafana/provisioning/datasources/loki.yml
+      notify: restart grafana
+      tags: [grafana]
+    
+    - name: Update Loki configuration
+      template:
+        src: ../roles/loki_server/templates/loki-config.yml.j2
+        dest: /etc/loki/loki-config.yml
+        owner: loki
+        group: loki
+        mode: '0644'
+        backup: yes
+      notify: restart loki
+      tags: [loki]
+
+  handlers:
+    - name: restart prometheus
+      systemd:
+        name: prometheus
+        state: restarted
+        daemon_reload: yes
+    
+    - name: restart grafana
+      systemd:
+        name: grafana-server
+        state: restarted
+    
+    - name: restart loki
+      systemd:
+        name: loki
+        state: restarted
+
+  post_tasks:
+    - name: Wait for Prometheus to be ready
+      uri:
+        url: "http://localhost:9090/-/ready"
+        method: GET
+        status_code: 200
+      register: prometheus_ready
+      until: prometheus_ready.status == 200
+      retries: 10
+      delay: 3
+      tags: [prometheus]
+    
+    - name: Wait for Grafana to be ready
+      uri:
+        url: "http://localhost:3000/api/health"
+        method: GET
+        status_code: 200
+      register: grafana_ready
+      until: grafana_ready.status == 200
+      retries: 10
+      delay: 3
+      tags: [grafana]
+    
+    - name: Display update summary
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          ✓ Observability Labels Updated Successfully
+          ═══════════════════════════════════════════════════════════
+          Updated Components:
+          ✓ Prometheus configuration with new server labels
+          ✓ Grafana datasources configuration
+          ✓ Loki configuration
+          ✓ All services restarted and validated
+          
+          Access URLs:
+          - Prometheus: http://{{ ansible_host }}:9090
+          - Grafana: http://{{ ansible_host }}:3000
+          - Loki: http://{{ ansible_host }}:3100
+          ═══════════════════════════════════════════════════════════

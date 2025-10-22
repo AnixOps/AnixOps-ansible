@@ -110,6 +110,7 @@ Commands:
   health-check    ansible-playbook -i inventory/hosts.yml playbooks/health-check.yml
   web-servers     ansible-playbook -i inventory/hosts.yml playbooks/web-servers.yml
   observability   ansible-playbook -i inventory/hosts.yml playbooks/observability.yml
+  update-labels   ansible-playbook -i inventory/hosts.yml playbooks/update-observability-labels.yml
   cf-setup        Setup Cloudflare DNS records from .env
   cf-proxy-on     Enable Cloudflare proxy (小黄云) for domain
   cf-proxy-off    Disable Cloudflare proxy for domain
@@ -117,6 +118,7 @@ Commands:
 
 Tips:
 - Configure your inventory in inventory/hosts.yml
+- Update server aliases in inventory/server_aliases.yml
 - Ensure your SSH key path is set in inventory vars if needed
 EOF
 }
@@ -183,6 +185,11 @@ case "$cmd" in
     ensure_venv_ready
     need_cmd ansible-playbook
     ansible-playbook -i "$INVENTORY" playbooks/observability.yml "$@"
+    ;;
+  update-labels)
+    ensure_venv_ready
+    need_cmd ansible-playbook
+    ansible-playbook -i "$INVENTORY" playbooks/update-observability-labels.yml "$@"
     ;;
   cf-setup)
     ensure_venv_ready

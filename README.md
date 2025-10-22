@@ -310,8 +310,9 @@ git push origin hotfix/critical-fix
 
 - 📖 **[快速开始指南](docs/QUICKSTART.md)** - 5 分钟快速部署
 - 🔧 **[GitHub Actions 配置](docs/GITHUB_ACTIONS_SETUP.md)** - CI/CD 自动部署设置
-- � **[可观测性部署指南](docs/OBSERVABILITY_SETUP.md)** - Prometheus + Loki + Grafana 完整部署
-- �📝 **[使用示例](docs/EXAMPLES.md)** - 10 个实际场景示例
+- 📊 **[可观测性部署指南](docs/OBSERVABILITY_SETUP.md)** - Prometheus + Loki + Grafana 完整部署
+- 🏷️ **[服务器别名管理](docs/SERVER_ALIASES.md)** - 统一管理服务器标签和别名
+- 📝 **[使用示例](docs/EXAMPLES.md)** - 10 个实际场景示例
 - 🔐 **[SSH 密钥管理方案](docs/SSH_KEY_MANAGEMENT.md)** - 多机器私钥管理完整方案
 - 🖥️ **[多机器操作指南](docs/MULTI_MACHINE_SETUP.md)** - Linux/Mac 多平台配置
 - 📋 **[项目总结](docs/PROJECT_SUMMARY.md)** - 完整功能清单
