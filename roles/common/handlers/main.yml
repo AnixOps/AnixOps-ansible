@@ -5,17 +5,17 @@
 # Define handlers for service restart and reload operations
 # =============================================================================
 
-- name: restart sshd | 重启 SSH 服务
+- name: restart sshd
   service:
     name: sshd
     state: restarted
 
-- name: restart chrony | 重启 Chrony 时间同步服务
+- name: restart chrony
   service:
-    name: chrony
+    name: "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'chrony' }}"
     state: restarted
 
-- name: restart fail2ban | 重启 Fail2Ban 防护服务
+- name: restart fail2ban
   service:
     name: fail2ban
     state: restarted

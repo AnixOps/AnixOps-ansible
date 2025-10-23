@@ -48,7 +48,7 @@ ntp_servers:
 # -----------------------------------------------------------------------------
 ssh_port: 22
 ssh_allow_root: true  # 生产环境建议设为 false | Recommended to set to false in production
-ssh_password_authentication: false
+ssh_password_authentication: true
 ssh_pubkey_authentication: true
 
 # -----------------------------------------------------------------------------
