@@ -1,0 +1,468 @@
+---
+# =============================================================================
+# Cloudflare Tunnel - 本地 Kubernetes 部署 (开发环境)
+# Cloudflare Tunnel - Local Kubernetes Deployment (Development)
+# =============================================================================
+# 用于本地开发和测试，使用本地的 Kubernetes 集群
+# For local development and testing, using local Kubernetes cluster
+#
+# 支持的本地 K8s 环境 | Supported local K8s environments:
+#   - Minikube
+#   - kind (Kubernetes in Docker)
+#   - Docker Desktop Kubernetes
+#   - K3s/K3d
+#   - MicroK8s
+#
+# 前置要求 | Prerequisites:
+#   1. 本地已安装并运行 Kubernetes 集群
+#   2. kubectl 已配置好 (~/.kube/config)
+#   3. Helm 3.x 已安装
+#   4. 已获取 Cloudflare Tunnel Token
+#
+# 使用方法 | Usage:
+#   ansible-playbook playbooks/cloudflared_k8s_local.yml \
+#     --extra-vars "cloudflare_tunnel_token=eyJhIjoiY2FmZS0xMjM0..."
+#
+#   或使用环境变量 | Or use environment variable:
+#   export CLOUDFLARE_TUNNEL_TOKEN="eyJhIjoiY2FmZS0xMjM0..."
+#   ansible-playbook playbooks/cloudflared_k8s_local.yml
+# =============================================================================
+
+- name: "🚀 Deploy Cloudflare Tunnel on Local Kubernetes (Development)"
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  
+  environment:
+    PATH: "/usr/local/bin:/usr/bin:/bin:{{ ansible_env.PATH }}"
+    KUBECONFIG: "{{ kubeconfig_path | default('~/.kube/config') }}"
+  
+  vars:
+    # -------------------------------------------------------------------------
+    # 部署模式标识 | Deployment Mode
+    # -------------------------------------------------------------------------
+    deployment_mode: "local"
+    deployment_environment: "development"
+    
+    # -------------------------------------------------------------------------
+    # Cloudflare Tunnel 配置 | Cloudflare Tunnel Configuration
+    # -------------------------------------------------------------------------
+    # Tunnel Token（从环境变量或命令行参数读取）
+    cloudflare_tunnel_token: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') | default('', true) }}"
+    
+    # -------------------------------------------------------------------------
+    # Kubernetes 配置 | Kubernetes Configuration
+    # -------------------------------------------------------------------------
+    # 本地 kubeconfig 路径
+    kubeconfig_path: "{{ lookup('env', 'KUBECONFIG') | default('~/.kube/config', true) }}"
+    
+    # Namespace
+    k8s_namespace: "cloudflare-tunnel"
+    
+    # Helm Release 名称
+    helm_release_name: "cloudflared"
+    
+    # Helm Chart 配置
+    helm_chart_repo: "https://cloudflare.github.io/helm-charts"
+    helm_chart_name: "cloudflare/cloudflared"
+    helm_chart_version: ""  # 留空使用最新版本 | Leave empty for latest
+    
+    # -------------------------------------------------------------------------
+    # 本地开发环境资源配置 | Local Development Resource Configuration
+    # -------------------------------------------------------------------------
+    # 本地环境通常资源有限，使用较小的资源配额
+    replica_count: 1  # 本地只需要 1 个副本
+    
+    resources:
+      requests:
+        cpu: "50m"      # 本地环境降低 CPU 请求
+        memory: "64Mi"  # 本地环境降低内存请求
+      limits:
+        cpu: "200m"     # 本地环境降低 CPU 限制
+        memory: "256Mi" # 本地环境降低内存限制
+    
+    # -------------------------------------------------------------------------
+    # 调试和日志配置 | Debug and Logging Configuration
+    # -------------------------------------------------------------------------
+    log_level: "debug"  # 本地环境使用 debug 级别
+    enable_metrics: true
+    metrics_port: 2000
+    
+  # ===========================================================================
+  # 任务列表 | Tasks
+  # ===========================================================================
+  tasks:
+    # -------------------------------------------------------------------------
+    # 1. 环境检测和验证 | Environment Detection and Validation
+    # -------------------------------------------------------------------------
+    - name: "📋 Display deployment information"
+      ansible.builtin.debug:
+        msg:
+          - "==========================================​=============================="
+          - "🚀 Cloudflare Tunnel - 本地 Kubernetes 部署 (开发环境)"
+          - "🚀 Cloudflare Tunnel - Local Kubernetes Deployment (Development)"
+          - "========================================​================================"
+          - "📦 部署模式 | Mode: {{ deployment_mode }}"
+          - "🌍 环境 | Environment: {{ deployment_environment }}"
+          - "📁 Namespace: {{ k8s_namespace }}"
+          - "📦 Release Name: {{ helm_release_name }}"
+          - "🔄 Replica Count: {{ replica_count }}"
+          - "📊 Resources: CPU {{ resources.requests.cpu }}-{{ resources.limits.cpu }}, Memory {{ resources.requests.memory }}-{{ resources.limits.memory }}"
+          - "========================================​================================"
+      tags:
+        - always
+
+    - name: "🔍 Check Python interpreter"
+      ansible.builtin.command: which python3
+      register: python_check
+      changed_when: false
+      tags:
+        - validation
+
+    - name: "🐍 Detect if running in virtualenv"
+      ansible.builtin.set_fact:
+        is_virtualenv: "{{ ansible_env.VIRTUAL_ENV is defined }}"
+        virtualenv_path: "{{ ansible_env.VIRTUAL_ENV | default('Not in virtualenv') }}"
+      tags:
+        - validation
+
+    - name: "ℹ️  Display Python environment info"
+      ansible.builtin.debug:
+        msg:
+          - "Python interpreter: {{ python_check.stdout }}"
+          - "Virtual environment: {{ 'Yes' if is_virtualenv else 'No' }}"
+          - "Virtualenv path: {{ virtualenv_path }}"
+      tags:
+        - validation
+
+    - name: "📦 Check if kubernetes Python library is available"
+      ansible.builtin.command: "{{ ansible_python_interpreter | default('python3') }} -c 'import kubernetes'"
+      register: k8s_lib_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+    - name: "⚠️  Install Python dependencies if needed"
+      ansible.builtin.pip:
+        name:
+          - kubernetes
+          - openshift
+          - pyyaml
+        state: present
+        executable: "{{ 'pip3' if not is_virtualenv else omit }}"
+      when: k8s_lib_check.rc != 0
+      tags:
+        - validation
+
+    - name: "✅ Validate that cloudflare_tunnel_token is provided"
+      ansible.builtin.assert:
+        that:
+          - cloudflare_tunnel_token is defined
+          - cloudflare_tunnel_token != ""
+          - cloudflare_tunnel_token | length > 20
+        fail_msg: |
+          ❌ Cloudflare Tunnel Token 未提供或无效！
+          ❌ Cloudflare Tunnel Token is not provided or invalid!
+          
+          请通过以下方式之一提供 Token:
+          Please provide the token using one of the following methods:
+          
+          1. 环境变量 | Environment variable:
+             export CLOUDFLARE_TUNNEL_TOKEN="eyJhIjoiY2FmZS0xMjM0..."
+          
+          2. 命令行参数 | Command line parameter:
+             ansible-playbook playbooks/cloudflared_k8s_local.yml \
+               --extra-vars "cloudflare_tunnel_token=eyJhIjoiY2FmZS0xMjM0..."
+          
+          获取 Token | Get Token:
+          https://one.dash.cloudflare.com/ → Access → Tunnels
+        success_msg: "✅ cloudflare_tunnel_token is set and valid"
+      tags:
+        - validation
+
+    - name: "🔍 Check if kubectl is installed"
+      ansible.builtin.command: kubectl version --client --short
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+    - name: "❌ Fail if kubectl is not installed"
+      ansible.builtin.fail:
+        msg: |
+          ❌ kubectl is not installed or not in PATH.
+          
+          请安装 kubectl | Please install kubectl:
+          https://kubernetes.io/docs/tasks/tools/
+      when: kubectl_check.rc != 0
+      tags:
+        - validation
+
+    - name: "🔍 Check if Helm is installed"
+      ansible.builtin.command: helm version --short
+      register: helm_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+    - name: "❌ Fail if Helm is not installed"
+      ansible.builtin.fail:
+        msg: |
+          ❌ Helm is not installed. Please install Helm first.
+          
+          Installation instructions:
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      when: helm_check.rc != 0
+      tags:
+        - validation
+
+    - name: "🔍 Check local Kubernetes cluster connectivity"
+      ansible.builtin.command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+    - name: "❌ Fail if cannot connect to local Kubernetes cluster"
+      ansible.builtin.fail:
+        msg: |
+          ❌ 无法连接到本地 Kubernetes 集群！
+          ❌ Cannot connect to local Kubernetes cluster!
+          
+          请确保以下之一正在运行 | Please ensure one of the following is running:
+            - Minikube: minikube start
+            - kind: kind create cluster
+            - Docker Desktop: Enable Kubernetes in settings
+            - K3s/K3d: k3d cluster create
+            - MicroK8s: microk8s start
+          
+          然后检查 kubectl 配置 | Then check kubectl configuration:
+            kubectl config get-contexts
+            kubectl config use-context <your-context>
+      when: cluster_info.rc != 0
+      tags:
+        - validation
+
+    - name: "✅ Display cluster information"
+      ansible.builtin.debug:
+        msg: "{{ cluster_info.stdout_lines }}"
+      when: cluster_info.rc == 0
+      tags:
+        - validation
+
+    - name: "🔍 Detect local Kubernetes environment type"
+      ansible.builtin.shell: |
+        if kubectl config current-context | grep -q minikube; then
+          echo "minikube"
+        elif kubectl config current-context | grep -q kind; then
+          echo "kind"
+        elif kubectl config current-context | grep -q docker-desktop; then
+          echo "docker-desktop"
+        elif kubectl config current-context | grep -q k3; then
+          echo "k3s"
+        elif kubectl config current-context | grep -q microk8s; then
+          echo "microk8s"
+        else
+          echo "unknown"
+        fi
+      register: k8s_env_type
+      changed_when: false
+      tags:
+        - validation
+
+    - name: "ℹ️  Display detected Kubernetes environment"
+      ansible.builtin.debug:
+        msg: "检测到的本地 K8s 环境 | Detected local K8s environment: {{ k8s_env_type.stdout }}"
+      tags:
+        - validation
+
+    # -------------------------------------------------------------------------
+    # 2. 准备 Kubernetes 环境 | Prepare Kubernetes Environment
+    # -------------------------------------------------------------------------
+    - name: "📦 Ensure cloudflare-tunnel namespace exists"
+      kubernetes.core.k8s:
+        name: "{{ k8s_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+      tags:
+        - prepare
+
+    - name: "🔑 Create Kubernetes Secret for Tunnel Token"
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: cloudflared-token
+            namespace: "{{ k8s_namespace }}"
+          type: Opaque
+          stringData:
+            token: "{{ cloudflare_tunnel_token }}"
+      tags:
+        - prepare
+        - secret
+
+    # -------------------------------------------------------------------------
+    # 3. 添加和更新 Helm Repository | Add and Update Helm Repository
+    # -------------------------------------------------------------------------
+    - name: "📦 Add Cloudflare Helm repository"
+      kubernetes.core.helm_repository:
+        name: cloudflare
+        repo_url: "{{ helm_chart_repo }}"
+        state: present
+      tags:
+        - helm
+
+    - name: "🔄 Update Helm repositories"
+      ansible.builtin.command: helm repo update
+      changed_when: false
+      tags:
+        - helm
+
+    # -------------------------------------------------------------------------
+    # 4. 部署 Cloudflare Tunnel | Deploy Cloudflare Tunnel
+    # -------------------------------------------------------------------------
+    - name: "🚀 Deploy Cloudflared using Helm"
+      kubernetes.core.helm:
+        name: "{{ helm_release_name }}"
+        chart_ref: "{{ helm_chart_name }}"
+        chart_version: "{{ helm_chart_version if helm_chart_version else omit }}"
+        release_namespace: "{{ k8s_namespace }}"
+        create_namespace: false
+        update_repo_cache: true
+        values:
+          # 副本数量
+          replicaCount: "{{ replica_count }}"
+          
+          # 镜像配置
+          image:
+            repository: cloudflare/cloudflared
+            pullPolicy: IfNotPresent
+          
+          # Tunnel Token 配置
+          cloudflare:
+            tunnelToken: "{{ cloudflare_tunnel_token }}"
+          
+          # 资源限制（本地开发环境）
+          resources: "{{ resources }}"
+          
+          # 日志和调试
+          extraArgs:
+            - --loglevel
+            - "{{ log_level }}"
+            - --metrics
+            - "0.0.0.0:{{ metrics_port }}"
+          
+          # Pod 注解（用于 Prometheus 抓取指标）
+          podAnnotations:
+            prometheus.io/scrape: "{{ 'true' if enable_metrics else 'false' }}"
+            prometheus.io/port: "{{ metrics_port }}"
+            prometheus.io/path: "/metrics"
+            deployment.mode: "{{ deployment_mode }}"
+            deployment.environment: "{{ deployment_environment }}"
+          
+          # 节点选择器（本地环境通常不需要）
+          nodeSelector: {}
+          
+          # 容忍度
+          tolerations: []
+          
+          # 亲和性
+          affinity: {}
+      tags:
+        - deploy
+
+    # -------------------------------------------------------------------------
+    # 5. 验证部署 | Verify Deployment
+    # -------------------------------------------------------------------------
+    - name: "⏳ Wait for Cloudflared pods to be ready"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - "app.kubernetes.io/name=cloudflared"
+      register: pod_list
+      until: >
+        pod_list.resources | length > 0 and
+        pod_list.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == replica_count
+      retries: 30
+      delay: 10
+      tags:
+        - verify
+
+    - name: "✅ Get deployment status"
+      ansible.builtin.command: kubectl get all -n {{ k8s_namespace }}
+      register: deployment_status
+      changed_when: false
+      tags:
+        - verify
+
+    - name: "📊 Display deployment status"
+      ansible.builtin.debug:
+        msg: "{{ deployment_status.stdout_lines }}"
+      tags:
+        - verify
+
+    - name: "📋 Get pod logs (last 20 lines)"
+      ansible.builtin.shell: |
+        kubectl logs -n {{ k8s_namespace }} \
+          -l app.kubernetes.io/name=cloudflared \
+          --tail=20 \
+          --all-containers=true
+      register: pod_logs
+      changed_when: false
+      failed_when: false
+      tags:
+        - verify
+        - logs
+
+    - name: "📝 Display pod logs"
+      ansible.builtin.debug:
+        msg: "{{ pod_logs.stdout_lines }}"
+      when: pod_logs.rc == 0
+      tags:
+        - verify
+        - logs
+
+    # -------------------------------------------------------------------------
+    # 6. 部署成功信息 | Deployment Success Information
+    # -------------------------------------------------------------------------
+    - name: "🎉 Deployment completed successfully!"
+      ansible.builtin.debug:
+        msg:
+          - "========================================​================================"
+          - "🎉 Cloudflare Tunnel 部署成功！| Deployment Successful!"
+          - "========================================​================================"
+          - ""
+          - "📦 Namespace: {{ k8s_namespace }}"
+          - "📦 Release: {{ helm_release_name }}"
+          - "🔄 Replicas: {{ replica_count }}"
+          - "🌍 Environment: {{ deployment_environment }}"
+          - ""
+          - "常用命令 | Common Commands:"
+          - "  查看状态 | Check status:"
+          - "    kubectl get all -n {{ k8s_namespace }}"
+          - ""
+          - "  查看日志 | View logs:"
+          - "    kubectl logs -n {{ k8s_namespace }} -l app.kubernetes.io/name=cloudflared -f"
+          - ""
+          - "  查看详情 | View details:"
+          - "    kubectl describe deployment -n {{ k8s_namespace }} {{ helm_release_name }}"
+          - ""
+          - "  删除部署 | Delete deployment:"
+          - "    helm uninstall {{ helm_release_name }} -n {{ k8s_namespace }}"
+          - ""
+          - "  访问 Metrics | Access Metrics:"
+          - "    kubectl port-forward -n {{ k8s_namespace }} deployment/{{ helm_release_name }} {{ metrics_port }}:{{ metrics_port }}"
+          - "    然后访问 | Then visit: http://localhost:{{ metrics_port }}/metrics"
+          - ""
+          - "========================================​================================"
+      tags:
+        - always

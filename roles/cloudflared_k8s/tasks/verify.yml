@@ -1,0 +1,54 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Verification Tasks
+# =============================================================================
+
+- name: Wait for cloudflared pods to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ k8s_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=cloudflared
+    wait: yes
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  register: pod_info
+
+- name: Display deployment status
+  ansible.builtin.debug:
+    msg:
+      - "✅ Cloudflare Tunnel deployed successfully!"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "📦 Namespace: {{ k8s_namespace }}"
+      - "🚀 Release: {{ k8s_release_name }}"
+      - "🔄 Replicas: {{ replica_count }}"
+      - "📊 Ready Pods: {{ pod_info.resources | length }}"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - ""
+      - "🔍 Verify deployment:"
+      - "   kubectl get pods -n {{ k8s_namespace }}"
+      - "   kubectl logs -n {{ k8s_namespace }} -l app.kubernetes.io/name=cloudflared"
+      - ""
+      - "🗑️  Uninstall:"
+      - "   helm uninstall {{ k8s_release_name }} -n {{ k8s_namespace }}"
+      - "   kubectl delete namespace {{ k8s_namespace }}"
+
+- name: Get pod details
+  ansible.builtin.command: >
+    kubectl get pods -n {{ k8s_namespace }} -o wide
+  register: pod_details
+  changed_when: false
+
+- name: Show pod details
+  ansible.builtin.debug:
+    msg: "{{ pod_details.stdout_lines }}"
+
+- name: Check if pods are running
+  ansible.builtin.assert:
+    that:
+      - pod_info.resources | length > 0
+      - pod_info.resources | length == replica_count | int
+    fail_msg: "❌ Not all pods are running! Expected {{ replica_count }}, got {{ pod_info.resources | length }}"
+    success_msg: "✅ All {{ replica_count }} pods are running and ready"

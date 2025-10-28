@@ -24,8 +24,15 @@ help:
 	@echo "  make firewall-setup - 配置防火墙 | Configure firewall and monitoring whitelist"
 	@echo "  make health-check   - 健康检查 | Health check"
 	@echo "  make deploy-web     - 部署 Web 服务器 | Deploy web servers"
+	@echo "  make ssh-test       - 测试 SSH 配置 | Test SSH configuration"
+	@echo "  make ssh-fix        - 强制修复 SSH 配置 | Force fix SSH configuration"
 	@echo "  make list-hosts     - 列出主机 | List configured hosts"
 	@echo "  make clean          - 清理临时文件 | Clean temporary files"
+	@echo ""
+	@echo "🚀 Cloudflare Tunnel (Kubernetes with Helm):"
+	@echo "  make cf-k8s-deploy  - 部署 CF Tunnel 到 K8s (Helm) | Deploy CF Tunnel to K8s"
+	@echo "  make cf-k8s-cleanup - 清理 CF Tunnel K8s 部署 | Cleanup CF Tunnel K8s deployment"
+	@echo "  make cf-k8s-verify  - 验证 CF Tunnel 部署 | Verify CF Tunnel deployment"
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════════"
 
@@ -118,6 +125,25 @@ deploy-web:
 	@echo "✓ Web servers deployed | Web 服务器部署完成"
 
 # -----------------------------------------------------------------------------
+# SSH 配置测试 | SSH Configuration Test
+# -----------------------------------------------------------------------------
+ssh-test:
+	@echo "Testing SSH configuration... | 测试 SSH 配置..."
+	ansible-playbook -i inventory/hosts.yml playbooks/ssh-config-test.yml
+	@echo "✓ SSH configuration test completed | SSH 配置测试完成"
+
+# -----------------------------------------------------------------------------
+# SSH 配置强制修复 | SSH Configuration Force Fix
+# -----------------------------------------------------------------------------
+ssh-fix:
+	@echo "⚠️  WARNING: This will restart SSH service! | 警告：这将重启 SSH 服务！"
+	@echo "Press Ctrl+C within 5 seconds to cancel... | 5 秒内按 Ctrl+C 取消..."
+	@sleep 5
+	@echo "Forcing SSH configuration apply... | 强制应用 SSH 配置..."
+	ansible-playbook -i inventory/hosts.yml playbooks/ssh-config-force-apply.yml
+	@echo "✓ SSH configuration force applied | SSH 配置已强制应用"
+
+# -----------------------------------------------------------------------------
 # 清理临时文件 | Clean Temporary Files
 # -----------------------------------------------------------------------------
 clean:
@@ -144,3 +170,60 @@ show-vars:
 upload-key:
 	@echo "Starting SSH key upload wizard..."
 	python tools/ssh_key_manager.py
+
+# -----------------------------------------------------------------------------
+# Cloudflare Tunnel Kubernetes 部署 (Helm) | CF Tunnel K8s Deployment (Helm)
+# -----------------------------------------------------------------------------
+cf-k8s-deploy:
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "🚀 Deploying Cloudflare Tunnel to Kubernetes (Helm)"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	@if [ -z "$$CLOUDFLARE_TUNNEL_TOKEN" ]; then \
+		echo "❌ Error: CLOUDFLARE_TUNNEL_TOKEN is not set!"; \
+		echo ""; \
+		echo "Please set it first:"; \
+		echo "  export CLOUDFLARE_TUNNEL_TOKEN=\"your-token-here\""; \
+		echo ""; \
+		echo "Or use:"; \
+		echo "  make cf-k8s-deploy CLOUDFLARE_TUNNEL_TOKEN=your-token"; \
+		exit 1; \
+	fi
+	@echo "📦 Token: ✅ (first 10 chars: $${CLOUDFLARE_TUNNEL_TOKEN:0:10}...)"
+	@echo "📝 Starting deployment..."
+	@echo ""
+	ansible-playbook playbooks/cloudflared_k8s_helm.yml
+	@echo ""
+	@echo "✅ Deployment completed!"
+	@echo ""
+	@echo "🔍 Verify:"
+	@echo "  kubectl get pods -n cloudflare-tunnel"
+	@echo "  make cf-k8s-verify"
+
+cf-k8s-cleanup:
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "🗑️  Cleaning up Cloudflare Tunnel Kubernetes deployment"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	@./scripts/cleanup_cloudflared.sh
+
+cf-k8s-verify:
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "🔍 Verifying Cloudflare Tunnel Kubernetes deployment"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "📦 Checking namespace..."
+	@kubectl get namespace cloudflare-tunnel 2>/dev/null || echo "❌ Namespace not found"
+	@echo ""
+	@echo "📦 Checking Helm release..."
+	@helm list -n cloudflare-tunnel
+	@echo ""
+	@echo "📦 Checking pods..."
+	@kubectl get pods -n cloudflare-tunnel -o wide
+	@echo ""
+	@echo "📊 Checking pod status..."
+	@kubectl get pods -n cloudflare-tunnel -o json | jq -r '.items[] | "\(.metadata.name): \(.status.phase)"'
+	@echo ""
+	@echo "📝 Recent logs (last 10 lines)..."
+	@kubectl logs -n cloudflare-tunnel -l app.kubernetes.io/name=cloudflared --tail=10
+

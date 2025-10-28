@@ -1,0 +1,34 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Meta Information
+# =============================================================================
+
+galaxy_info:
+  role_name: cloudflared_k8s
+  author: AnixOps Team
+  description: Deploy Cloudflare Tunnel (cloudflared) on Kubernetes using Helm
+  company: AnixOps
+  
+  license: MIT
+  
+  min_ansible_version: "2.9"
+  
+  platforms:
+    - name: GenericLinux
+      versions:
+        - all
+  
+  galaxy_tags:
+    - cloudflare
+    - tunnel
+    - kubernetes
+    - k8s
+    - helm
+    - networking
+    - security
+    - cloudflared
+
+dependencies: []
+
+collections:
+  - kubernetes.core

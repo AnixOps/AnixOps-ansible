@@ -1,0 +1,73 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Helm Deployment Tasks
+# =============================================================================
+
+- name: Prepare Helm values
+  ansible.builtin.set_fact:
+    helm_values:
+      cloudflare:
+        token: "{{ cloudflare_tunnel_token }}"
+      replicaCount: "{{ replica_count }}"
+      resources: "{{ resources }}"
+      affinity: "{{ pod_affinity if enable_pod_anti_affinity else {} }}"
+      restartPolicy: Always
+      image:
+        repository: "{{ image_repository }}"
+        pullPolicy: "{{ image_pull_policy }}"
+        tag: "{{ image_tag if image_tag else omit }}"
+      logLevel: "{{ log_level }}"
+      livenessProbe:
+        enabled: "{{ liveness_probe.enabled }}"
+        initialDelaySeconds: "{{ liveness_probe.initial_delay_seconds }}"
+        periodSeconds: "{{ liveness_probe.period_seconds }}"
+        timeoutSeconds: "{{ liveness_probe.timeout_seconds }}"
+        failureThreshold: "{{ liveness_probe.failure_threshold }}"
+      readinessProbe:
+        enabled: "{{ readiness_probe.enabled }}"
+        initialDelaySeconds: "{{ readiness_probe.initial_delay_seconds }}"
+        periodSeconds: "{{ readiness_probe.period_seconds }}"
+        timeoutSeconds: "{{ readiness_probe.timeout_seconds }}"
+        failureThreshold: "{{ readiness_probe.failure_threshold }}"
+      podLabels:
+        app: cloudflared
+        managed-by: ansible
+        component: cloudflare-tunnel
+      podAnnotations: "{{ pod_annotations }}"
+  vars:
+    pod_affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - cloudflared
+              topologyKey: kubernetes.io/hostname
+    pod_annotations:
+      prometheus.io/scrape: "{{ prometheus_scrape | string | lower }}"
+      prometheus.io/port: "{{ prometheus_port }}"
+      prometheus.io/path: "{{ prometheus_path }}"
+
+- name: Deploy cloudflared using Helm Chart
+  kubernetes.core.helm:
+    name: "{{ k8s_release_name }}"
+    chart_ref: "{{ helm_chart_name }}"
+    chart_version: "{{ helm_chart_version if helm_chart_version else omit }}"
+    release_namespace: "{{ k8s_namespace }}"
+    create_namespace: false
+    update_repo_cache: true
+    wait: "{{ helm_wait }}"
+    wait_timeout: "{{ helm_wait_timeout }}"
+    atomic: "{{ helm_atomic }}"
+    force: "{{ helm_force }}"
+    values: "{{ helm_values }}"
+  register: helm_deploy_result
+  no_log: true  # 不记录日志以保护 token | Don't log to protect token
+
+- name: Display Helm deployment result
+  ansible.builtin.debug:
+    msg: "{{ '✅ Helm chart deployed successfully' if helm_deploy_result.changed else 'ℹ️  Helm chart already up to date' }}"

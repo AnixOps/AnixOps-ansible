@@ -1,0 +1,19 @@
+---
+# =============================================================================
+# Production Environment - Global Variables
+# =============================================================================
+
+# Python 解释器 | Python interpreter
+ansible_python_interpreter: /usr/bin/python3
+
+# 收集系统信息 | Gather system facts
+gather_facts: yes
+
+# SSH 连接配置 | SSH connection configuration
+ansible_connect_timeout: 30
+ansible_ssh_pipelining: yes
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+# 特权提升 | Privilege escalation
+ansible_become: yes
+ansible_become_method: sudo

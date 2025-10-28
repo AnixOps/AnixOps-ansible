@@ -1,0 +1,42 @@
+#!/bin/bash
+# =============================================================================
+# Cloudflare Tunnel 创建示例脚本
+# =============================================================================
+# 此脚本展示如何使用 tunnel_manager.py 创建和部署 Cloudflare Tunnel
+#
+# 前置要求:
+#   1. 已设置 CLOUDFLARE_API_TOKEN (用于管理资源)
+#   2. 已设置 CLOUDFLARE_ACCOUNT_ID
+#   3. 已激活虚拟环境 (如果使用)
+#
+# 使用方法:
+#   source .env
+#   bash tools/tunnel.example
+# =============================================================================
+
+# 加载环境变量
+source .env
+
+# 激活虚拟环境（如果使用）
+# source venv/bin/activate
+
+# 进入工具目录
+cd tools
+
+# 创建 Tunnel 并自动部署到 Kubernetes
+# 参数说明:
+#   create AnixOps          - 创建名为 "AnixOps" 的 Tunnel
+#   --deploy-type kubernetes - 部署到 Kubernetes
+#   --auto-deploy           - 自动执行部署
+#   --account-id           - Cloudflare Account ID
+#   --api-token            - Cloudflare API Token (用于管理)
+python tunnel_manager.py create AnixOps \
+  --deploy-type kubernetes \
+  --auto-deploy \
+  --account-id "$CLOUDFLARE_ACCOUNT_ID" \
+  --api-token "$CLOUDFLARE_API_TOKEN"
+
+# 注意: 
+# - 使用 CLOUDFLARE_API_TOKEN 来管理和创建 Tunnel
+# - 创建完成后会获得 CLOUDFLARE_TUNNEL_TOKEN 用于 cloudflared 连接
+# - Tunnel Token 会自动保存到 .env 文件中（如果使用 --save-env 选项）

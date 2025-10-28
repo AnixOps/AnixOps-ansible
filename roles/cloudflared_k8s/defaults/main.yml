@@ -1,0 +1,95 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Default Variables
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Cloudflare Tunnel 配置 | Cloudflare Tunnel Configuration
+# -----------------------------------------------------------------------------
+# 注意：cloudflare_tunnel_token 必须由调用者提供！
+# Note: cloudflare_tunnel_token MUST be provided by the caller!
+# cloudflare_tunnel_token: ""  # 不要在这里设置默认值 | Do not set default here
+
+# -----------------------------------------------------------------------------
+# Kubernetes 配置 | Kubernetes Configuration
+# -----------------------------------------------------------------------------
+k8s_namespace: "cloudflare-tunnel"
+k8s_release_name: "cloudflared"
+
+# -----------------------------------------------------------------------------
+# Helm 配置 | Helm Configuration
+# -----------------------------------------------------------------------------
+helm_repo_name: "cloudflare"
+helm_repo_url: "https://cloudflare.github.io/helm-charts"
+helm_chart_name: "cloudflare/cloudflared"
+helm_chart_version: ""  # 留空使用最新版本 | Empty for latest version
+
+# -----------------------------------------------------------------------------
+# 高可用性配置 | High Availability Configuration
+# -----------------------------------------------------------------------------
+# 推荐至少 2 个副本以确保高可用性
+# Recommend at least 2 replicas for high availability
+replica_count: 2
+
+# -----------------------------------------------------------------------------
+# 资源配置 | Resource Configuration
+# -----------------------------------------------------------------------------
+# 根据实际负载调整 | Adjust based on actual load
+resources:
+  requests:
+    cpu: "100m"      # 100 millicores
+    memory: "128Mi"  # 128 Mebibytes
+  limits:
+    cpu: "500m"      # 500 millicores
+    memory: "512Mi"  # 512 Mebibytes
+
+# -----------------------------------------------------------------------------
+# 镜像配置 | Image Configuration
+# -----------------------------------------------------------------------------
+image_repository: "cloudflare/cloudflared"
+image_pull_policy: "IfNotPresent"
+image_tag: ""  # 留空使用 Chart 默认值 | Empty to use Chart default
+
+# -----------------------------------------------------------------------------
+# 日志配置 | Logging Configuration
+# -----------------------------------------------------------------------------
+log_level: "info"  # 可选值: debug, info, warn, error | Options: debug, info, warn, error
+
+# -----------------------------------------------------------------------------
+# 健康检查配置 | Health Check Configuration
+# -----------------------------------------------------------------------------
+liveness_probe:
+  enabled: true
+  initial_delay_seconds: 30
+  period_seconds: 10
+  timeout_seconds: 5
+  failure_threshold: 3
+
+readiness_probe:
+  enabled: true
+  initial_delay_seconds: 10
+  period_seconds: 5
+  timeout_seconds: 3
+  failure_threshold: 3
+
+# -----------------------------------------------------------------------------
+# Pod 亲和性配置 | Pod Affinity Configuration
+# -----------------------------------------------------------------------------
+# 启用 Pod 反亲和性以将副本分散到不同节点
+# Enable Pod anti-affinity to spread replicas across different nodes
+enable_pod_anti_affinity: true
+
+# -----------------------------------------------------------------------------
+# Prometheus 监控配置 | Prometheus Monitoring Configuration
+# -----------------------------------------------------------------------------
+prometheus_scrape: true
+prometheus_port: "2000"
+prometheus_path: "/metrics"
+
+# -----------------------------------------------------------------------------
+# Helm 部署配置 | Helm Deployment Configuration
+# -----------------------------------------------------------------------------
+helm_wait: true
+helm_wait_timeout: "5m"
+helm_atomic: false  # 如果部署失败是否回滚 | Whether to rollback if deployment fails
+helm_force: false   # 是否强制更新 | Whether to force update

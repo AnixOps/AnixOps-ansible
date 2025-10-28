@@ -1,5 +1,115 @@
 # AnixOps Ansible 项目更新日志
 
+## v0.1.0 - 2025-10-28 🎉 重大重构版本
+
+### 🚀 重大功能更新
+
+#### ✨ Kubernetes 部署支持（重要里程碑）
+
+- **🆕 K8s 集群自动化部署**
+  - 新增 `k8s_provision` Role：支持本地 Kind 和生产 K3s 集群部署
+  - 自动检测并安装 Docker、kubectl、Helm 等依赖工具
+  - 本地环境：自动创建 Kind 集群，适合开发测试
+  - 生产环境：一键部署 K3s 轻量级 Kubernetes 集群
+  - 完整的集群验证和健康检查流程
+
+- **🆕 Cloudflared K8s 部署**
+  - 新增 `cloudflared_deploy` Role：使用 Helm 部署 Cloudflared
+  - 支持本地和生产环境自动适配
+  - 安全的 Token 管理（支持命令行、环境变量、Ansible Vault）
+  - 自动化 Namespace、Secret、Helm Chart 管理
+  - 完整的部署验证和日志查看
+
+#### 🔧 统一管理脚本
+
+- **🎯 anixops.sh - 统一入口**
+  - 集成所有管理功能到单一脚本
+  - 支持命令：`deploy-local`、`deploy-production`、`cleanup-local`、`status-local` 等
+  - 友好的彩色输出和进度提示
+  - 完整的参数支持：`--tags`、`--skip-tags`、`--dry-run`、`--verbose`
+  - 详细的帮助文档和使用示例
+  - 所有脚本统一移至 `scripts/` 目录
+
+#### 📁 项目结构重组
+
+- **Playbooks 多级目录结构**
+  - `playbooks/deployment/` - 部署相关（local.yml、production.yml 等）
+  - `playbooks/cloudflared/` - Cloudflared 专用（k8s-helm.yml 等）
+  - `playbooks/maintenance/` - 维护管理（health-check.yml 等）
+  - 总计 14 个 playbooks，按功能清晰分类
+
+- **环境配置完全分离**
+  - `inventories/local/` - 本地 Kind 集群配置
+  - `inventories/production/` - 生产 K3s 集群配置
+  - 独立的 hosts.ini 和 group_vars，互不干扰
+
+#### 📚 文档重构
+
+- **精简和归档**
+  - 根目录只保留 1 个主 README.md
+  - 核心文档：22 个（常用和实用）
+  - 归档文档：14 个（历史和过时文档移至 docs/archive/）
+  - 新增 `PROJECT_STRUCTURE.md` - 完整的项目结构说明
+  - 新增 `docs/README.md` - 文档索引和导航
+  - 新增 `playbooks/README.md` - Playbooks 详细说明
+
+### 🔄 重构和改进
+
+#### 架构优化
+
+- ✅ Role 模块化设计：k8s_provision + cloudflared_deploy
+- ✅ 三阶段部署流程：K8s 部署 → Cloudflared 部署 → 验证
+- ✅ 环境隔离：本地和生产完全独立配置
+- ✅ 统一脚本管理：从多个脚本到一个 anixops.sh
+
+#### 安全增强
+
+- ✅ 多种 Token 管理方式（命令行、环境变量、Vault）
+- ✅ Ansible Vault 完整集成
+- ✅ 敏感信息不记录日志（no_log: true）
+- ✅ 生产部署前确认提示
+
+#### 用户体验
+
+- ✅ 友好的彩色输出界面
+- ✅ 详细的进度和状态展示
+- ✅ 完整的错误提示和故障排除指南
+- ✅ Dry-run 模式支持
+- ✅ Tags 支持（只运行特定部分）
+
+### 📊 统计数据
+
+- **Playbooks**: 14 个（重组为 3 级目录）
+- **Roles**: 13+ 个（新增 2 个核心 Role）
+- **Scripts**: 3 个（全部在 scripts/ 目录）
+- **Inventories**: 2 套（完全隔离）
+- **文档**: 22 核心 + 14 归档
+
+### 🎯 使用示例
+
+```bash
+# 本地部署（最简单）
+./scripts/anixops.sh deploy-local -t "your-cloudflare-token"
+
+# 生产部署（使用 Vault）
+./scripts/anixops.sh deploy-production --vault-password ~/.vault_pass
+
+# 查看状态
+./scripts/anixops.sh status-local
+
+# 清理环境
+./scripts/anixops.sh cleanup-local
+```
+
+### 🔗 相关文档
+
+- [README.md](README.md) - 快速开始和完整指南
+- [docs/REFACTORED_DEPLOYMENT_GUIDE.md](docs/REFACTORED_DEPLOYMENT_GUIDE.md) - 详细部署指南
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - 项目结构总览
+- [playbooks/README.md](playbooks/README.md) - Playbooks 说明
+
+---
+
 ## v0.0.2 - 2025-10-23
 
 ### 🚀 功能增强

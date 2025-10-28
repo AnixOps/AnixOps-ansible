@@ -1,0 +1,23 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Namespace Management Tasks
+# =============================================================================
+
+- name: Ensure cloudflare-tunnel namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ k8s_namespace }}"
+        labels:
+          name: "{{ k8s_namespace }}"
+          managed-by: ansible
+          component: cloudflare-tunnel
+          app: cloudflared
+  register: namespace_result
+
+- name: Display namespace creation result
+  ansible.builtin.debug:
+    msg: "{{ '✅ Namespace created' if namespace_result.changed else 'ℹ️  Namespace already exists' }}"

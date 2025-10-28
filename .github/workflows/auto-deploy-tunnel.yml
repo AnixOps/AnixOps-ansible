@@ -1,0 +1,246 @@
+---
+# Automated Tunnel Creation and Deployment Workflow
+
+name: Auto Deploy Cloudflare Tunnel
+
+on:
+  workflow_dispatch:
+    inputs:
+      tunnel_name:
+        description: 'Tunnel Name (e.g., k8s-prod-tunnel)'
+        required: true
+        default: 'k8s-prod-tunnel'
+      
+      deploy_target:
+        description: 'Deployment Target'
+        required: true
+        type: choice
+        options:
+          - kubernetes
+          - ansible
+          - none
+        default: 'kubernetes'
+      
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+        default: 'staging'
+
+# Concurrency control
+concurrency:
+  group: tunnel-deployment-${{ inputs.tunnel_name }}
+  cancel-in-progress: false
+
+jobs:
+  create-and-deploy-tunnel:
+    name: Create and Deploy Tunnel
+    runs-on: ubuntu-latest
+    
+    # Optional: Use environment for additional protection
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout repository
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # -----------------------------------------------------------------------
+      # 2. Setup Python
+      # -----------------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      # -----------------------------------------------------------------------
+      # 3. Install dependencies
+      # -----------------------------------------------------------------------
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests
+      
+      # -----------------------------------------------------------------------
+      # 4. List existing tunnels (optional, for debugging)
+      # -----------------------------------------------------------------------
+      - name: List existing tunnels
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          echo "📋 Existing Tunnels:"
+          ./tools/tunnel_manager.py list \
+            --account-id $CLOUDFLARE_ACCOUNT_ID \
+            --api-token $CLOUDFLARE_API_TOKEN || echo "No tunnels found or error occurred"
+      
+      # -----------------------------------------------------------------------
+      # 5. Create Tunnel and get Token
+      # -----------------------------------------------------------------------
+      - name: Create Cloudflare Tunnel
+        id: create_tunnel
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          echo "🚀 Creating Tunnel: ${{ inputs.tunnel_name }}"
+          
+          # Create tunnel (without auto-deploy first, to get token)
+          ./tools/tunnel_manager.py create ${{ inputs.tunnel_name }} \
+            --account-id $CLOUDFLARE_ACCOUNT_ID \
+            --api-token $CLOUDFLARE_API_TOKEN > tunnel_output.txt
+          
+          # Extract tunnel info from output
+          TUNNEL_TOKEN=$(grep -oP 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' tunnel_output.txt | head -1)
+          
+          if [ -z "$TUNNEL_TOKEN" ]; then
+            echo "❌ Failed to extract tunnel token"
+            cat tunnel_output.txt
+            exit 1
+          fi
+          
+          echo "✅ Tunnel created successfully"
+          echo "tunnel_token=$TUNNEL_TOKEN" >> $GITHUB_OUTPUT
+          
+          # Clean up sensitive output
+          rm -f tunnel_output.txt
+      
+      # -----------------------------------------------------------------------
+      # 6. Deploy to Kubernetes (if selected)
+      # -----------------------------------------------------------------------
+      - name: Deploy to Kubernetes
+        if: inputs.deploy_target == 'kubernetes'
+        env:
+          CF_TUNNEL_TOKEN: ${{ steps.create_tunnel.outputs.tunnel_token }}
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+        run: |
+          echo "🔧 Setting up kubectl"
+          
+          # Setup kubeconfig
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_CONTENT" > ~/.kube/config
+          
+          # Verify connection
+          kubectl cluster-info
+          
+          echo "📦 Creating Kubernetes resources"
+          
+          # Create namespace
+          kubectl apply -f k8s_manifests/cloudflared/00-namespace.yaml
+          
+          # Create secret with token
+          kubectl create secret generic cloudflared-token \
+            --from-literal=token=$CF_TUNNEL_TOKEN \
+            --namespace=cloudflare-tunnel \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Deploy other resources
+          kubectl apply -f k8s_manifests/cloudflared/02-configmap.yaml
+          kubectl apply -f k8s_manifests/cloudflared/03-deployment.yaml
+          kubectl apply -f k8s_manifests/cloudflared/04-hpa.yaml
+          kubectl apply -f k8s_manifests/cloudflared/05-pdb.yaml
+          
+          echo "⏳ Waiting for deployment to be ready..."
+          kubectl wait --for=condition=available --timeout=180s \
+            deployment/cloudflared -n cloudflare-tunnel
+          
+          echo "✅ Kubernetes deployment completed"
+      
+      # -----------------------------------------------------------------------
+      # 7. Deploy with Ansible (if selected)
+      # -----------------------------------------------------------------------
+      - name: Deploy with Ansible
+        if: inputs.deploy_target == 'ansible'
+        env:
+          CF_TUNNEL_TOKEN: ${{ steps.create_tunnel.outputs.tunnel_token }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          echo "🔧 Setting up SSH"
+          
+          # Setup SSH key
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          
+          echo "📦 Installing Ansible"
+          pip install ansible ansible-lint
+          
+          echo "🚀 Running Ansible playbook"
+          ansible-playbook playbooks/cloudflared_playbook.yml -v
+          
+          echo "✅ Ansible deployment completed"
+      
+      # -----------------------------------------------------------------------
+      # 8. Verify deployment
+      # -----------------------------------------------------------------------
+      - name: Verify deployment
+        if: inputs.deploy_target != 'none'
+        run: |
+          echo "🔍 Verifying deployment..."
+          
+          if [ "${{ inputs.deploy_target }}" == "kubernetes" ]; then
+            echo "Kubernetes Pods:"
+            kubectl get pods -n cloudflare-tunnel
+            
+            echo ""
+            echo "Recent logs:"
+            kubectl logs -n cloudflare-tunnel -l app=cloudflared --tail=20
+          
+          elif [ "${{ inputs.deploy_target }}" == "ansible" ]; then
+            echo "Checking service status:"
+            ansible all -m shell -a 'systemctl status cloudflared --no-pager'
+          fi
+          
+          echo "✅ Verification completed"
+      
+      # -----------------------------------------------------------------------
+      # 9. Post deployment summary
+      # -----------------------------------------------------------------------
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║  ✅ Cloudflare Tunnel Deployment Successful               ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "📋 Deployment Details:"
+          echo "  • Tunnel Name: ${{ inputs.tunnel_name }}"
+          echo "  • Target: ${{ inputs.deploy_target }}"
+          echo "  • Environment: ${{ inputs.environment }}"
+          echo "  • Commit: ${{ github.sha }}"
+          echo "  • Actor: ${{ github.actor }}"
+          echo ""
+          echo "🔗 Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo ""
+          echo "📖 Next Steps:"
+          echo "  1. Configure domain routing in Cloudflare Dashboard"
+          echo "  2. Create Ingress resources for your applications"
+          echo "  3. Monitor tunnel status in Cloudflare Zero Trust"
+      
+      # -----------------------------------------------------------------------
+      # 10. Cleanup on failure
+      # -----------------------------------------------------------------------
+      - name: Cleanup on failure
+        if: failure()
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          echo "⚠️ Deployment failed, cleaning up..."
+          
+          # Note: In production, you might want to keep the tunnel for debugging
+          # Uncomment to auto-cleanup:
+          # TUNNEL_ID=$(./tools/tunnel_manager.py list --account-id $CLOUDFLARE_ACCOUNT_ID --api-token $CLOUDFLARE_API_TOKEN | grep ${{ inputs.tunnel_name }} | grep -oP 'ID: \K[^\s]+')
+          # if [ -n "$TUNNEL_ID" ]; then
+          #   ./tools/tunnel_manager.py delete $TUNNEL_ID --account-id $CLOUDFLARE_ACCOUNT_ID --api-token $CLOUDFLARE_API_TOKEN --force
+          # fi
+          
+          echo "ℹ️ Please manually check and cleanup resources if needed"

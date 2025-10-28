@@ -1,0 +1,54 @@
+---
+# =============================================================================
+# 示例: 使用 cloudflared_k8s Role 的高级配置 Playbook
+# =============================================================================
+
+- name: Deploy Cloudflare Tunnel (Advanced)
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    # Token 从加密的 vault 文件读取
+    cloudflare_tunnel_token: "{{ vault_cloudflare_token }}"
+    
+    # 自定义命名空间
+    k8s_namespace: "production-tunnel"
+    
+    # 自定义 release 名称
+    k8s_release_name: "cf-tunnel-prod"
+    
+    # 高可用性配置 (3 副本)
+    replica_count: 3
+    
+    # 自定义资源配置
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    
+    # 使用特定版本的 Helm Chart
+    helm_chart_version: "0.3.0"
+    
+    # 启用 debug 日志
+    log_level: "debug"
+    
+    # 自定义健康检查
+    liveness_probe:
+      enabled: true
+      initial_delay_seconds: 60
+      period_seconds: 20
+      timeout_seconds: 10
+      failure_threshold: 5
+    
+    readiness_probe:
+      enabled: true
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 3
+  
+  roles:
+    - cloudflared_k8s

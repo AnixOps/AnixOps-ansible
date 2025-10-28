@@ -1,0 +1,26 @@
+---
+# =============================================================================
+# Create Kubernetes Namespace
+# =============================================================================
+
+- name: Check if namespace exists
+  ansible.builtin.command: "kubectl get namespace {{ cloudflared_namespace }}"
+  register: namespace_check
+  failed_when: false
+  changed_when: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+
+- name: Create namespace
+  ansible.builtin.command: "kubectl create namespace {{ cloudflared_namespace }}"
+  when: namespace_check.rc != 0
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: namespace_create
+  changed_when: namespace_create.rc == 0
+
+- name: Display namespace status
+  ansible.builtin.debug:
+    msg: "{{ '✅ Namespace created: ' + cloudflared_namespace if namespace_check.rc != 0 else '✅ Namespace already exists: ' + cloudflared_namespace }}"

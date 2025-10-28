@@ -1,0 +1,51 @@
+---
+# =============================================================================
+# Validate Required Variables
+# =============================================================================
+
+- name: Check if Cloudflare tunnel token is provided
+  ansible.builtin.fail:
+    msg: |
+      ❌ Cloudflare Tunnel Token is required but not provided!
+      
+      Please provide the token using one of these methods:
+      
+      1. Command line:
+         ansible-playbook playbook-local.yml \
+           --extra-vars "cloudflare_tunnel_token=your-token-here"
+      
+      2. Environment variable:
+         export CLOUDFLARE_TUNNEL_TOKEN="your-token-here"
+         ansible-playbook playbook-local.yml
+      
+      3. Ansible Vault (recommended for production):
+         Create vars/secrets.yml with:
+         ---
+         cloudflare_tunnel_token: "your-token-here"
+         
+         Then encrypt it:
+         ansible-vault encrypt vars/secrets.yml
+         
+         And run with:
+         ansible-playbook playbook-local.yml \
+           --extra-vars "@vars/secrets.yml" \
+           --vault-password-file ~/.vault_pass
+  when: cloudflare_tunnel_token is not defined or cloudflare_tunnel_token == ""
+
+- name: Validate namespace name
+  ansible.builtin.fail:
+    msg: "Namespace name cannot be empty"
+  when: cloudflared_namespace == ""
+
+- name: Validate release name
+  ansible.builtin.fail:
+    msg: "Release name cannot be empty"
+  when: cloudflared_release_name == ""
+
+- name: Display validation success
+  ansible.builtin.debug:
+    msg:
+      - "✅ Validation passed"
+      - "Token: ****{{ cloudflare_tunnel_token[-8:] }}"
+      - "Namespace: {{ cloudflared_namespace }}"
+      - "Release: {{ cloudflared_release_name }}"

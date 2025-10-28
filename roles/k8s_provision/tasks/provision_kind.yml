@@ -1,0 +1,58 @@
+---
+# =============================================================================
+# Provision Kind Cluster (Local Development)
+# =============================================================================
+
+- name: Check if kind is installed
+  ansible.builtin.command: kind --version
+  register: kind_check
+  failed_when: false
+  changed_when: false
+
+- name: Install kind if not present
+  when: kind_check.rc != 0
+  block:
+    - name: Download kind binary
+      ansible.builtin.get_url:
+        url: "https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64"
+        dest: /usr/local/bin/kind
+        mode: '0755'
+      become: yes
+
+    - name: Verify kind installation
+      ansible.builtin.command: kind --version
+      changed_when: false
+
+- name: Check if kind cluster already exists
+  ansible.builtin.command: "kind get clusters"
+  register: kind_clusters
+  changed_when: false
+  failed_when: false
+
+- name: Create kind cluster configuration
+  ansible.builtin.copy:
+    content: |
+      kind: Cluster
+      apiVersion: kind.x-k8s.io/v1alpha4
+      name: {{ kind_cluster_name }}
+      nodes:
+        - role: control-plane
+    dest: "{{ kind_cluster_config }}"
+  when: kind_cluster_name not in kind_clusters.stdout
+
+- name: Create kind cluster
+  ansible.builtin.command: "kind create cluster --name {{ kind_cluster_name }} --config {{ kind_cluster_config }}"
+  when: kind_cluster_name not in kind_clusters.stdout
+  register: kind_create
+  changed_when: kind_create.rc == 0
+
+- name: Set kubeconfig context to kind cluster
+  ansible.builtin.command: "kind export kubeconfig --name {{ kind_cluster_name }}"
+  changed_when: false
+
+- name: Display kind cluster status
+  ansible.builtin.debug:
+    msg:
+      - "✅ Kind cluster is ready"
+      - "Cluster name: {{ kind_cluster_name }}"
+      - "Use 'kubectl cluster-info --context kind-{{ kind_cluster_name }}' to verify"

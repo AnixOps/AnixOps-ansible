@@ -1,0 +1,88 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Validation Tasks
+# =============================================================================
+
+- name: Validate that cloudflare_tunnel_token is provided
+  ansible.builtin.assert:
+    that:
+      - cloudflare_tunnel_token is defined
+      - cloudflare_tunnel_token | length > 0
+      - cloudflare_tunnel_token != ''
+    fail_msg: |
+      ❌ FATAL ERROR: cloudflare_tunnel_token is not set!
+
+      You MUST provide the Cloudflare Tunnel Token via one of these methods:
+
+      📖 Method 1 - Command Line:
+        ansible-playbook playbook.yml \
+          --extra-vars "cloudflare_tunnel_token=eyJhIjoiY2FmZS0xMjM0..."
+
+      📖 Method 2 - Ansible Vault:
+        ansible-vault create vars/cloudflare_secrets.yml
+        # Add: cloudflare_tunnel_token: "your-token"
+        ansible-playbook playbook.yml --vault-password-file ~/.vault_pass
+
+      📖 Method 3 - Environment Variable:
+        export CLOUDFLARE_TUNNEL_TOKEN="eyJhIjoiY2FmZS0xMjM0..."
+        ansible-playbook playbook.yml
+
+      📚 Docs: https://github.com/AnixOps/AnixOps-ansible/docs/SECRETS_MANAGEMENT.md
+    success_msg: "✅ cloudflare_tunnel_token is set and valid"
+
+- name: Check if kubectl is installed
+  ansible.builtin.command: kubectl version --client
+  register: kubectl_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if kubectl is not installed
+  ansible.builtin.fail:
+    msg: |
+      ❌ kubectl is not installed. Please install kubectl first.
+      
+      Installation instructions:
+      https://kubernetes.io/docs/tasks/tools/
+  when: kubectl_check.rc != 0
+
+- name: Check if Helm is installed
+  ansible.builtin.command: helm version
+  register: helm_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Helm is not installed
+  ansible.builtin.fail:
+    msg: |
+      ❌ Helm is not installed. Please install Helm first.
+      
+      Installation instructions:
+      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  when: helm_check.rc != 0
+
+- name: Check Kubernetes cluster connectivity
+  ansible.builtin.command: kubectl cluster-info
+  register: k8s_cluster_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if cannot connect to Kubernetes cluster
+  ansible.builtin.fail:
+    msg: |
+      ❌ Cannot connect to Kubernetes cluster.
+      
+      Please ensure:
+      1. Your kubeconfig is properly configured (~/.kube/config)
+      2. The Kubernetes cluster is running
+      3. You have network connectivity to the cluster
+  when: k8s_cluster_check.rc != 0
+
+- name: Print deployment info (token is masked)
+  ansible.builtin.debug:
+    msg:
+      - "🚀 Starting Cloudflare Tunnel deployment on Kubernetes"
+      - "📦 Namespace: {{ k8s_namespace }}"
+      - "📦 Release Name: {{ k8s_release_name }}"
+      - "🔐 Token status: ✅ Provided (first 10 chars: {{ cloudflare_tunnel_token[:10] }}...)"
+      - "🔄 Replica Count: {{ replica_count }}"
+      - "📊 Resources: CPU {{ resources.requests.cpu }}-{{ resources.limits.cpu }}, Memory {{ resources.requests.memory }}-{{ resources.limits.memory }}"

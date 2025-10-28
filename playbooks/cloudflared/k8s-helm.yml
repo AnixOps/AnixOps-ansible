@@ -1,0 +1,377 @@
+---
+# =============================================================================
+# Cloudflare Tunnel Kubernetes Deployment (Helm-based)
+# =============================================================================
+# 此 Playbook 使用 Helm Chart 在 Kubernetes 集群上部署 Cloudflare Tunnel
+# This Playbook deploys Cloudflare Tunnel on Kubernetes cluster using Helm Chart
+# =============================================================================
+#
+# 🔒 安全警告 | Security Warning:
+#   此 Playbook 不包含任何秘密信息！
+#   This Playbook contains NO secrets!
+#
+# 📖 使用方法 | Usage:
+#
+#   方法 1: 使用命令行传递变量 | Pass variables via command line:
+#     ansible-playbook playbooks/cloudflared_k8s_helm.yml \
+#       --extra-vars "cloudflare_tunnel_token=eyJhIjoiY2FmZS0xMjM0..."
+#
+#   方法 2: 使用 Ansible Vault | Use Ansible Vault:
+#     # 创建加密的变量文件 | Create encrypted vars file:
+#     ansible-vault create vars/cloudflare_secrets.yml
+#     # 在文件中添加: cloudflare_tunnel_token: "your-token-here"
+#
+#     # 运行 playbook | Run playbook:
+#     ansible-playbook playbooks/cloudflared_k8s_helm.yml \
+#       --vault-password-file ~/.vault_pass
+#
+#   方法 3: 使用环境变量 | Use environment variable:
+#     export CLOUDFLARE_TUNNEL_TOKEN="eyJhIjoiY2FmZS0xMjM0..."
+#     ansible-playbook playbooks/cloudflared_k8s_helm.yml
+#
+#   方法 4: CI/CD (GitHub Actions):
+#     - GitHub Workflow 会自动从 secrets.CLOUDFLARE_TUNNEL_TOKEN 读取
+#     - GitHub Workflow will automatically read from secrets.CLOUDFLARE_TUNNEL_TOKEN
+#
+# =============================================================================
+
+- name: Deploy Cloudflare Tunnel on Kubernetes using Helm
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  environment:
+    # 确保使用系统的 helm 而不是 Python 虚拟环境中的
+    PATH: "/usr/local/bin:/usr/bin:/bin:{{ ansible_env.PATH }}"
+  
+  vars:
+    # -------------------------------------------------------------------------
+    # Cloudflare Tunnel 配置 | Cloudflare Tunnel Configuration
+    # -------------------------------------------------------------------------
+    # Token 优先级 | Token Priority:
+    #   1. --extra-vars 命令行参数 | Command line --extra-vars
+    #   2. Ansible Vault 加密文件 | Ansible Vault encrypted file
+    #   3. 环境变量 CLOUDFLARE_TUNNEL_TOKEN | Environment variable
+    # -------------------------------------------------------------------------
+    cloudflare_tunnel_token: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') | default('') }}"
+    
+    # -------------------------------------------------------------------------
+    # Kubernetes 配置 | Kubernetes Configuration
+    # -------------------------------------------------------------------------
+    k8s_namespace: "cloudflare-tunnel"
+    k8s_release_name: "cloudflared"
+    
+    # -------------------------------------------------------------------------
+    # Helm 配置 | Helm Configuration
+    # -------------------------------------------------------------------------
+    helm_repo_name: "cloudflare"
+    helm_repo_url: "https://cloudflare.github.io/helm-charts"
+    helm_chart_name: "cloudflare/cloudflared"
+    helm_chart_version: ""  # 留空使用最新版本 | Empty for latest version
+    
+    # -------------------------------------------------------------------------
+    # 高可用性配置 | High Availability Configuration
+    # -------------------------------------------------------------------------
+    replica_count: 2  # 推荐至少 2 个副本 | Recommend at least 2 replicas
+    
+    # -------------------------------------------------------------------------
+    # 资源配置 | Resource Configuration
+    # -------------------------------------------------------------------------
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # 前置检查 | Pre-flight Checks
+    # -------------------------------------------------------------------------
+    
+    - name: Check Python interpreter
+      ansible.builtin.set_fact:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      tags:
+        - always
+
+    - name: Detect if running in virtualenv
+      ansible.builtin.stat:
+        path: "{{ ansible_env.VIRTUAL_ENV | default('/nonexistent') }}/bin/python"
+      register: venv_python
+      tags:
+        - always
+
+    - name: Check if kubernetes Python library is available
+      ansible.builtin.command: "{{ ansible_python_interpreter }} -c 'import kubernetes'"
+      register: k8s_lib_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - always
+
+    - name: Install Python dependencies if needed
+      ansible.builtin.pip:
+        name:
+          - kubernetes
+          - openshift
+          - PyYAML
+        state: present
+        executable: "{{ (ansible_env.VIRTUAL_ENV + '/bin/pip') if ansible_env.VIRTUAL_ENV is defined else 'pip3' }}"
+      when: k8s_lib_check.rc != 0
+      tags:
+        - always
+
+    - name: Validate that cloudflare_tunnel_token is provided
+      ansible.builtin.assert:
+        that:
+          - cloudflare_tunnel_token is defined
+          - cloudflare_tunnel_token | length > 0
+          - cloudflare_tunnel_token != ''
+        fail_msg: |
+          ❌ FATAL ERROR: cloudflare_tunnel_token is not set!
+
+          You MUST provide the Cloudflare Tunnel Token via one of these methods:
+
+          📖 Method 1 - Command Line:
+            ansible-playbook playbooks/cloudflared_k8s_helm.yml \
+              --extra-vars "cloudflare_tunnel_token=eyJhIjoiY2FmZS0xMjM0..."
+
+          📖 Method 2 - Ansible Vault:
+            ansible-vault create vars/cloudflare_secrets.yml
+            # Add: cloudflare_tunnel_token: "your-token"
+            ansible-playbook playbooks/cloudflared_k8s_helm.yml --vault-password-file ~/.vault_pass
+
+          📖 Method 3 - Environment Variable:
+            export CLOUDFLARE_TUNNEL_TOKEN="eyJhIjoiY2FmZS0xMjM0..."
+            ansible-playbook playbooks/cloudflared_k8s_helm.yml
+
+          📚 Docs: https://github.com/AnixOps/AnixOps-ansible/docs/SECRETS_MANAGEMENT.md
+        success_msg: "✅ cloudflare_tunnel_token is set and valid"
+      tags:
+        - validation
+
+    - name: Check if kubectl is installed
+      ansible.builtin.command: kubectl version --client
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+    - name: Fail if kubectl is not installed
+      ansible.builtin.fail:
+        msg: "❌ kubectl is not installed. Please install kubectl first."
+      when: kubectl_check.rc != 0
+      tags:
+        - validation
+
+    - name: Check if Helm is installed
+      ansible.builtin.command: helm version
+      register: helm_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - validation
+
+    - name: Fail if Helm is not installed
+      ansible.builtin.fail:
+        msg: |
+          ❌ Helm is not installed. Please install Helm first.
+          
+          Installation instructions:
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      when: helm_check.rc != 0
+      tags:
+        - validation
+
+    - name: Print deployment info (token is masked)
+      ansible.builtin.debug:
+        msg:
+          - "🚀 Starting Cloudflare Tunnel deployment on Kubernetes"
+          - "📦 Namespace: {{ k8s_namespace }}"
+          - "📦 Release Name: {{ k8s_release_name }}"
+          - "🔐 Token status: ✅ Provided (first 10 chars: {{ cloudflare_tunnel_token[:10] }}...)"
+          - "🔄 Replica Count: {{ replica_count }}"
+          - "📊 Resources: CPU {{ resources.requests.cpu }}-{{ resources.limits.cpu }}, Memory {{ resources.requests.memory }}-{{ resources.limits.memory }}"
+      tags:
+        - cloudflared
+
+    # -------------------------------------------------------------------------
+    # 命名空间管理 | Namespace Management
+    # -------------------------------------------------------------------------
+
+    - name: Ensure cloudflare-tunnel namespace exists
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ k8s_namespace }}"
+            labels:
+              name: "{{ k8s_namespace }}"
+              managed-by: ansible
+              component: cloudflare-tunnel
+      tags:
+        - namespace
+        - cloudflared
+
+    # -------------------------------------------------------------------------
+    # Helm 仓库管理 | Helm Repository Management
+    # -------------------------------------------------------------------------
+
+    - name: Add Cloudflare Helm repository
+      kubernetes.core.helm_repository:
+        name: "{{ helm_repo_name }}"
+        repo_url: "{{ helm_repo_url }}"
+      tags:
+        - helm
+        - cloudflared
+
+    - name: Update Helm repositories
+      ansible.builtin.command: helm repo update
+      changed_when: false
+      tags:
+        - helm
+        - cloudflared
+
+    # -------------------------------------------------------------------------
+    # 使用 Helm 部署 Cloudflared | Deploy Cloudflared using Helm
+    # -------------------------------------------------------------------------
+
+    - name: Deploy cloudflared using Helm Chart
+      kubernetes.core.helm:
+        name: "{{ k8s_release_name }}"
+        chart_ref: "{{ helm_chart_name }}"
+        chart_version: "{{ helm_chart_version if helm_chart_version else omit }}"
+        release_namespace: "{{ k8s_namespace }}"
+        create_namespace: false  # 已经创建 | Already created
+        update_repo_cache: true
+        wait: true
+        wait_timeout: "5m"
+        values:
+          # Cloudflare Tunnel Token (不会被记录到日志) | Token (not logged)
+          cloudflare:
+            token: "{{ cloudflare_tunnel_token }}"
+          
+          # 高可用性配置 | High Availability Configuration
+          replicaCount: "{{ replica_count }}"
+          
+          # 资源配置 | Resource Configuration
+          resources: "{{ resources }}"
+          
+          # Pod 反亲和性 (确保副本分散到不同节点) | Pod Anti-Affinity
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: app.kubernetes.io/name
+                          operator: In
+                          values:
+                            - cloudflared
+                    topologyKey: kubernetes.io/hostname
+          
+          # 自动重启策略 | Auto-restart Policy
+          restartPolicy: Always
+          
+          # 镜像配置 | Image Configuration
+          image:
+            repository: cloudflare/cloudflared
+            pullPolicy: IfNotPresent
+          
+          # 日志配置 | Logging Configuration
+          logLevel: info
+          
+          # 健康检查 | Health Checks
+          livenessProbe:
+            enabled: true
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            enabled: true
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # Pod 标签 | Pod Labels
+          podLabels:
+            app: cloudflared
+            managed-by: ansible
+            component: cloudflare-tunnel
+          
+          # Pod 注解 | Pod Annotations
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "2000"
+            prometheus.io/path: "/metrics"
+      register: helm_deploy_result
+      tags:
+        - helm
+        - cloudflared
+        - deploy
+
+    # -------------------------------------------------------------------------
+    # 部署验证 | Deployment Verification
+    # -------------------------------------------------------------------------
+
+    - name: Wait for cloudflared pods to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=cloudflared
+        wait: yes
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+      register: pod_info
+      tags:
+        - verification
+        - cloudflared
+
+    - name: Display deployment status
+      ansible.builtin.debug:
+        msg:
+          - "✅ Cloudflare Tunnel deployed successfully!"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "📦 Namespace: {{ k8s_namespace }}"
+          - "🚀 Release: {{ k8s_release_name }}"
+          - "🔄 Replicas: {{ replica_count }}"
+          - "📊 Ready Pods: {{ pod_info.resources | length }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - ""
+          - "🔍 Verify deployment:"
+          - "   kubectl get pods -n {{ k8s_namespace }}"
+          - "   kubectl logs -n {{ k8s_namespace }} -l app.kubernetes.io/name=cloudflared"
+          - ""
+          - "🗑️  Uninstall:"
+          - "   helm uninstall {{ k8s_release_name }} -n {{ k8s_namespace }}"
+      tags:
+        - verification
+        - cloudflared
+
+    - name: Get pod details
+      ansible.builtin.command: >
+        kubectl get pods -n {{ k8s_namespace }} -o wide
+      register: pod_details
+      changed_when: false
+      tags:
+        - verification
+        - cloudflared
+
+    - name: Show pod details
+      ansible.builtin.debug:
+        msg: "{{ pod_details.stdout_lines }}"
+      tags:
+        - verification
+        - cloudflared

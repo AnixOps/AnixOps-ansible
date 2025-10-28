@@ -1,0 +1,117 @@
+---
+# =============================================================================
+# Cloudflare Tunnel 部署 Playbook | Cloudflare Tunnel Deployment Playbook
+# =============================================================================
+# 此 Playbook 用于在所有目标节点上部署 Cloudflare Tunnel (cloudflared)
+# This Playbook deploys Cloudflare Tunnel (cloudflared) on all target nodes
+# =============================================================================
+#
+# 🔒 安全警告 | Security Warning:
+#   此 Playbook 不包含任何秘密信息！
+#   This Playbook contains NO secrets!
+#
+# 📖 使用方法 | Usage:
+#
+#   本地运行 | Local Execution:
+#     1. 创建 .env 文件 | Create .env file:
+#        echo 'export CF_TUNNEL_TOKEN="your-tunnel-token"' > .env
+#
+#     2. 加载环境变量 | Load environment variables:
+#        source .env
+#
+#     3. 运行 Playbook | Run playbook:
+#        ansible-playbook playbooks/cloudflared_playbook.yml
+#
+#   CI/CD (GitHub Actions):
+#     - GitHub Workflow 会自动从 secrets.CF_TUNNEL_TOKEN 读取
+#     - GitHub Workflow will automatically read from secrets.CF_TUNNEL_TOKEN
+#
+# =============================================================================
+
+- name: Deploy Cloudflare Tunnel on all nodes
+  hosts: all
+  become: yes
+
+  vars:
+    # -------------------------------------------------------------------------
+    # 从环境变量自动读取 Tunnel Token
+    # Automatically read Tunnel Token from environment variable
+    # -------------------------------------------------------------------------
+    #
+    # 工作原理 | How it works:
+    #   优先使用新变量名 CLOUDFLARE_TUNNEL_TOKEN
+    #   如果未找到，尝试旧变量名 CF_TUNNEL_TOKEN (向后兼容)
+    #   如果都未找到，返回空字符串（Role 的 assert 任务会捕获错误）
+    #
+    # 本地 | Local:
+    #   export CLOUDFLARE_TUNNEL_TOKEN="your-token" 或 source .env
+    #
+    # CI/CD:
+    #   GitHub Workflow 会设置 CLOUDFLARE_TUNNEL_TOKEN 环境变量
+    #   GitHub Workflow will set the CLOUDFLARE_TUNNEL_TOKEN environment variable
+    #
+    # 注意: CF_TUNNEL_TOKEN 已弃用，请使用 CLOUDFLARE_TUNNEL_TOKEN
+    # Note: CF_TUNNEL_TOKEN is deprecated, please use CLOUDFLARE_TUNNEL_TOKEN
+    #
+    cf_tunnel_token: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') | default(lookup('env', 'CF_TUNNEL_TOKEN'), true) | default('') }}"
+
+  pre_tasks:
+    - name: Deployment banner
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════╗"
+          - "║  🚀 Cloudflare Tunnel Deployment Starting                ║"
+          - "╚════════════════════════════════════════════════════════════╝"
+          - "📦 Target hosts: {{ groups['all'] | length }} node(s)"
+          - "🔐 Token source: Environment variable (CF_TUNNEL_TOKEN)"
+          - "🏗️  Architecture: {{ ansible_architecture }}"
+          - "👤 Ansible user: {{ ansible_user }}"
+      tags:
+        - always
+
+    - name: Check system requirements
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family in ['Debian', 'RedHat']
+          - ansible_architecture in ['x86_64', 'aarch64', 'arm64']
+        fail_msg: |
+          ❌ Unsupported system detected!
+          OS Family: {{ ansible_os_family }}
+          Architecture: {{ ansible_architecture }}
+
+          Supported:
+            - OS: Debian, Ubuntu, RedHat, CentOS
+            - Arch: x86_64, aarch64, arm64
+        success_msg: "✅ System requirements met"
+      tags:
+        - validation
+
+  roles:
+    - role: anix_cloudflared
+      tags:
+        - cloudflared
+
+  post_tasks:
+    - name: Deployment completion summary
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════╗"
+          - "║  ✅ Cloudflare Tunnel Deployment Completed Successfully   ║"
+          - "╚════════════════════════════════════════════════════════════╝"
+          - ""
+          - "📊 Next Steps:"
+          - "  1. Verify tunnel status:"
+          - "     ansible all -m shell -a 'systemctl status cloudflared'"
+          - ""
+          - "  2. Check logs:"
+          - "     ansible all -m shell -a 'journalctl -u cloudflared -n 50'"
+          - ""
+          - "  3. Test connectivity from Cloudflare Dashboard:"
+          - "     https://one.dash.cloudflare.com/"
+          - ""
+          - "🔐 Security Reminder:"
+          - "  - Token is stored in systemd service memory only"
+          - "  - Never commit secrets to Git!"
+          - "  - Rotate tokens regularly via Cloudflare Dashboard"
+      tags:
+        - always

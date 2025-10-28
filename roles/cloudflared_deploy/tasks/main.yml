@@ -1,0 +1,56 @@
+---
+# =============================================================================
+# Cloudflared Deploy Role - Main Tasks
+# =============================================================================
+
+- name: Display deployment information
+  ansible.builtin.debug:
+    msg:
+      - "🚀 Starting Cloudflared Deployment"
+      - "Environment: {{ environment | default('unknown') }}"
+      - "Namespace: {{ cloudflared_namespace }}"
+      - "Release Name: {{ cloudflared_release_name }}"
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+  tags:
+    - validation
+    - always
+
+- name: Setup Helm repository
+  ansible.builtin.include_tasks: helm_repo.yml
+  tags:
+    - helm
+    - repository
+
+- name: Create Kubernetes namespace
+  ansible.builtin.include_tasks: namespace.yml
+  tags:
+    - namespace
+    - kubernetes
+
+- name: Create Kubernetes secret for Cloudflare token
+  ansible.builtin.include_tasks: secrets.yml
+  tags:
+    - secrets
+    - kubernetes
+
+- name: Deploy Cloudflared using Helm
+  ansible.builtin.include_tasks: helm_deploy.yml
+  tags:
+    - deploy
+    - helm
+
+- name: Verify deployment
+  ansible.builtin.include_tasks: verify.yml
+  tags:
+    - verification
+    - always
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - "✅ Cloudflared Deployment Completed"
+      - "Namespace: {{ cloudflared_namespace }}"
+      - "Release: {{ cloudflared_release_name }}"
+      - "Use 'kubectl get pods -n {{ cloudflared_namespace }}' to check status"

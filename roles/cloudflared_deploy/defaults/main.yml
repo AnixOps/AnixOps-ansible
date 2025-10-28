@@ -1,0 +1,44 @@
+---
+# =============================================================================
+# Cloudflared Deploy Role - Default Variables
+# =============================================================================
+
+# Cloudflare Tunnel Token (必须提供 | Required)
+# 通过以下方式之一提供：
+# 1. --extra-vars "cloudflare_tunnel_token=your-token"
+# 2. Environment variable: CLOUDFLARE_TUNNEL_TOKEN
+# 3. Ansible Vault encrypted file
+cloudflare_tunnel_token: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') }}"
+
+# Kubernetes 配置 | Kubernetes configuration
+cloudflared_namespace: "cloudflared"
+cloudflared_release_name: "cloudflared"
+kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
+
+# Helm Chart 配置 | Helm Chart configuration
+helm_repo_name: "cloudflare"
+helm_repo_url: "https://cloudflare.github.io/helm-charts"
+helm_chart_name: "cloudflare/cloudflare-tunnel"
+helm_chart_version: "0.3.2"
+
+# Cloudflared 部署配置 | Cloudflared deployment configuration
+cloudflared_replica_count: 1
+cloudflared_image_tag: "latest"
+
+# 网络配置 | Network configuration
+# 使用 hostNetwork 允许 Pod 访问宿主机网络（包括 localhost 服务）
+# Use hostNetwork to allow Pod to access host network (including localhost services)
+cloudflared_host_network: false  # Kind 本地环境建议设为 true
+
+# 资源限制 | Resource limits
+cloudflared_resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# 超时配置 | Timeout configuration
+helm_timeout: "5m"
+deployment_wait_timeout: 300

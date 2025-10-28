@@ -1,0 +1,71 @@
+---
+# =============================================================================
+# 示例: 在多个环境中部署 Cloudflare Tunnel
+# =============================================================================
+
+- name: Deploy Cloudflare Tunnel to Development Environment
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    cloudflare_tunnel_token: "{{ lookup('env', 'CF_TOKEN_DEV') }}"
+    k8s_namespace: "dev-tunnel"
+    replica_count: 1
+    
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+  
+  roles:
+    - cloudflared_k8s
+
+---
+
+- name: Deploy Cloudflare Tunnel to Staging Environment
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    cloudflare_tunnel_token: "{{ lookup('env', 'CF_TOKEN_STAGING') }}"
+    k8s_namespace: "staging-tunnel"
+    replica_count: 2
+    
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  
+  roles:
+    - cloudflared_k8s
+
+---
+
+- name: Deploy Cloudflare Tunnel to Production Environment
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    cloudflare_tunnel_token: "{{ lookup('env', 'CF_TOKEN_PROD') }}"
+    k8s_namespace: "prod-tunnel"
+    replica_count: 3
+    
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    
+    # 生产环境启用更多功能
+    helm_atomic: true  # 失败自动回滚
+  
+  roles:
+    - cloudflared_k8s

@@ -1,0 +1,35 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Main Tasks
+# =============================================================================
+
+- name: Include validation tasks
+  ansible.builtin.include_tasks: validate.yml
+  tags:
+    - always
+    - validation
+
+- name: Include namespace management tasks
+  ansible.builtin.include_tasks: namespace.yml
+  tags:
+    - namespace
+    - cloudflared
+
+- name: Include Helm repository management tasks
+  ansible.builtin.include_tasks: helm_repo.yml
+  tags:
+    - helm
+    - cloudflared
+
+- name: Include Helm deployment tasks
+  ansible.builtin.include_tasks: helm_deploy.yml
+  tags:
+    - helm
+    - cloudflared
+    - deploy
+
+- name: Include verification tasks
+  ansible.builtin.include_tasks: verify.yml
+  tags:
+    - verification
+    - cloudflared

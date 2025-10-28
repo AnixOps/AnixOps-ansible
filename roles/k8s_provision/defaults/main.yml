@@ -1,0 +1,25 @@
+---
+# =============================================================================
+# K8s Provision Role - Default Variables
+# =============================================================================
+
+# K8s 提供商 | K8s provider (kind or k3s)
+k8s_provider: "{{ k8s_provider | default('kind') }}"
+
+# Kind 配置 | Kind configuration
+kind_cluster_name: "cloudflared-dev"
+kind_cluster_config: "/tmp/kind-config.yaml"
+kind_api_server_port: 6443
+
+# K3s 配置 | K3s configuration
+k3s_version: "v1.28.5+k3s1"
+k3s_server_options: "--disable traefik --write-kubeconfig-mode 644"
+k3s_install_script: "https://get.k3s.io"
+
+# Kubeconfig 路径 | Kubeconfig path
+kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
+
+# 检查工具 | Check tools
+required_tools:
+  - kubectl
+  - helm

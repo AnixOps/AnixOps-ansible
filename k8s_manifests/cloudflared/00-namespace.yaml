@@ -1,0 +1,12 @@
+---
+# =============================================================================
+# Cloudflare Tunnel Namespace
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudflare-tunnel
+  labels:
+    name: cloudflare-tunnel
+    purpose: ingress-tunnel
+    managed-by: anixops

@@ -1,0 +1,72 @@
+---
+# =============================================================================
+# anix_cloudflared Role 默认变量 | Default Variables for anix_cloudflared Role
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Cloudflared 安装配置 | Cloudflared Installation Configuration
+# -----------------------------------------------------------------------------
+
+# Cloudflared 版本（留空则安装最新版本）
+# Cloudflared version (leave empty to install the latest version)
+anix_cloudflared_version: "latest"
+
+# Cloudflared 下载 URL 模板
+# Cloudflared download URL template
+anix_cloudflared_download_url: >-
+  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{{ ansible_architecture }}
+
+# 安装路径 | Installation path
+anix_cloudflared_binary_path: "/usr/local/bin/cloudflared"
+
+# -----------------------------------------------------------------------------
+# 服务配置 | Service Configuration
+# -----------------------------------------------------------------------------
+
+# Systemd 服务名称 | Systemd service name
+anix_cloudflared_service_name: "cloudflared"
+
+# 运行服务的系统用户 | System user to run the service
+anix_cloudflared_user: "cloudflared"
+
+# 运行服务的系统组 | System group to run the service
+anix_cloudflared_group: "cloudflared"
+
+# 配置文件目录 | Configuration directory
+anix_cloudflared_config_dir: "/etc/cloudflared"
+
+# 日志目录 | Log directory
+anix_cloudflared_log_dir: "/var/log/cloudflared"
+
+# -----------------------------------------------------------------------------
+# Tunnel 配置 | Tunnel Configuration
+# -----------------------------------------------------------------------------
+
+# ⚠️ 注意：cf_tunnel_token 变量不在此文件中定义！
+# ⚠️ Note: cf_tunnel_token variable is NOT defined here!
+#
+# cf_tunnel_token 必须通过以下方式提供：
+# cf_tunnel_token must be provided via:
+#   1. 本地开发: 环境变量 $CLOUDFLARE_TUNNEL_TOKEN (source .env)
+#   2. CI/CD: GitHub Secrets -> secrets.CLOUDFLARE_TUNNEL_TOKEN
+#
+# Playbook 中使用 lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') 自动读取
+# Playbook uses lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') to auto-read it
+#
+# 注意: CF_TUNNEL_TOKEN 已弃用，请使用 CLOUDFLARE_TUNNEL_TOKEN
+# Note: CF_TUNNEL_TOKEN is deprecated, please use CLOUDFLARE_TUNNEL_TOKEN
+
+# Tunnel 运行参数 | Tunnel runtime arguments
+anix_cloudflared_tunnel_args:
+  - "--no-autoupdate"  # 禁用自动更新，由 Ansible 管理版本
+  - "--loglevel info"  # 日志级别
+
+# -----------------------------------------------------------------------------
+# 健康检查 | Health Check
+# -----------------------------------------------------------------------------
+
+# 启用服务健康检查 | Enable service health check
+anix_cloudflared_health_check_enabled: true
+
+# 健康检查超时时间（秒）| Health check timeout in seconds
+anix_cloudflared_health_check_timeout: 30

@@ -1,0 +1,31 @@
+---
+# =============================================================================
+# K8s Provision Role Metadata
+# =============================================================================
+
+galaxy_info:
+  author: AnixOps
+  description: Provision Kubernetes cluster for local (kind) and production (k3s) environments
+  company: AnixOps
+  license: MIT
+  min_ansible_version: 2.10
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - buster
+        - bullseye
+
+  galaxy_tags:
+    - kubernetes
+    - k8s
+    - kind
+    - k3s
+    - docker
+    - container
+
+dependencies: []

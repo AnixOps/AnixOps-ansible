@@ -1,0 +1,76 @@
+---
+# =============================================================================
+# Provision K3s Cluster (Production)
+# =============================================================================
+
+- name: Check if k3s is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Install k3s
+  when: not k3s_binary.stat.exists
+  block:
+    - name: Download and install k3s
+      ansible.builtin.shell: |
+        curl -sfL {{ k3s_install_script }} | INSTALL_K3S_VERSION={{ k3s_version }} sh -s - server {{ k3s_server_options }}
+      args:
+        executable: /bin/bash
+      become: yes
+      register: k3s_install
+      changed_when: k3s_install.rc == 0
+
+    - name: Wait for k3s to be ready
+      ansible.builtin.wait_for:
+        port: 6443
+        delay: 5
+        timeout: 300
+
+- name: Ensure k3s service is started and enabled
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Wait for k3s node to be ready
+  ansible.builtin.command: kubectl get nodes
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  register: node_status
+  until: "'Ready' in node_status.stdout"
+  retries: 30
+  delay: 10
+  changed_when: false
+  become: yes
+
+- name: Create .kube directory for non-root user (if needed)
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0755'
+  when: ansible_user != 'root'
+
+- name: Copy kubeconfig for non-root user
+  ansible.builtin.copy:
+    src: "{{ kubeconfig_path }}"
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    remote_src: yes
+    mode: '0600'
+  become: yes
+  when: ansible_user != 'root'
+
+- name: Display k3s cluster information
+  ansible.builtin.command: kubectl get nodes -o wide
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  register: k3s_nodes
+  changed_when: false
+  become: yes
+
+- name: Display k3s cluster status
+  ansible.builtin.debug:
+    msg:
+      - "✅ K3s cluster is ready"
+      - "K3s version: {{ k3s_version }}"
+      - "{{ k3s_nodes.stdout_lines }}"

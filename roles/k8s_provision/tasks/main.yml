@@ -1,0 +1,45 @@
+---
+# =============================================================================
+# K8s Provision Role - Main Tasks
+# =============================================================================
+
+- name: Display environment information
+  ansible.builtin.debug:
+    msg:
+      - "🔧 K8s Provisioning Started"
+      - "Environment: {{ environment | default('unknown') }}"
+      - "K8s Provider: {{ k8s_provider }}"
+      - "Host: {{ inventory_hostname }}"
+
+- name: Include prerequisite checks
+  ansible.builtin.include_tasks: prerequisites.yml
+  tags:
+    - prerequisites
+    - validation
+
+- name: Include kind provisioning tasks (for local environment)
+  ansible.builtin.include_tasks: provision_kind.yml
+  when: k8s_provider == 'kind'
+  tags:
+    - kind
+    - local
+
+- name: Include k3s provisioning tasks (for production environment)
+  ansible.builtin.include_tasks: provision_k3s.yml
+  when: k8s_provider == 'k3s'
+  tags:
+    - k3s
+    - production
+
+- name: Verify K8s cluster is ready
+  ansible.builtin.include_tasks: verify.yml
+  tags:
+    - verification
+    - always
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - "✅ K8s Provisioning Completed"
+      - "Cluster is ready for deployments"
+      - "Use kubectl to interact with the cluster"

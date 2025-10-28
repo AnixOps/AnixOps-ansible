@@ -1,0 +1,73 @@
+---
+# =============================================================================
+# Verify Cloudflared Deployment
+# =============================================================================
+
+- name: Wait for Cloudflared pods to be ready
+  ansible.builtin.command: |
+    kubectl wait --for=condition=Ready pods \
+      -l app.kubernetes.io/name=cloudflared \
+      -n {{ cloudflared_namespace }} \
+      --timeout={{ deployment_wait_timeout }}s
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: pods_wait
+  changed_when: false
+  failed_when: false
+
+- name: Get pod status
+  ansible.builtin.command: |
+    kubectl get pods -n {{ cloudflared_namespace }} -o wide
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: pod_status
+  changed_when: false
+
+- name: Display pod status
+  ansible.builtin.debug:
+    msg:
+      - "📊 Cloudflared Pod Status:"
+      - "{{ pod_status.stdout_lines }}"
+
+- name: Get deployment status
+  ansible.builtin.command: |
+    kubectl get deployment -n {{ cloudflared_namespace }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: deployment_status
+  changed_when: false
+
+- name: Display deployment status
+  ansible.builtin.debug:
+    msg:
+      - "📊 Deployment Status:"
+      - "{{ deployment_status.stdout_lines }}"
+
+- name: Check pod logs (last 20 lines)
+  ansible.builtin.shell: |
+    kubectl logs -n {{ cloudflared_namespace }} \
+      -l app.kubernetes.io/name=cloudflared \
+      --tail=20 \
+      --all-containers=true
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: pod_logs
+  changed_when: false
+  failed_when: false
+
+- name: Display pod logs
+  ansible.builtin.debug:
+    msg:
+      - "📝 Recent Pod Logs:"
+      - "{{ pod_logs.stdout_lines }}"
+  when: pod_logs.rc == 0
+
+- name: Display verification result
+  ansible.builtin.debug:
+    msg:
+      - "{{ '✅ Verification passed - All pods are ready' if pods_wait.rc == 0 else '⚠️  Warning - Some pods may not be ready yet' }}"
+      - "Check logs above for details"

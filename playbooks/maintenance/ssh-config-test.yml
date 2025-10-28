@@ -1,0 +1,145 @@
+---
+# =============================================================================
+# SSH Configuration Test and Verification Playbook
+# SSH 配置测试和验证 Playbook
+# =============================================================================
+# 此 playbook 用于测试和验证 SSH 配置是否正确应用
+# This playbook tests and verifies if SSH configuration is correctly applied
+#
+# 使用方法 | Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/ssh-config-test.yml
+# =============================================================================
+
+- name: SSH Configuration Test and Verification | SSH 配置测试和验证
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    # -------------------------------------------------------------------------
+    # 检查 SSH 服务状态 | Check SSH Service Status
+    # -------------------------------------------------------------------------
+    - name: Check SSH service name | 检查 SSH 服务名称
+      debug:
+        msg: "SSH service name: {{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
+    
+    - name: Check SSH service status | 检查 SSH 服务状态
+      service_facts:
+    
+    - name: Display SSH service status | 显示 SSH 服务状态
+      debug:
+        msg: "SSH service ({{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}) is {{ ansible_facts.services[('sshd.service' if ansible_os_family == 'RedHat' else 'ssh.service')].state }}"
+      when: 
+        - ansible_facts.services is defined
+        - (ansible_os_family == 'RedHat' and 'sshd.service' in ansible_facts.services) or
+          (ansible_os_family == 'Debian' and 'ssh.service' in ansible_facts.services)
+
+    # -------------------------------------------------------------------------
+    # 验证 SSH 配置文件 | Verify SSH Configuration File
+    # -------------------------------------------------------------------------
+    - name: Check if sshd_config exists | 检查 sshd_config 是否存在
+      stat:
+        path: /etc/ssh/sshd_config
+      register: sshd_config_stat
+
+    - name: Display sshd_config file info | 显示 sshd_config 文件信息
+      debug:
+        msg: 
+          - "File exists: {{ sshd_config_stat.stat.exists }}"
+          - "File mode: {{ sshd_config_stat.stat.mode | default('N/A') }}"
+          - "Last modified: {{ sshd_config_stat.stat.mtime | default('N/A') }}"
+
+    - name: Get current SSH configuration | 获取当前 SSH 配置
+      slurp:
+        src: /etc/ssh/sshd_config
+      register: current_sshd_config
+      when: sshd_config_stat.stat.exists
+
+    - name: Display current SSH authentication settings | 显示当前 SSH 认证设置
+      debug:
+        msg: "{{ (current_sshd_config['content'] | b64decode).split('\n') | select('match', '^(PasswordAuthentication|PubkeyAuthentication|PermitRootLogin|UsePAM).*') | list }}"
+      when: 
+        - current_sshd_config is defined
+        - current_sshd_config.content is defined
+
+    # -------------------------------------------------------------------------
+    # 测试 SSH 配置语法 | Test SSH Configuration Syntax
+    # -------------------------------------------------------------------------
+    - name: Test SSH configuration syntax | 测试 SSH 配置语法
+      command: /usr/sbin/sshd -t
+      register: sshd_test_result
+      changed_when: false
+      failed_when: false
+
+    - name: Display SSH configuration test result | 显示 SSH 配置测试结果
+      debug:
+        msg:
+          - "Return code: {{ sshd_test_result.rc }}"
+          - "Status: {{ 'VALID' if sshd_test_result.rc == 0 else 'INVALID' }}"
+          - "Stderr: {{ sshd_test_result.stderr if sshd_test_result.stderr else 'No errors' }}"
+
+    - name: Fail if SSH configuration is invalid | 如果 SSH 配置无效则失败
+      fail:
+        msg: "SSH configuration is INVALID! Please check the errors above."
+      when: sshd_test_result.rc != 0
+
+    # -------------------------------------------------------------------------
+    # 显示期望的配置值 | Display Expected Configuration Values
+    # -------------------------------------------------------------------------
+    - name: Display expected SSH configuration | 显示期望的 SSH 配置
+      debug:
+        msg:
+          - "Expected Port: {{ ssh_port | default(22) }}"
+          - "Expected PasswordAuthentication: {{ ssh_password_authentication | default(true) }}"
+          - "Expected PubkeyAuthentication: {{ ssh_pubkey_authentication | default(true) }}"
+          - "Expected PermitRootLogin: {{ ssh_allow_root | default(false) }}"
+
+    # -------------------------------------------------------------------------
+    # 检查 SSH 备份文件 | Check SSH Backup Files
+    # -------------------------------------------------------------------------
+    - name: Find SSH configuration backups | 查找 SSH 配置备份
+      find:
+        paths: /etc/ssh
+        patterns: "sshd_config.*"
+        file_type: file
+      register: sshd_backups
+
+    - name: Display SSH configuration backups | 显示 SSH 配置备份
+      debug:
+        msg: "Found {{ sshd_backups.files | length }} backup file(s): {{ sshd_backups.files | map(attribute='path') | list }}"
+      when: sshd_backups.files | length > 0
+
+    # -------------------------------------------------------------------------
+    # 检查是否需要重启 SSH 服务 | Check if SSH Service Needs Restart
+    # -------------------------------------------------------------------------
+    - name: Check if SSH has been modified recently | 检查 SSH 是否最近被修改
+      debug:
+        msg: "SSH config was modified at {{ sshd_config_stat.stat.mtime }} ({{ ((ansible_date_time.epoch | int) - (sshd_config_stat.stat.mtime)) | int }} seconds ago)"
+      when: sshd_config_stat.stat.exists
+
+    # -------------------------------------------------------------------------
+    # 提供修复建议 | Provide Fix Recommendations
+    # -------------------------------------------------------------------------
+    - name: Provide recommendations | 提供建议
+      debug:
+        msg:
+          - "================================================================"
+          - "If SSH configuration changes are not taking effect:"
+          - "如果 SSH 配置更改没有生效："
+          - ""
+          - "1. Manually restart SSH service:"
+          - "   手动重启 SSH 服务："
+          - "   sudo systemctl restart {{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
+          - ""
+          - "2. Check SSH service logs:"
+          - "   检查 SSH 服务日志："
+          - "   sudo journalctl -u {{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }} -n 50"
+          - ""
+          - "3. Verify configuration with:"
+          - "   使用以下命令验证配置："
+          - "   sudo sshd -t -f /etc/ssh/sshd_config"
+          - ""
+          - "4. Compare current config with template:"
+          - "   比较当前配置与模板："
+          - "   sudo diff /etc/ssh/sshd_config /etc/ssh/sshd_config.* | head -20"
+          - "================================================================"

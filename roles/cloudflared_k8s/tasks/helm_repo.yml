@@ -1,0 +1,23 @@
+---
+# =============================================================================
+# cloudflared_k8s Role - Helm Repository Management Tasks
+# =============================================================================
+
+- name: Add Cloudflare Helm repository
+  kubernetes.core.helm_repository:
+    name: "{{ helm_repo_name }}"
+    repo_url: "{{ helm_repo_url }}"
+  register: helm_repo_result
+
+- name: Display Helm repository result
+  ansible.builtin.debug:
+    msg: "{{ '✅ Helm repository added' if helm_repo_result.changed else 'ℹ️  Helm repository already exists' }}"
+
+- name: Update Helm repositories
+  ansible.builtin.command: helm repo update
+  changed_when: false
+  register: helm_update_result
+
+- name: Display Helm repository update result
+  ansible.builtin.debug:
+    msg: "✅ Helm repositories updated"

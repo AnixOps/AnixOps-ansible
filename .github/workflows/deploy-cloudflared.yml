@@ -1,0 +1,169 @@
+---
+# Cloudflare Tunnel Deployment Workflow
+# This workflow demonstrates how to securely deploy Cloudflare Tunnel using GitHub Secrets
+
+name: Deploy Cloudflare Tunnel
+
+# 触发条件 | Trigger conditions
+on:
+  # 手动触发 | Manual trigger
+  workflow_dispatch:
+    inputs:
+      target_hosts:
+        description: 'Target hosts (leave empty for all)'
+        required: false
+        default: 'all'
+        type: string
+      
+      dry_run:
+        description: 'Dry run mode (check only, no changes)'
+        required: false
+        default: false
+        type: boolean
+
+  # 推送到 main 分支时触发 (可选) | Trigger on push to main (optional)
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'roles/anix_cloudflared/**'
+  #     - 'playbooks/cloudflared_playbook.yml'
+
+# 并发控制：同一时间只运行一个部署 | Concurrency control: only one deployment at a time
+concurrency:
+  group: cloudflared-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy-cloudflare-tunnel:
+    name: Deploy Cloudflare Tunnel
+    runs-on: ubuntu-latest
+    
+    # 环境配置 (可选) | Environment configuration (optional)
+    # environment: production
+    
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. 检出代码 | Checkout code
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # -----------------------------------------------------------------------
+      # 2. 设置 Python 环境 | Setup Python environment
+      # -----------------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # -----------------------------------------------------------------------
+      # 3. 安装 Ansible 和依赖 | Install Ansible and dependencies
+      # -----------------------------------------------------------------------
+      - name: Install Ansible dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # -----------------------------------------------------------------------
+      # 4. 验证 Ansible 配置 | Verify Ansible configuration
+      # -----------------------------------------------------------------------
+      - name: Verify Ansible setup
+        run: |
+          ansible --version
+          ansible-lint --version
+
+      # -----------------------------------------------------------------------
+      # 5. Lint Ansible 代码 | Lint Ansible code
+      # -----------------------------------------------------------------------
+      - name: Run Ansible Lint
+        run: |
+          ansible-lint roles/anix_cloudflared/
+          ansible-lint playbooks/cloudflared_playbook.yml
+
+      # -----------------------------------------------------------------------
+      # 6. 配置 SSH 密钥 | Configure SSH key
+      # -----------------------------------------------------------------------
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # 添加目标主机到 known_hosts (禁用严格主机检查) 
+          # Add target hosts to known_hosts (disable strict host checking)
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      # -----------------------------------------------------------------------
+      # 7. 测试 Ansible 连接 | Test Ansible connectivity
+      # -----------------------------------------------------------------------
+      - name: Test Ansible connectivity
+        run: |
+          ansible ${{ inputs.target_hosts || 'all' }} -m ping
+
+      # -----------------------------------------------------------------------
+      # 8. 运行 Playbook (Dry Run 模式) | Run Playbook (Dry Run mode)
+      # -----------------------------------------------------------------------
+      - name: Ansible Dry Run (Check Mode)
+        if: ${{ inputs.dry_run == true }}
+        env:
+          # 🔐 关键步骤：从 GitHub Secrets 读取 Token 并设置为环境变量
+          # 🔐 Key step: Read Token from GitHub Secrets and set as environment variable
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+        run: |
+          ansible-playbook playbooks/cloudflared_playbook.yml \
+            --limit "${{ inputs.target_hosts || 'all' }}" \
+            --check \
+            --diff \
+            --verbose
+
+      # -----------------------------------------------------------------------
+      # 9. 运行 Playbook (实际部署) | Run Playbook (Actual deployment)
+      # -----------------------------------------------------------------------
+      - name: Deploy Cloudflare Tunnel
+        if: ${{ inputs.dry_run != true }}
+        env:
+          # 🔐 关键步骤：从 GitHub Secrets 读取 Token 并设置为环境变量
+          # 🔐 Key step: Read Token from GitHub Secrets and set as environment variable
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+        run: |
+          ansible-playbook playbooks/cloudflared_playbook.yml \
+            --limit "${{ inputs.target_hosts || 'all' }}" \
+            --verbose
+
+      # -----------------------------------------------------------------------
+      # 10. 验证部署 | Verify deployment
+      # -----------------------------------------------------------------------
+      - name: Verify Cloudflare Tunnel service
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          ansible ${{ inputs.target_hosts || 'all' }} \
+            -m shell \
+            -a "systemctl status cloudflared --no-pager"
+
+      # -----------------------------------------------------------------------
+      # 11. 部署成功通知 | Deployment success notification
+      # -----------------------------------------------------------------------
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║  ✅ Cloudflare Tunnel Deployment Successful               ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "🎯 Target: ${{ inputs.target_hosts || 'all' }}"
+          echo "🏷️  Commit: ${{ github.sha }}"
+          echo "👤 Actor: ${{ github.actor }}"
+          echo "🔗 Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # -----------------------------------------------------------------------
+      # 12. 清理敏感文件 | Clean up sensitive files
+      # -----------------------------------------------------------------------
+      - name: Clean up SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa
+          rm -f ~/.ssh/config

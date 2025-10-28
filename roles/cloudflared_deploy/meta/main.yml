@@ -1,0 +1,31 @@
+---
+# =============================================================================
+# Cloudflared Deploy Role Metadata
+# =============================================================================
+
+galaxy_info:
+  author: AnixOps
+  description: Deploy Cloudflare Tunnel (cloudflared) to Kubernetes using Helm
+  company: AnixOps
+  license: MIT
+  min_ansible_version: 2.10
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - buster
+        - bullseye
+
+  galaxy_tags:
+    - cloudflare
+    - cloudflared
+    - tunnel
+    - kubernetes
+    - k8s
+    - helm
+
+dependencies: []

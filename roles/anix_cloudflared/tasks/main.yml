@@ -1,0 +1,207 @@
+---
+# =============================================================================
+# anix_cloudflared Role Tasks | Main Tasks for anix_cloudflared Role
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 前置检查 | Pre-flight Checks
+# -----------------------------------------------------------------------------
+
+- name: Validate that cf_tunnel_token is provided
+  ansible.builtin.assert:
+    that:
+      - cf_tunnel_token is defined
+      - cf_tunnel_token | length > 0
+    fail_msg: |
+      ❌ FATAL ERROR: cf_tunnel_token is not set!
+
+      You MUST provide the Cloudflare Tunnel Token via environment variable.
+
+      📖 Local Development:
+        1. Create a .env file: echo 'export CLOUDFLARE_TUNNEL_TOKEN="your-token"' > .env
+        2. Load it: source .env
+        3. Run playbook: ansible-playbook playbooks/cloudflared_playbook.yml
+
+      📖 CI/CD (GitHub Actions):
+        1. Add CLOUDFLARE_TUNNEL_TOKEN to: Settings -> Secrets -> Actions
+        2. Reference it in workflow: env: CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+
+      ⚠️  Note: CF_TUNNEL_TOKEN is deprecated, please use CLOUDFLARE_TUNNEL_TOKEN
+
+      📚 Docs: https://github.com/AnixOps/AnixOps-ansible/docs/SECRETS_MANAGEMENT.md
+    success_msg: "✅ cf_tunnel_token is set and valid"
+  tags:
+    - cloudflared
+    - validation
+
+- name: Print deployment info (token is masked)
+  ansible.builtin.debug:
+    msg:
+      - "🚀 Starting Cloudflare Tunnel deployment"
+      - "📦 Target host: {{ inventory_hostname }}"
+      - "🔐 Token status: ✅ Provided (first 10 chars: {{ cf_tunnel_token[:10] }}...)"
+      - "🏗️  Architecture: {{ ansible_architecture }}"
+  tags:
+    - cloudflared
+
+# -----------------------------------------------------------------------------
+# 安装 cloudflared | Install cloudflared
+# -----------------------------------------------------------------------------
+
+- name: Create cloudflared system user
+  ansible.builtin.user:
+    name: "{{ anix_cloudflared_user }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: "{{ anix_cloudflared_config_dir }}"
+    create_home: no
+    state: present
+  become: yes
+  tags:
+    - cloudflared
+    - install
+
+- name: Create cloudflared directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ anix_cloudflared_user }}"
+    group: "{{ anix_cloudflared_group }}"
+    mode: '0755'
+  loop:
+    - "{{ anix_cloudflared_config_dir }}"
+    - "{{ anix_cloudflared_log_dir }}"
+  become: yes
+  tags:
+    - cloudflared
+    - install
+
+- name: Check if cloudflared is already installed
+  ansible.builtin.stat:
+    path: "{{ anix_cloudflared_binary_path }}"
+  register: anix_cloudflared_binary
+  tags:
+    - cloudflared
+    - install
+
+- name: Download cloudflared binary
+  ansible.builtin.get_url:
+    url: "{{ anix_cloudflared_download_url }}"
+    dest: "{{ anix_cloudflared_binary_path }}"
+    mode: '0755'
+    owner: root
+    group: root
+    force: yes
+  become: yes
+  when: >-
+    not anix_cloudflared_binary.stat.exists or
+    anix_cloudflared_version != "latest"
+  notify: Restart cloudflared service
+  tags:
+    - cloudflared
+    - install
+
+- name: Verify cloudflared installation
+  ansible.builtin.command:
+    cmd: "{{ anix_cloudflared_binary_path }} --version"
+  register: anix_cloudflared_version_output
+  changed_when: false
+  become: yes
+  tags:
+    - cloudflared
+    - install
+
+- name: Display cloudflared version
+  ansible.builtin.debug:
+    msg: "✅ Cloudflared installed: {{ anix_cloudflared_version_output.stdout }}"
+  tags:
+    - cloudflared
+    - install
+
+# -----------------------------------------------------------------------------
+# 配置 Systemd 服务 | Configure Systemd Service
+# -----------------------------------------------------------------------------
+
+- name: Deploy cloudflared systemd service file
+  ansible.builtin.template:
+    src: cloudflared.service.j2
+    dest: "/etc/systemd/system/{{ cloudflared_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  become: yes
+  notify:
+    - Reload systemd daemon
+    - Restart cloudflared service
+  tags:
+    - cloudflared
+    - service
+
+# -----------------------------------------------------------------------------
+# 启动服务 | Start Service
+# -----------------------------------------------------------------------------
+
+- name: Enable and start cloudflared service
+  ansible.builtin.systemd:
+    name: "{{ anix_cloudflared_service_name }}"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: yes
+  tags:
+    - cloudflared
+    - service
+
+# -----------------------------------------------------------------------------
+# 健康检查 | Health Check
+# -----------------------------------------------------------------------------
+
+- name: Wait for cloudflared service to be active
+  ansible.builtin.systemd:
+    name: "{{ anix_cloudflared_service_name }}"
+  register: anix_cloudflared_service_status
+  until: anix_cloudflared_service_status.status.ActiveState == "active"
+  retries: 5
+  delay: 5
+  become: yes
+  when: anix_cloudflared_health_check_enabled
+  tags:
+    - cloudflared
+    - health-check
+
+- name: Get cloudflared service status
+  ansible.builtin.command:
+    cmd: "systemctl status {{ anix_cloudflared_service_name }} --no-pager"
+  register: anix_cloudflared_status
+  changed_when: false
+  become: yes
+  tags:
+    - cloudflared
+    - health-check
+
+- name: Display cloudflared service status
+  ansible.builtin.debug:
+    msg: "{{ anix_cloudflared_status.stdout_lines }}"
+  tags:
+    - cloudflared
+    - health-check
+
+# -----------------------------------------------------------------------------
+# 最终验证 | Final Validation
+# -----------------------------------------------------------------------------
+
+- name: Final deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "╔══════════════════════════════════════════════════════╗"
+      - "║  ✅ Cloudflare Tunnel Deployment Successful         ║"
+      - "╚══════════════════════════════════════════════════════╝"
+      - "📍 Host: {{ inventory_hostname }}"
+      - "🔧 Service: {{ anix_cloudflared_service_name }}.service"
+      - "📊 Status: {{ anix_cloudflared_service_status.status.ActiveState | default('unknown') }}"
+      - "📂 Config: {{ anix_cloudflared_config_dir }}"
+      - "📝 Logs: journalctl -u {{ anix_cloudflared_service_name }} -f"
+      - ""
+      - "🔐 Security Note: Token is stored in memory only, never on disk"
+  tags:
+    - cloudflared

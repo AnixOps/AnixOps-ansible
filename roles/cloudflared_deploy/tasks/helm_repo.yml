@@ -1,0 +1,44 @@
+---
+# =============================================================================
+# Setup Helm Repository
+# =============================================================================
+
+- name: Check if Helm repository already exists
+  ansible.builtin.command: "helm repo list"
+  register: helm_repo_list
+  changed_when: false
+  failed_when: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+
+- name: Add Cloudflare Helm repository
+  ansible.builtin.command: |
+    helm repo add {{ helm_repo_name }} {{ helm_repo_url }}
+  when: helm_repo_name not in helm_repo_list.stdout
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: helm_repo_add
+  changed_when: helm_repo_add.rc == 0
+
+- name: Update Helm repositories
+  ansible.builtin.command: helm repo update
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  changed_when: false
+
+- name: Search for Cloudflare charts
+  ansible.builtin.command: "helm search repo {{ helm_repo_name }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: helm_search
+  changed_when: false
+
+- name: Display available charts
+  ansible.builtin.debug:
+    msg:
+      - "📦 Helm repository configured"
+      - "{{ helm_search.stdout_lines }}"

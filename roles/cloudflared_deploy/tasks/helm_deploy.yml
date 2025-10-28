@@ -1,0 +1,59 @@
+---
+# =============================================================================
+# Deploy Cloudflared using Helm
+# =============================================================================
+
+- name: Check if Helm release exists
+  ansible.builtin.command: |
+    helm list -n {{ cloudflared_namespace }} -o json
+  register: helm_list
+  changed_when: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+
+- name: Parse Helm releases
+  ansible.builtin.set_fact:
+    existing_releases: "{{ helm_list.stdout | from_json | map(attribute='name') | list }}"
+
+- name: Deploy or upgrade Cloudflared with Helm
+  ansible.builtin.command: |
+    helm upgrade --install {{ cloudflared_release_name }} {{ helm_chart_name }} \
+      --namespace {{ cloudflared_namespace }} \
+      --set cloudflare.tunnelName={{ tunnel_creds.t }} \
+      --set replicaCount={{ cloudflared_replica_count }} \
+      --set hostNetwork={{ cloudflared_host_network | default(false) | string | lower }} \
+      --set dnsPolicy={{ 'ClusterFirstWithHostNet' if (cloudflared_host_network | default(false)) else 'ClusterFirst' }} \
+      --set resources.requests.cpu={{ cloudflared_resources.requests.cpu }} \
+      --set resources.requests.memory={{ cloudflared_resources.requests.memory }} \
+      --set resources.limits.cpu={{ cloudflared_resources.limits.cpu }} \
+      --set resources.limits.memory={{ cloudflared_resources.limits.memory }} \
+      --timeout {{ helm_timeout }} \
+      --wait
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: helm_deploy
+  changed_when: helm_deploy.rc == 0
+  no_log: true
+
+- name: Display Helm deployment status
+  ansible.builtin.debug:
+    msg:
+      - "✅ Helm deployment completed"
+      - "Release: {{ cloudflared_release_name }}"
+      - "Chart: {{ helm_chart_name }}"
+      - "Namespace: {{ cloudflared_namespace }}"
+
+- name: Get Helm release status
+  ansible.builtin.command: |
+    helm status {{ cloudflared_release_name }} -n {{ cloudflared_namespace }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  register: helm_status
+  changed_when: false
+
+- name: Display Helm status
+  ansible.builtin.debug:
+    msg: "{{ helm_status.stdout_lines }}"

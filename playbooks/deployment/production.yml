@@ -1,0 +1,164 @@
+---
+# =============================================================================
+# Production Deployment Playbook
+# =============================================================================
+# 在生产环境远程服务器上部署 K3s 和 Cloudflared
+# Deploy K3s and Cloudflared on production remote servers
+# =============================================================================
+#
+# ⚠️  警告 | WARNING:
+#   这将在生产服务器上部署真实的 Kubernetes 集群！
+#   This will deploy a real Kubernetes cluster on production servers!
+#
+# 使用方法 | Usage:
+#
+#   方式 1: 使用命令行传递 Token | Pass token via command line:
+#     ansible-playbook playbook-production.yml \
+#       --extra-vars "cloudflare_tunnel_token=your-token-here"
+#
+#   方式 2: 使用 Ansible Vault (推荐) | Use Ansible Vault (recommended):
+#     # 创建加密的 secrets 文件 | Create encrypted secrets file
+#     ansible-vault create vars/secrets.yml
+#     
+#     # 在文件中添加 | Add in the file:
+#     ---
+#     cloudflare_tunnel_token: "your-token-here"
+#     
+#     # 运行 playbook | Run playbook
+#     ansible-playbook playbook-production.yml \
+#       --extra-vars "@vars/secrets.yml" \
+#       --vault-password-file ~/.vault_pass
+#
+# 前置要求 | Prerequisites:
+#   1. 已配置 inventories/production/hosts.ini
+#   2. SSH 密钥已配置
+#   3. 目标服务器可以访问互联网
+#   4. 目标服务器已安装 Docker
+#
+# =============================================================================
+
+- name: "Pre-flight Check: Verify Production Environment"
+  hosts: k8s_production
+  gather_facts: yes
+  
+  tasks:
+    - name: Display pre-flight check information
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Pre-flight Check: Production Environment                     ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target Server: {{ inventory_hostname }}"
+          - "🌐 IP Address: {{ ansible_host }}"
+          - "💻 OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "🔧 Python: {{ ansible_python_version }}"
+
+    - name: Check server connectivity
+      ansible.builtin.ping:
+
+    - name: Display connectivity success
+      ansible.builtin.debug:
+        msg: "✅ Server connectivity verified"
+
+- name: "Stage 1: Provision Production Kubernetes Cluster (K3s)"
+  hosts: k8s_production
+  gather_facts: no
+  
+  tasks:
+    - name: Display stage information
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Stage 1: Provision Production Kubernetes Cluster (K3s)       ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target: {{ inventory_hostname }}"
+          - "🔧 Provider: K3s"
+          - "📦 Version: {{ k3s_version }}"
+
+    - name: Confirm production deployment
+      ansible.builtin.pause:
+        prompt: |
+          
+          ⚠️  WARNING: You are about to deploy K3s on a PRODUCTION server!
+          
+          This will:
+          - Install K3s on {{ inventory_hostname }}
+          - Modify system configurations
+          - Open required ports
+          
+          Are you sure you want to continue? (yes/no)
+      when: environment == 'production'
+      register: confirm_deploy
+
+    - name: Fail if not confirmed
+      ansible.builtin.fail:
+        msg: "Deployment cancelled by user"
+      when: 
+        - environment == 'production'
+        - confirm_deploy.user_input | lower != 'yes'
+
+    - name: Include k8s_provision role
+      ansible.builtin.include_role:
+        name: k8s_provision
+      tags:
+        - k8s
+        - provision
+
+- name: "Stage 2: Deploy Cloudflared to Production Kubernetes"
+  hosts: k8s_production
+  gather_facts: no
+  
+  tasks:
+    - name: Display stage information
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Stage 2: Deploy Cloudflared to Production Kubernetes         ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🚀 Deploying Cloudflared..."
+          - "📦 Namespace: {{ cloudflared_namespace }}"
+          - "📦 Release: {{ cloudflared_release_name }}"
+          - "📊 Replicas: {{ cloudflared_replica_count }}"
+
+    - name: Include cloudflared_deploy role
+      ansible.builtin.include_role:
+        name: cloudflared_deploy
+      tags:
+        - cloudflared
+        - deploy
+
+- name: "Stage 3: Display Production Deployment Summary"
+  hosts: k8s_production
+  gather_facts: no
+  
+  tasks:
+    - name: Display final summary
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  🎉 Production Deployment Completed Successfully!              ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✅ K3s cluster is running on {{ inventory_hostname }}"
+          - "✅ Cloudflared is deployed with {{ cloudflared_replica_count }} replicas"
+          - ""
+          - "📋 Next Steps:"
+          - "  1. Access your server: ssh {{ ansible_user }}@{{ ansible_host }}"
+          - "  2. Check cluster: kubectl get nodes"
+          - "  3. Check pods: kubectl get pods -n {{ cloudflared_namespace }}"
+          - "  4. Check logs: kubectl logs -n {{ cloudflared_namespace }} -l app.kubernetes.io/name=cloudflared"
+          - ""
+          - "🔍 Useful Commands (on server):"
+          - "  • View all pods: kubectl get pods --all-namespaces"
+          - "  • Get cluster info: kubectl cluster-info"
+          - "  • Check k3s status: systemctl status k3s"
+          - ""
+          - "📝 Important Files:"
+          - "  • Kubeconfig: {{ kubeconfig_path }}"
+          - "  • K3s config: /etc/rancher/k3s/config.yaml"

@@ -1,0 +1,97 @@
+---
+# =============================================================================
+# Local Development Playbook
+# =============================================================================
+# 用于在本地 Kind 集群上部署 Cloudflared
+# Deploy Cloudflared on local Kind cluster
+# =============================================================================
+#
+# 使用方法 | Usage:
+#
+#   方式 1: 使用命令行传递 Token | Pass token via command line:
+#     ansible-playbook playbook-local.yml \
+#       --extra-vars "cloudflare_tunnel_token=your-token-here"
+#
+#   方式 2: 使用环境变量 | Use environment variable:
+#     export CLOUDFLARE_TUNNEL_TOKEN="your-token-here"
+#     ansible-playbook playbook-local.yml
+#
+#   方式 3: 使用 Ansible Vault | Use Ansible Vault:
+#     ansible-playbook playbook-local.yml \
+#       --extra-vars "@vars/secrets.yml" \
+#       --vault-password-file ~/.vault_pass
+#
+# =============================================================================
+
+- name: "Stage 1: Provision Local Kubernetes Cluster (Kind)"
+  hosts: k8s_local
+  gather_facts: no
+  
+  tasks:
+    - name: Display stage information
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Stage 1: Provision Local Kubernetes Cluster (Kind)           ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target: localhost"
+          - "🔧 Provider: Kind"
+          - "📦 Cluster: {{ kind_cluster_name }}"
+
+    - name: Include k8s_provision role
+      ansible.builtin.include_role:
+        name: k8s_provision
+      tags:
+        - k8s
+        - provision
+
+- name: "Stage 2: Deploy Cloudflared to Kubernetes"
+  hosts: k8s_local
+  gather_facts: no
+  
+  tasks:
+    - name: Display stage information
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Stage 2: Deploy Cloudflared to Kubernetes                    ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🚀 Deploying Cloudflared..."
+          - "📦 Namespace: {{ cloudflared_namespace }}"
+          - "📦 Release: {{ cloudflared_release_name }}"
+
+    - name: Include cloudflared_deploy role
+      ansible.builtin.include_role:
+        name: cloudflared_deploy
+      tags:
+        - cloudflared
+        - deploy
+
+- name: "Stage 3: Display Deployment Summary"
+  hosts: k8s_local
+  gather_facts: no
+  
+  tasks:
+    - name: Display final summary
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  🎉 Local Deployment Completed Successfully!                   ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✅ Kind cluster is running"
+          - "✅ Cloudflared is deployed"
+          - ""
+          - "📋 Next Steps:"
+          - "  1. Check cluster: kubectl cluster-info --context kind-{{ kind_cluster_name }}"
+          - "  2. Check pods: kubectl get pods -n {{ cloudflared_namespace }}"
+          - "  3. Check logs: kubectl logs -n {{ cloudflared_namespace }} -l app.kubernetes.io/name=cloudflared"
+          - ""
+          - "🔍 Useful Commands:"
+          - "  • Switch context: kubectl config use-context kind-{{ kind_cluster_name }}"
+          - "  • Get all resources: kubectl get all -n {{ cloudflared_namespace }}"
+          - "  • Delete cluster: kind delete cluster --name {{ kind_cluster_name }}"

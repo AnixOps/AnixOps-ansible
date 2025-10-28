@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# 示例: 使用 cloudflared_k8s Role 的简单 Playbook
+# =============================================================================
+
+- name: Deploy Cloudflare Tunnel (Simple)
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    cloudflare_tunnel_token: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') }}"
+  
+  roles:
+    - cloudflared_k8s
