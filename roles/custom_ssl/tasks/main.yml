@@ -14,17 +14,22 @@
   set_fact:
     ssl_cert_provided: "{{ ssl_certificate_pem | default('') | length > 0 }}"
     ssl_key_provided: "{{ ssl_certificate_key_pem | default('') | length > 0 }}"
+    # Remove any whitespace/newlines from base64 strings
+    ssl_cert_clean: "{{ ssl_certificate_pem | default('') | regex_replace('\\s+', '') }}"
+    ssl_key_clean: "{{ ssl_certificate_key_pem | default('') | regex_replace('\\s+', '') }}"
 
 - name: Validate SSL certificate configuration
   assert:
     that:
       - ssl_cert_provided
       - ssl_key_provided
+      - ssl_cert_clean | length > 100
+      - ssl_key_clean | length > 100
     fail_msg: "SSL_CERTIFICATE_PEM and SSL_CERTIFICATE_KEY_PEM must be set in .env when using custom SSL method"
 
 - name: Decode and deploy SSL certificate
   copy:
-    content: "{{ ssl_certificate_pem | b64decode }}"
+    content: "{{ ssl_cert_clean | b64decode }}"
     dest: "/etc/nginx/ssl/{{ item }}.crt"
     mode: '0644'
     owner: root
@@ -35,7 +40,7 @@
 
 - name: Decode and deploy SSL private key
   copy:
-    content: "{{ ssl_certificate_key_pem | b64decode }}"
+    content: "{{ ssl_key_clean | b64decode }}"
     dest: "/etc/nginx/ssl/{{ item }}.key"
     mode: '0600'
     owner: root

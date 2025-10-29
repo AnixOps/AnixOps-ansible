@@ -1,0 +1,178 @@
+---
+# Kubernetes Dashboard Complete Deployment Role
+# 完整部署 K8s Dashboard + 反向代理 + SSL + Token 生成
+
+- name: Check if K3s is installed
+  stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Fail if K3s is not installed
+  fail:
+    msg: "K3s is not installed. Please run k8s_provision role first."
+  when: not k3s_binary.stat.exists
+
+- name: Set kubeconfig path for K3s
+  set_fact:
+    kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+
+- name: Check if Dashboard is already deployed
+  shell: kubectl --kubeconfig={{ kubeconfig_path }} get namespace kubernetes-dashboard
+  register: dashboard_ns
+  changed_when: false
+  failed_when: false
+
+- name: Deploy Kubernetes Dashboard
+  shell: |
+    kubectl --kubeconfig={{ kubeconfig_path }} apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+  when: dashboard_ns.rc != 0
+
+- name: Wait for Dashboard pods to be ready
+  shell: |
+    kubectl --kubeconfig={{ kubeconfig_path }} wait --namespace kubernetes-dashboard \
+      --for=condition=ready pod \
+      --selector=k8s-app=kubernetes-dashboard \
+      --timeout=300s
+  retries: 3
+  delay: 10
+  register: dashboard_ready
+  until: dashboard_ready.rc == 0
+
+- name: Create admin-user service account
+  shell: |
+    kubectl --kubeconfig={{ kubeconfig_path }} apply -f - <<EOF
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: admin-user
+      namespace: kubernetes-dashboard
+    EOF
+  register: sa_result
+  changed_when: "'created' in sa_result.stdout or 'configured' in sa_result.stdout"
+
+- name: Create ClusterRoleBinding for admin-user
+  shell: |
+    kubectl --kubeconfig={{ kubeconfig_path }} apply -f - <<EOF
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: admin-user
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: cluster-admin
+    subjects:
+    - kind: ServiceAccount
+      name: admin-user
+      namespace: kubernetes-dashboard
+    EOF
+  register: crb_result
+  changed_when: "'created' in crb_result.stdout or 'configured' in crb_result.stdout"
+
+- name: Create long-lived token secret
+  shell: |
+    kubectl --kubeconfig={{ kubeconfig_path }} apply -f - <<EOF
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: admin-user-token
+      namespace: kubernetes-dashboard
+      annotations:
+        kubernetes.io/service-account.name: admin-user
+    type: kubernetes.io/service-account-token
+    EOF
+  register: secret_result
+  changed_when: "'created' in secret_result.stdout or 'configured' in secret_result.stdout"
+
+- name: Wait for token to be generated
+  shell: |
+    kubectl --kubeconfig={{ kubeconfig_path }} get secret admin-user-token -n kubernetes-dashboard -o jsonpath='{.data.token}'
+  register: token_check
+  until: token_check.stdout != ""
+  retries: 10
+  delay: 2
+
+- name: Get Dashboard access token
+  shell: |
+    kubectl --kubeconfig={{ kubeconfig_path }} get secret admin-user-token -n kubernetes-dashboard -o jsonpath='{.data.token}' | base64 -d
+  register: dashboard_token
+  changed_when: false
+
+- name: Save token to file
+  copy:
+    content: "{{ dashboard_token.stdout }}"
+    dest: "/root/k8s-dashboard-token.txt"
+    mode: '0600'
+    owner: root
+    group: root
+
+- name: Check if kubectl port-forward service exists
+  stat:
+    path: /etc/systemd/system/kubectl-port-forward.service
+  register: port_forward_service
+
+- name: Create kubectl port-forward systemd service
+  copy:
+    dest: /etc/systemd/system/kubectl-port-forward.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=kubectl port-forward for Kubernetes Dashboard
+      After=network.target k3s.service
+      Requires=k3s.service
+      
+      [Service]
+      Type=simple
+      User=root
+      ExecStart=/usr/local/bin/kubectl --kubeconfig={{ kubeconfig_path }} port-forward -n kubernetes-dashboard service/kubernetes-dashboard 8443:443 --address=127.0.0.1
+      Restart=always
+      RestartSec=10
+      
+      [Install]
+      WantedBy=multi-user.target
+  when: not port_forward_service.stat.exists
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start kubectl port-forward service
+  systemd:
+    name: kubectl-port-forward
+    enabled: yes
+    state: started
+
+- name: Wait for port-forward to be ready
+  wait_for:
+    host: 127.0.0.1
+    port: 8443
+    delay: 5
+    timeout: 60
+
+- name: Verify Dashboard is accessible via port-forward
+  uri:
+    url: https://127.0.0.1:8443
+    validate_certs: no
+    return_content: no
+    status_code: 200
+  register: dashboard_health
+  retries: 5
+  delay: 3
+  until: dashboard_health.status == 200
+
+- name: Display deployment summary
+  debug:
+    msg:
+      - "════════════════════════════════════════════════════════════"
+      - "✅ Kubernetes Dashboard Deployed Successfully"
+      - "════════════════════════════════════════════════════════════"
+      - ""
+      - "📊 Dashboard URL: https://{{ k8s_dashboard_domain }}"
+      - "🔑 Token Location: /root/k8s-dashboard-token.txt"
+      - "🔐 Token Preview: {{ dashboard_token.stdout[:50] }}..."
+      - ""
+      - "🚀 Port-forward Service: kubectl-port-forward.service"
+      - "📡 Local Endpoint: https://127.0.0.1:8443"
+      - ""
+      - "To view full token: cat /root/k8s-dashboard-token.txt"
+      - "════════════════════════════════════════════════════════════"

@@ -5,6 +5,7 @@
 # This role is responsible for basic server configuration and security hardening
 #
 # 功能 | Features:
+#   - 主机名配置 | Hostname configuration
 #   - 系统包管理 | System package management
 #   - 时区和本地化 | Timezone and localization
 #   - NTP 时间同步 | NTP time synchronization
@@ -13,6 +14,26 @@
 #   - Fail2Ban 防护 | Fail2Ban protection
 #   - 系统参数优化 | System parameter optimization
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# 主机名配置 | Hostname Configuration
+# -----------------------------------------------------------------------------
+- name: Set server hostname | 设置服务器主机名
+  hostname:
+    name: "{{ inventory_hostname }}"
+  when: inventory_hostname is defined
+
+- name: Update /etc/hosts with new hostname | 更新 /etc/hosts 文件
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ inventory_hostname }}"
+    state: present
+  when: inventory_hostname is defined
+
+- name: Display hostname change | 显示主机名更改
+  debug:
+    msg: "主机名已设置为 | Hostname set to: {{ inventory_hostname }}"
 
 # -----------------------------------------------------------------------------
 # 更新包缓存 | Update Package Cache

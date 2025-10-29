@@ -3,21 +3,33 @@
 # Verify K8s Cluster
 # =============================================================================
 
-- name: Get cluster info
-  ansible.builtin.command: kubectl cluster-info
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+- name: Get cluster info (k3s)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig_path }} cluster-info
   register: cluster_info
   changed_when: false
-  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  become: yes
+  when: k8s_provider == 'k3s'
 
-- name: Get cluster nodes
-  ansible.builtin.command: kubectl get nodes
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+- name: Get cluster info (kind)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig_path }} cluster-info
+  register: cluster_info
+  changed_when: false
+  become: no
+  when: k8s_provider == 'kind'
+
+- name: Get cluster nodes (k3s)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes
   register: cluster_nodes
   changed_when: false
-  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  become: yes
+  when: k8s_provider == 'k3s'
+
+- name: Get cluster nodes (kind)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes
+  register: cluster_nodes
+  changed_when: false
+  become: no
+  when: k8s_provider == 'kind'
 
 - name: Display cluster information
   ansible.builtin.debug:
@@ -28,27 +40,43 @@
       - ""
       - "Nodes:"
       - "{{ cluster_nodes.stdout_lines }}"
+  when: cluster_info is not skipped and cluster_nodes is not skipped
 
-- name: Wait for all system pods to be ready
+- name: Wait for all system pods to be ready (k3s)
   ansible.builtin.command: |
-    kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+    kubectl --kubeconfig={{ kubeconfig_path }} wait --for=condition=Ready pods --all -n kube-system --timeout=300s
   register: pods_ready
   changed_when: false
   failed_when: false
-  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  become: yes
+  when: k8s_provider == 'k3s'
 
-- name: Display system pods status
-  ansible.builtin.command: kubectl get pods -n kube-system
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+- name: Wait for all system pods to be ready (kind)
+  ansible.builtin.command: |
+    kubectl --kubeconfig={{ kubeconfig_path }} wait --for=condition=Ready pods --all -n kube-system --timeout=300s
+  register: pods_ready
+  changed_when: false
+  failed_when: false
+  become: no
+  when: k8s_provider == 'kind'
+
+- name: Display system pods status (k3s)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig_path }} get pods -n kube-system
   register: system_pods
   changed_when: false
-  become: "{{ 'yes' if k8s_provider == 'k3s' else 'no' }}"
+  become: yes
+  when: k8s_provider == 'k3s'
+
+- name: Display system pods status (kind)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig_path }} get pods -n kube-system
+  register: system_pods
+  changed_when: false
+  become: no
+  when: k8s_provider == 'kind'
 
 - name: Show system pods
   ansible.builtin.debug:
     msg:
       - "System Pods Status:"
       - "{{ system_pods.stdout_lines }}"
+  when: system_pods is not skipped

@@ -1,0 +1,153 @@
+---
+# =============================================================================
+# Headscale Client 部署任务 | Headscale Client Deployment Tasks
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. 前置检查 | Pre-flight Checks
+# -----------------------------------------------------------------------------
+- name: Check if required environment variables are set
+  ansible.builtin.fail:
+    msg: "Environment variable {{ item }} is not set. Please configure it in .env file or GitHub Secrets."
+  when: lookup('env', item) == ''
+  loop:
+    - HEADSCALE_PREAUTH_KEY
+    - PL_1_V4_SSH
+  tags:
+    - headscale_client
+    - preflight
+
+- name: Ensure OS is supported (Debian/Ubuntu)
+  ansible.builtin.fail:
+    msg: "This role only supports Debian/Ubuntu systems"
+  when: ansible_os_family != 'Debian'
+  tags:
+    - headscale_client
+    - preflight
+
+# -----------------------------------------------------------------------------
+# 2. 安装 Tailscale 客户端 | Install Tailscale Client
+# -----------------------------------------------------------------------------
+- name: Check if Tailscale is already installed
+  ansible.builtin.command: which tailscale
+  register: tailscale_check
+  ignore_errors: true
+  changed_when: false
+  tags:
+    - headscale_client
+    - install
+
+- name: Download Tailscale installation script
+  ansible.builtin.get_url:
+    url: "{{ tailscale_install_script_url }}"
+    dest: /tmp/tailscale-install.sh
+    mode: '0755'
+  when: tailscale_check.rc != 0
+  tags:
+    - headscale_client
+    - install
+
+- name: Install Tailscale
+  ansible.builtin.shell: |
+    bash /tmp/tailscale-install.sh
+  args:
+    creates: /usr/bin/tailscale
+  when: tailscale_check.rc != 0
+  tags:
+    - headscale_client
+    - install
+
+- name: Remove installation script
+  ansible.builtin.file:
+    path: /tmp/tailscale-install.sh
+    state: absent
+  when: tailscale_check.rc != 0
+  tags:
+    - headscale_client
+    - install
+
+# -----------------------------------------------------------------------------
+# 3. 配置并连接到 Headscale 服务器 | Configure and Connect to Headscale Server
+# -----------------------------------------------------------------------------
+- name: Check if Tailscale is already connected
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  ignore_errors: true
+  changed_when: false
+  tags:
+    - headscale_client
+    - configure
+
+- name: Set connection status fact
+  ansible.builtin.set_fact:
+    tailscale_connected: "{{ tailscale_status.rc == 0 and 'BackendState' in tailscale_status.stdout }}"
+  tags:
+    - headscale_client
+    - configure
+
+- name: Stop Tailscale service before connecting to Headscale
+  ansible.builtin.systemd:
+    name: tailscaled
+    state: stopped
+  when: not tailscale_connected
+  tags:
+    - headscale_client
+    - configure
+
+- name: Connect to Headscale server with pre-auth key
+  ansible.builtin.command: >
+    tailscale up
+    --login-server={{ headscale_server_url }}
+    --authkey={{ headscale_preauth_key }}
+    {% if tailscale_accept_routes %}--accept-routes{% endif %}
+    {% if tailscale_accept_dns %}--accept-dns{% endif %}
+  when: not tailscale_connected
+  register: tailscale_up
+  tags:
+    - headscale_client
+    - configure
+
+- name: Enable Tailscale service
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+  tags:
+    - headscale_client
+    - configure
+
+# -----------------------------------------------------------------------------
+# 4. 验证连接状态 | Verify Connection Status
+# -----------------------------------------------------------------------------
+- name: Get Tailscale status
+  ansible.builtin.command: tailscale status
+  register: tailscale_status_output
+  changed_when: false
+  when: tailscale_show_status
+  tags:
+    - headscale_client
+    - verify
+
+- name: Display Tailscale status
+  ansible.builtin.debug:
+    msg: "{{ tailscale_status_output.stdout_lines }}"
+  when: tailscale_show_status and tailscale_status_output.stdout_lines is defined
+  tags:
+    - headscale_client
+    - verify
+
+- name: Get Tailscale IP address
+  ansible.builtin.command: tailscale ip -4
+  register: tailscale_ip
+  changed_when: false
+  tags:
+    - headscale_client
+    - verify
+
+- name: Display Tailscale IP
+  ansible.builtin.debug:
+    msg: "Tailscale IP: {{ tailscale_ip.stdout }}"
+  when: tailscale_ip.stdout is defined
+  tags:
+    - headscale_client
+    - verify

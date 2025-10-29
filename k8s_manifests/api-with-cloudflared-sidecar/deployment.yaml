@@ -1,0 +1,134 @@
+---
+# Cloudflared Tunnel Secret
+# 用途: 存储 Cloudflare Tunnel Token，供 cloudflared sidecar 容器使用
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared-secret
+  namespace: default  # 根据需要修改命名空间
+type: Opaque
+stringData:
+  # 注意: 这是一个占位符，请直接替换为您的实际 Tunnel Token（无需 base64 编码）
+  # 获取方式: 在 Cloudflare Zero Trust Dashboard 创建隧道后获得 Token
+  # 使用 stringData 字段，Kubernetes 会自动处理编码
+  TUNNEL_TOKEN: "your-actual-cloudflare-tunnel-token-here"  # [这里是我的隧道TOKEN]
+
+---
+# Test API Service with Cloudflared Sidecar Deployment
+# 用途: 使用 httpbin 作为测试 API，通过 cloudflared sidecar 将其安全暴露到互联网
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-api-with-cloudflared
+  namespace: default  # 根据需要修改命名空间
+  labels:
+    app: test-api-service
+    component: api
+    environment: test
+spec:
+  replicas: 1  # 测试环境单副本
+  selector:
+    matchLabels:
+      app: test-api-service
+  template:
+    metadata:
+      labels:
+        app: test-api-service
+        component: api
+        environment: test
+    spec:
+      # 容器定义
+      containers:
+      # ========================================
+      # 容器 1: 测试 API 服务容器 (httpbin)
+      # ========================================
+      - name: test-api-service
+        # 使用 httpbin 作为测试 API - 提供各种 HTTP 测试端点
+        image: kennethreitz/httpbin:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        # 资源限制和请求 (测试环境使用较小资源)
+        resources:
+          requests:
+            cpu: "50m"        # 测试环境较小资源
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+        # 健康检查
+        livenessProbe:
+          httpGet:
+            path: /status/200  # httpbin 的健康检查端点
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /status/200  # httpbin 的就绪检查端点
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+
+      # ========================================
+      # 容器 2: Cloudflared Sidecar 容器
+      # ========================================
+      - name: cloudflared-sidecar
+        image: cloudflare/cloudflared:latest
+        imagePullPolicy: Always
+        # Cloudflared 启动参数 - 转发到测试 API 的 80 端口
+        args:
+        - "tunnel"
+        - "--no-autoupdate"
+        - "run"
+        - "--token"
+        - "$(TUNNEL_TOKEN)"
+        # 从 Secret 中获取隧道 Token
+        env:
+        - name: TUNNEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflared-secret
+              key: TUNNEL_TOKEN
+        # Cloudflared 资源限制 (测试环境)
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+
+      # Pod 级别配置
+      restartPolicy: Always
+      # 如果使用私有镜像仓库，需要配置 imagePullSecrets
+      # imagePullSecrets:
+      # - name: your-registry-secret
+
+---
+# Service (测试环境)
+# 用途: 在集群内部提供服务访问
+# 注意: 外部访问通过 cloudflared tunnel，不需要 LoadBalancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-api-service
+  namespace: default
+  labels:
+    app: test-api-service
+    environment: test
+spec:
+  type: ClusterIP  # 仅集群内部访问
+  selector:
+    app: test-api-service
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP

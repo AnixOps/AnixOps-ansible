@@ -1,0 +1,26 @@
+---
+# =============================================================================
+# Headscale 客户端组变量 | Headscale Clients Group Variables
+# =============================================================================
+# 此文件定义所有 Headscale 客户端的共享配置
+# This file defines shared configuration for all Headscale clients
+#
+# 环境变量 | Environment Variables:
+#   - HEADSCALE_PREAUTH_KEY: 预授权密钥（从 Headscale 服务器生成）
+#   - PL_1_V4_SSH: Headscale 服务器的 IP 地址
+#   - HEADSCALE_NAMESPACE: 命名空间（可选，默认 'default'）
+# =============================================================================
+
+# Headscale 服务器 URL | Headscale Server URL
+headscale_server_url: "{{ lookup('env', 'HEADSCALE_SERVER_URL') | default('http://' + lookup('env', 'PL_1_V4_SSH') + ':8080', true) }}"
+
+# 预授权密钥 | Pre-authentication Key
+headscale_preauth_key: "{{ lookup('env', 'HEADSCALE_PREAUTH_KEY') }}"
+
+# 命名空间 | Namespace
+headscale_namespace: "{{ lookup('env', 'HEADSCALE_NAMESPACE') | default('default', true) }}"
+
+# Tailscale 客户端配置 | Tailscale Client Configuration
+tailscale_accept_routes: true
+tailscale_accept_dns: true
+tailscale_show_status: true

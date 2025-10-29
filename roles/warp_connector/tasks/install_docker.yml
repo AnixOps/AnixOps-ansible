@@ -1,0 +1,52 @@
+---
+# WARP Connector Docker 安装任务
+# WARP Connector Docker Installation Tasks
+
+- name: 确保 Docker 已安装
+  ansible.builtin.package:
+    name: docker.io
+    state: present
+
+- name: 确保 Docker 服务运行
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: 创建配置目录
+  ansible.builtin.file:
+    path: "{{ warp_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 创建数据目录
+  ansible.builtin.file:
+    path: "{{ warp_data_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 拉取 WARP Connector Docker 镜像
+  community.docker.docker_image:
+    name: "{{ warp_docker_image }}"
+    source: pull
+
+- name: 停止旧的 WARP Connector 容器
+  community.docker.docker_container:
+    name: "{{ warp_docker_container_name }}"
+    state: absent
+  ignore_errors: yes
+
+- name: 启动 WARP Connector 容器
+  community.docker.docker_container:
+    name: "{{ warp_docker_container_name }}"
+    image: "{{ warp_docker_image }}"
+    state: started
+    restart_policy: "{{ warp_docker_restart_policy }}"
+    network_mode: host
+    privileged: yes
+    env:
+      WARP_TOKEN: "{{ warp_token }}"
+      WARP_LOG_LEVEL: "{{ warp_log_level }}"
+    volumes:
+      - "{{ warp_config_dir }}:/etc/cloudflare-warp"
+      - "{{ warp_data_dir }}:/var/lib/cloudflare-warp"

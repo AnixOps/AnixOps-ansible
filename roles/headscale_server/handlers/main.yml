@@ -1,0 +1,10 @@
+---
+# =============================================================================
+# Headscale Server Handlers | Headscale 服务器处理器
+# =============================================================================
+
+- name: restart headscale
+  ansible.builtin.systemd:
+    name: headscale
+    state: restarted
+    daemon_reload: true

@@ -1,0 +1,130 @@
+---
+# =============================================================================
+# Netmaker Clients 组变量示例（使用 Ansible Vault 加密）
+# Netmaker Clients Group Variables Example (Encrypted with Ansible Vault)
+# =============================================================================
+# 这是一个展示如何使用 Ansible Vault 加密敏感变量的示例文件
+# This is an example file showing how to encrypt sensitive variables with Ansible Vault
+#
+# 📖 使用说明 | Usage Instructions:
+# ------------------------------------------------------------------------------
+# 1. 复制此文件作为模板 | Copy this file as a template:
+#    cp inventory/group_vars/netmaker_clients.yml.vault_example \
+#       inventory/group_vars/netmaker_clients.yml
+#
+# 2. 编辑并填入实际值 | Edit and fill in actual values
+#
+# 3. 加密整个文件 | Encrypt the entire file:
+#    ansible-vault encrypt inventory/group_vars/netmaker_clients.yml
+#
+# 4. 或者只加密敏感变量 | Or encrypt only sensitive variables:
+#    ansible-vault encrypt_string 'your-actual-key' --name 'netmaker_access_key'
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Netmaker 服务器配置 | Netmaker Server Configuration
+# -----------------------------------------------------------------------------
+
+# Netmaker 服务器地址
+# 使用 PL-1 服务器的 IP 地址（从环境变量读取）
+netmaker_server_host: "{{ lookup('env', 'PL_1_V4_SSH') }}"
+
+# 或者使用域名（如果已配置 DNS）
+# netmaker_server_host: "nm.anixops.example.com"
+
+# -----------------------------------------------------------------------------
+# 方法 1: 加密整个文件 (推荐用于初次设置)
+# Method 1: Encrypt entire file (recommended for initial setup)
+# -----------------------------------------------------------------------------
+
+# 直接填写访问密钥，然后加密整个文件
+# Fill in the access key directly, then encrypt the entire file
+netmaker_access_key: "YOUR_ACCESS_KEY_HERE"
+
+# 执行加密 | Encrypt:
+# ansible-vault encrypt inventory/group_vars/netmaker_clients.yml
+
+# 编辑加密文件 | Edit encrypted file:
+# ansible-vault edit inventory/group_vars/netmaker_clients.yml
+
+# 查看加密文件 | View encrypted file:
+# ansible-vault view inventory/group_vars/netmaker_clients.yml
+
+# -----------------------------------------------------------------------------
+# 方法 2: 使用加密字符串 (推荐用于生产环境)
+# Method 2: Use encrypted string (recommended for production)
+# -----------------------------------------------------------------------------
+
+# 使用 ansible-vault encrypt_string 生成加密字符串
+# Use ansible-vault encrypt_string to generate encrypted string
+
+# 步骤 | Steps:
+# 1. 运行命令 | Run command:
+#    ansible-vault encrypt_string 'your-actual-access-key' --name 'netmaker_access_key'
+#
+# 2. 复制输出并替换下面的示例 | Copy output and replace example below:
+
+# netmaker_access_key: !vault |
+#           $ANSIBLE_VAULT;1.1;AES256
+#           66386439653863336366316432636434366662636136313238646439316437363933373330333739
+#           6534373933346164663433323638666262623430346262650a396463643430313634336535386438
+#           39613762393534313266326561633161623337303537376364373236343532616636653734343762
+#           3933313034373736360a343937386337616438663662336362613931313763373630396461373361
+#           37393764366261343761653639633032373339373438336637626136656661633236
+
+# -----------------------------------------------------------------------------
+# 网络配置 | Network Configuration
+# -----------------------------------------------------------------------------
+
+# 要加入的 Netmaker 网络名称
+# 确保此网络已在 Netmaker UI 中创建
+netmaker_network_name: "anixops-mesh"
+
+# 可选：gRPC 端口（默认 50051）
+# netmaker_server_grpc_port: 50051
+
+# -----------------------------------------------------------------------------
+# 客户端配置 | Client Configuration
+# -----------------------------------------------------------------------------
+
+# 是否显示详细状态信息
+netmaker_show_status: true
+
+# -----------------------------------------------------------------------------
+# 多环境示例 | Multi-Environment Example
+# -----------------------------------------------------------------------------
+
+# 如果你有多个环境（开发/测试/生产），可以这样组织：
+# If you have multiple environments (dev/test/prod), organize like this:
+
+# 开发环境 | Development
+# netmaker_network_name: "dev-mesh"
+# netmaker_access_key: !vault |
+#     $ANSIBLE_VAULT;1.1;AES256
+#     ... (dev environment encrypted key)
+
+# 测试环境 | Testing
+# netmaker_network_name: "test-mesh"
+# netmaker_access_key: !vault |
+#     $ANSIBLE_VAULT;1.1;AES256
+#     ... (test environment encrypted key)
+
+# 生产环境 | Production
+# netmaker_network_name: "prod-mesh"
+# netmaker_access_key: !vault |
+#     $ANSIBLE_VAULT;1.1;AES256
+#     ... (production environment encrypted key)
+
+# -----------------------------------------------------------------------------
+# 加密后的文件示例 | Example of Encrypted File
+# -----------------------------------------------------------------------------
+# 使用 ansible-vault encrypt 后，文件会变成这样:
+# After using ansible-vault encrypt, the file will look like this:
+#
+# $ANSIBLE_VAULT;1.1;AES256
+# 66386439653863336366316432636434366662636136313238646439316437363933373330333739
+# 6534373933346164663433323638666262623430346262650a396463643430313634336535386438
+# 39613762393534313266326561633161623337303537376364373236343532616636653734343762
+# 3933313034373736360a343937386337616438663662336362613931313763373630396461373361
+# 37393764366261343761653639633032373339373438336637626136656661633236383861393835
+# ... (more encrypted content)

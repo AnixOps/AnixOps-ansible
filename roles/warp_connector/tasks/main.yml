@@ -1,0 +1,41 @@
+---
+# WARP Connector 主任务文件
+# WARP Connector Main Tasks
+
+- name: 验证 WARP token 已提供
+  ansible.builtin.fail:
+    msg: "WARP Connector token is required. Please set warp_token variable."
+  when: warp_token == "" or warp_token is not defined
+
+- name: 显示部署信息
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "  部署 WARP Connector"
+      - "  Deploy WARP Connector"
+      - "=========================================="
+      - "主机: {{ inventory_hostname }}"
+      - "安装方式: {{ warp_install_method }}"
+      - "=========================================="
+
+- name: 包含包安装任务
+  ansible.builtin.include_tasks: install_package.yml
+  when: warp_install_method == "package"
+
+- name: 包含 Docker 安装任务
+  ansible.builtin.include_tasks: install_docker.yml
+  when: warp_install_method == "docker"
+
+- name: 配置 WARP Connector
+  ansible.builtin.include_tasks: configure.yml
+
+- name: 显示完成信息
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "  ✅ WARP Connector 部署完成"
+      - "  ✅ WARP Connector Deployment Complete"
+      - "=========================================="
+      - "状态检查: systemctl status {{ warp_service_name }}"
+      - "日志查看: journalctl -u {{ warp_service_name }} -f"
+      - "=========================================="

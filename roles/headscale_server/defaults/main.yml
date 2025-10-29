@@ -1,0 +1,73 @@
+---
+# =============================================================================
+# Headscale Server 默认变量 | Headscale Server Default Variables
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Headscale 版本 | Headscale Version
+# -----------------------------------------------------------------------------
+headscale_version: "0.23.0"
+headscale_arch: "amd64"  # amd64 或 arm64
+
+# -----------------------------------------------------------------------------
+# 安装路径 | Installation Paths
+# -----------------------------------------------------------------------------
+headscale_bin_path: "/usr/local/bin/headscale"
+headscale_config_dir: "/etc/headscale"
+headscale_data_dir: "/var/lib/headscale"
+
+# -----------------------------------------------------------------------------
+# 服务配置 | Service Configuration
+# -----------------------------------------------------------------------------
+headscale_listen_addr: "0.0.0.0:8080"
+headscale_metrics_listen_addr: "127.0.0.1:9090"
+headscale_grpc_listen_addr: "0.0.0.0:50443"
+
+# -----------------------------------------------------------------------------
+# 服务器配置 | Server Configuration
+# -----------------------------------------------------------------------------
+headscale_server_url: "http://{{ ansible_default_ipv4.address }}:8080"
+headscale_base_domain: "headscale.local"
+
+# -----------------------------------------------------------------------------
+# 数据库配置 | Database Configuration
+# -----------------------------------------------------------------------------
+headscale_db_type: "sqlite3"
+headscale_db_path: "{{ headscale_data_dir }}/db.sqlite"
+
+# -----------------------------------------------------------------------------
+# DERP 配置 | DERP Configuration
+# -----------------------------------------------------------------------------
+headscale_derp_urls:
+  - "https://controlplane.tailscale.com/derpmap/default"
+
+# 自定义 DERP 服务器（可选）| Custom DERP servers (optional)
+headscale_custom_derp_servers: []
+
+# -----------------------------------------------------------------------------
+# DNS 配置 | DNS Configuration
+# -----------------------------------------------------------------------------
+headscale_dns_config:
+  nameservers:
+    - "1.1.1.1"
+    - "8.8.8.8"
+  domains: []
+  magic_dns: true
+  base_domain: "{{ headscale_base_domain }}"
+
+# -----------------------------------------------------------------------------
+# ACL 配置 | ACL Configuration
+# -----------------------------------------------------------------------------
+headscale_acl_policy_path: "{{ headscale_config_dir }}/acl.json"
+
+# 默认 ACL 策略（允许所有）| Default ACL policy (allow all)
+headscale_default_acl:
+  acls:
+    - action: "accept"
+      src: ["*"]
+      dst: ["*:*"]
+
+# -----------------------------------------------------------------------------
+# 日志配置 | Logging Configuration
+# -----------------------------------------------------------------------------
+headscale_log_level: "info"  # debug, info, warn, error

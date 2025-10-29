@@ -1,0 +1,69 @@
+---
+# =============================================================================
+# Netmaker Client (netclient) 默认变量 | Default Variables
+# =============================================================================
+# 这些是默认配置值，可以在 group_vars, host_vars 或命令行中覆盖
+# These are default configuration values that can be overridden in 
+# group_vars, host_vars or command line
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Netmaker 服务器配置 | Netmaker Server Configuration
+# -----------------------------------------------------------------------------
+
+# Netmaker 服务器地址（必需）| Netmaker server address (required)
+# 示例 | Example: nm.example.com 或 | or 192.168.1.100
+netmaker_server_host: ""
+
+# Netmaker 访问密钥/注册令牌（必需）| Netmaker access key/enrollment token (required)
+# ⚠️ 警告：这是敏感信息，请使用 Ansible Vault 加密！
+# ⚠️ Warning: This is sensitive information, please encrypt with Ansible Vault!
+# 从 Netmaker UI 的 "Access Keys" 页面生成
+# Generate from "Access Keys" page in Netmaker UI
+netmaker_access_key: ""
+
+# 要加入的网络名称（必需）| Network name to join (required)
+# 示例 | Example: prod-mesh, dev-network, k8s-overlay
+netmaker_network_name: ""
+
+# Netmaker gRPC 端口（可选）| Netmaker gRPC port (optional)
+# 通常使用默认值 50051，除非你的 Netmaker 服务器配置了不同的端口
+# Usually uses default 50051 unless your Netmaker server is configured differently
+# netmaker_server_grpc_port: 50051
+
+# -----------------------------------------------------------------------------
+# 安装配置 | Installation Configuration
+# -----------------------------------------------------------------------------
+
+# Netmaker 版本 | Netmaker version
+netmaker_version: "v0.24.3"  # 指定版本，或使用 "latest"
+
+# Netmaker 二进制文件下载 URL | Netmaker binary download URL
+netmaker_binary_base_url: "https://github.com/gravitl/netmaker/releases/download"
+
+# 是否显示详细的状态信息 | Whether to show detailed status information
+netmaker_show_status: true
+
+# -----------------------------------------------------------------------------
+# 网络配置（高级）| Network Configuration (Advanced)
+# -----------------------------------------------------------------------------
+
+# 这些配置通常由 Netmaker 服务器管理，不需要手动设置
+# These configurations are usually managed by Netmaker server, no manual setup needed
+
+# 是否使用 WireGuard 内核模块（而不是用户空间）
+# Whether to use WireGuard kernel module (instead of userspace)
+# netmaker_use_kernel_wireguard: true
+
+# 自定义 MTU 大小（如果需要）| Custom MTU size (if needed)
+# netmaker_mtu: 1420
+
+# -----------------------------------------------------------------------------
+# 服务配置 | Service Configuration
+# -----------------------------------------------------------------------------
+
+# 服务重启策略 | Service restart policy
+netmaker_service_restart_policy: "on-failure"
+
+# 服务重启延迟（秒）| Service restart delay (seconds)
+netmaker_service_restart_sec: 5

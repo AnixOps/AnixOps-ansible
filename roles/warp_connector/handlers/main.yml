@@ -1,0 +1,15 @@
+---
+# WARP Connector Handlers
+
+- name: restart warp
+  ansible.builtin.systemd:
+    name: "{{ warp_service_name }}"
+    state: restarted
+  when: warp_install_method == "package"
+
+- name: restart warp docker
+  community.docker.docker_container:
+    name: "{{ warp_docker_container_name }}"
+    state: started
+    restart: yes
+  when: warp_install_method == "docker"

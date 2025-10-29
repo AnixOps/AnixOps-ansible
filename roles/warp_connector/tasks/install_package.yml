@@ -1,0 +1,93 @@
+---
+# WARP Connector 包安装任务
+# WARP Connector Package Installation Tasks
+
+- name: 检测操作系统
+  ansible.builtin.set_fact:
+    is_debian: "{{ ansible_os_family == 'Debian' }}"
+    is_redhat: "{{ ansible_os_family == 'RedHat' }}"
+
+- name: 安装必需的依赖工具 (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gpg
+      - lsb-release
+    state: present
+    update_cache: yes
+  when: is_debian
+
+- name: 确保 keyrings 目录存在 (Debian/Ubuntu)
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: '0755'
+  when: is_debian
+
+- name: 下载 Cloudflare GPG 密钥 (Debian/Ubuntu)
+  ansible.builtin.shell: |
+    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+  when: is_debian
+
+- name: 获取发行版代号
+  ansible.builtin.command: lsb_release -cs
+  register: distro_codename
+  changed_when: false
+  when: is_debian
+
+- name: 添加 Cloudflare WARP 仓库 (Debian/Ubuntu)
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ {{ distro_codename.stdout }} main"
+    state: present
+    filename: cloudflare-client
+  when: is_debian
+
+- name: 更新包缓存 (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: yes
+  when: is_debian
+
+- name: 安装 cloudflare-warp (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: cloudflare-warp
+    state: present
+  when: is_debian
+
+- name: 启用 IPv4 转发
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    sysctl_set: yes
+    reload: yes
+  when: is_debian
+
+- name: 添加 Cloudflare 仓库 (RHEL/CentOS)
+  ansible.builtin.yum_repository:
+    name: cloudflare-warp
+    description: Cloudflare WARP Repository
+    baseurl: https://pkg.cloudflare.com/cloudflared/rpm
+    gpgkey: https://pkg.cloudflare.com/cloudflare-main.gpg
+    gpgcheck: yes
+    enabled: yes
+  when: is_redhat
+
+- name: 安装 WARP Connector (RHEL/CentOS)
+  ansible.builtin.yum:
+    name: "{{ warp_package_name }}"
+    state: present
+  when: is_redhat
+
+- name: 确保配置目录存在
+  ansible.builtin.file:
+    path: "{{ warp_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 确保数据目录存在
+  ansible.builtin.file:
+    path: "{{ warp_data_dir }}"
+    state: directory
+    mode: '0755'

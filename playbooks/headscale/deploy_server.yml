@@ -1,0 +1,63 @@
+---
+# =============================================================================
+# Headscale 服务器部署 Playbook | Headscale Server Deployment Playbook
+# =============================================================================
+# 用途：在 PL-1 服务器上部署 Headscale 控制服务器
+# Purpose: Deploy Headscale control server on PL-1 server
+#
+# 使用方法 | Usage:
+#   ansible-playbook playbooks/headscale/deploy_server.yml
+#
+# 环境变量要求 | Required Environment Variables:
+#   - PL_1_V4_SSH: Headscale 服务器的 IP 地址
+# =============================================================================
+
+- name: Deploy Headscale Server
+  hosts: headscale_server
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Headscale Server Deployment
+          ========================================
+          Target Host: {{ inventory_hostname }}
+          Server IP: {{ ansible_host }}
+          Headscale Version: 0.23.0
+          ========================================
+
+    - name: Validate server host is defined
+      ansible.builtin.fail:
+        msg: "Headscale server host (PL-1) is not defined in inventory"
+      when: groups['headscale_server'] is not defined or groups['headscale_server'] | length == 0
+
+  roles:
+    - role: headscale_server
+      tags:
+        - headscale
+        - headscale_server
+
+  post_tasks:
+    - name: Display server information
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Headscale Server Deployed Successfully!
+          ========================================
+          Server URL: http://{{ ansible_host }}:8080
+          Admin UI: http://{{ ansible_host }}:8080/admin
+          Metrics: http://{{ ansible_host }}:9090/metrics
+          
+          Next Steps:
+          1. Create a pre-authentication key:
+             headscale preauthkeys create --namespace default --reusable --expiration 24h
+          
+          2. Export the key as environment variable:
+             export HEADSCALE_PREAUTH_KEY="your-preauth-key-here"
+          
+          3. Deploy clients:
+             ansible-playbook playbooks/headscale/deploy_clients.yml
+          ========================================

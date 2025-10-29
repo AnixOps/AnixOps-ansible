@@ -1,0 +1,136 @@
+---
+# =============================================================================
+# Netmaker Client 部署 Playbook | Netmaker Client Deployment Playbook
+# =============================================================================
+# 此 Playbook 在指定的主机组上部署 Netmaker 客户端 (netclient)
+# This playbook deploys Netmaker client (netclient) on specified host groups
+#
+# 用途 | Purpose:
+#   - 自动安装 netclient 二进制文件
+#   - 配置并加入指定的 Netmaker 网络
+#   - 管理 systemd 服务
+#   - 验证网络连接状态
+#
+# 使用方法 | Usage:
+#   ansible-playbook playbooks/netmaker/deploy_netclient.yml
+#
+# 使用自定义变量 | With custom variables:
+#   ansible-playbook playbooks/netmaker/deploy_netclient.yml \
+#     -e "netmaker_network_name=prod-mesh"
+#
+# 限制到特定主机 | Limit to specific hosts:
+#   ansible-playbook playbooks/netmaker/deploy_netclient.yml \
+#     --limit de-1
+#
+# 检查模式（dry-run）| Check mode (dry-run):
+#   ansible-playbook playbooks/netmaker/deploy_netclient.yml --check
+# =============================================================================
+
+- name: 部署 Netmaker 客户端到目标节点 | Deploy Netmaker Client to Target Nodes
+  hosts: netmaker_clients
+  become: true
+  gather_facts: true
+  
+  # ---------------------------------------------------------------------------
+  # 前置任务 | Pre Tasks
+  # ---------------------------------------------------------------------------
+  pre_tasks:
+    - name: 显示目标主机信息 | Display target host information
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Netmaker Client 部署
+          ========================================
+          目标主机: {{ inventory_hostname }}
+          主机别名: {{ server_aliases[inventory_hostname].alias | default('N/A') }}
+          主机位置: {{ server_aliases[inventory_hostname].location | default('N/A') }}
+          Netmaker 服务器: {{ netmaker_server_host }}
+          目标网络: {{ netmaker_network_name }}
+          ========================================
+      tags:
+        - always
+
+    - name: 确保系统软件包缓存是最新的 | Ensure system package cache is up-to-date
+      ansible.builtin.package:
+        update_cache: true
+      changed_when: false
+      tags:
+        - prepare
+
+  # ---------------------------------------------------------------------------
+  # 主要角色 | Main Roles
+  # ---------------------------------------------------------------------------
+  roles:
+    - role: netmaker_client
+      tags:
+        - netmaker
+        - netclient
+        - network
+
+  # ---------------------------------------------------------------------------
+  # 后置任务 | Post Tasks
+  # ---------------------------------------------------------------------------
+  post_tasks:
+    - name: 收集部署结果 | Gather deployment results
+      ansible.builtin.command: netclient list
+      register: deployment_result
+      changed_when: false
+      failed_when: false
+      tags:
+        - verify
+
+    - name: 显示部署摘要 | Display deployment summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          部署完成 | Deployment Complete
+          ========================================
+          主机: {{ inventory_hostname }}
+          网络: {{ netmaker_network_name }}
+          状态: {{ deployment_result.rc == 0 | ternary('✓ 成功', '✗ 失败') }}
+          ========================================
+      tags:
+        - verify
+        - always
+
+# =============================================================================
+# 可选：Netmaker 网络健康检查 | Optional: Netmaker Network Health Check
+# =============================================================================
+
+- name: 验证 Netmaker 网络连通性 | Verify Netmaker Network Connectivity
+  hosts: netmaker_clients
+  become: true
+  gather_facts: false
+  tags:
+    - verify
+    - never  # 只在明确指定时运行 | Only run when explicitly specified
+  
+  tasks:
+    - name: 等待网络接口初始化 | Wait for network interface initialization
+      ansible.builtin.wait_for:
+        timeout: 10
+      delegate_to: localhost
+      run_once: true
+
+    - name: 获取 Netmaker 节点列表 | Get Netmaker node list
+      ansible.builtin.command: netclient list
+      register: netmaker_nodes
+      changed_when: false
+
+    - name: 获取 WireGuard 接口详情 | Get WireGuard interface details
+      ansible.builtin.command: wg show
+      register: wireguard_details
+      changed_when: false
+      failed_when: false
+
+    - name: 显示节点状态 | Display node status
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          节点状态 | Node Status
+          ========================================
+          {{ netmaker_nodes.stdout }}
+          
+          WireGuard 接口:
+          {{ wireguard_details.stdout }}
+          ========================================

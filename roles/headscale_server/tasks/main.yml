@@ -1,0 +1,148 @@
+---
+# =============================================================================
+# Headscale Server 部署任务 | Headscale Server Deployment Tasks
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 前置检查 | Pre-flight Checks
+# -----------------------------------------------------------------------------
+
+- name: 检查操作系统是否受支持 | Check if OS is supported
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in ['Debian', 'RedHat']
+    fail_msg: "不支持的操作系统: {{ ansible_os_family }}"
+    success_msg: "操作系统检查通过: {{ ansible_os_family }}"
+
+# -----------------------------------------------------------------------------
+# 安装依赖 | Install Dependencies
+# -----------------------------------------------------------------------------
+
+- name: 安装必需的依赖包 | Install required dependencies
+  ansible.builtin.package:
+    name:
+      - curl
+      - wget
+      - ca-certificates
+    state: present
+    update_cache: true
+
+# -----------------------------------------------------------------------------
+# 创建目录 | Create Directories
+# -----------------------------------------------------------------------------
+
+- name: 创建 Headscale 配置目录 | Create Headscale config directory
+  ansible.builtin.file:
+    path: "{{ headscale_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 创建 Headscale 数据目录 | Create Headscale data directory
+  ansible.builtin.file:
+    path: "{{ headscale_data_dir }}"
+    state: directory
+    mode: '0755'
+
+# -----------------------------------------------------------------------------
+# 下载并安装 Headscale | Download and Install Headscale
+# -----------------------------------------------------------------------------
+
+- name: 检查 Headscale 是否已安装 | Check if Headscale is installed
+  ansible.builtin.stat:
+    path: "{{ headscale_bin_path }}"
+  register: headscale_binary
+
+- name: 下载 Headscale 二进制文件 | Download Headscale binary
+  ansible.builtin.get_url:
+    url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_{{ headscale_arch }}"
+    dest: "{{ headscale_bin_path }}"
+    mode: '0755'
+    timeout: 120
+  when: not headscale_binary.stat.exists
+
+- name: 验证 Headscale 安装 | Verify Headscale installation
+  ansible.builtin.command: "{{ headscale_bin_path }} version"
+  register: headscale_version_output
+  changed_when: false
+
+- name: 显示 Headscale 版本 | Display Headscale version
+  ansible.builtin.debug:
+    msg: "Headscale version: {{ headscale_version_output.stdout }}"
+
+# -----------------------------------------------------------------------------
+# 配置 Headscale | Configure Headscale
+# -----------------------------------------------------------------------------
+
+- name: 生成 Headscale 配置文件 | Generate Headscale configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ headscale_config_dir }}/config.yaml"
+    mode: '0644'
+  notify: restart headscale
+
+- name: 生成 ACL 策略文件 | Generate ACL policy file
+  ansible.builtin.copy:
+    content: "{{ headscale_default_acl | to_nice_json }}"
+    dest: "{{ headscale_acl_policy_path }}"
+    mode: '0644'
+  notify: restart headscale
+
+# -----------------------------------------------------------------------------
+# 配置 Systemd 服务 | Configure Systemd Service
+# -----------------------------------------------------------------------------
+
+- name: 创建 Headscale systemd 服务文件 | Create Headscale systemd service
+  ansible.builtin.template:
+    src: headscale.service.j2
+    dest: /etc/systemd/system/headscale.service
+    mode: '0644'
+  notify: restart headscale
+
+- name: 重新加载 systemd daemon | Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: 启动并启用 Headscale 服务 | Start and enable Headscale service
+  ansible.builtin.systemd:
+    name: headscale
+    state: started
+    enabled: true
+
+# -----------------------------------------------------------------------------
+# 验证部署 | Verify Deployment
+# -----------------------------------------------------------------------------
+
+- name: 等待 Headscale 服务启动 | Wait for Headscale service to start
+  ansible.builtin.wait_for:
+    port: 8080
+    delay: 2
+    timeout: 30
+
+- name: 检查 Headscale 服务状态 | Check Headscale service status
+  ansible.builtin.systemd:
+    name: headscale
+  register: headscale_service_status
+
+- name: 显示服务状态 | Display service status
+  ansible.builtin.debug:
+    msg: "Headscale 服务状态: {{ headscale_service_status.status.ActiveState }}"
+
+# -----------------------------------------------------------------------------
+# 创建默认用户（namespace）| Create Default User (namespace)
+# -----------------------------------------------------------------------------
+
+- name: 检查默认 namespace 是否存在 | Check if default namespace exists
+  ansible.builtin.shell: "{{ headscale_bin_path }} namespaces list"
+  register: namespace_list
+  changed_when: false
+  failed_when: false
+
+- name: 创建默认 namespace | Create default namespace
+  ansible.builtin.command: "{{ headscale_bin_path }} namespaces create default"
+  when: "'default' not in namespace_list.stdout"
+  register: namespace_created
+
+- name: 显示 namespace 创建结果 | Display namespace creation result
+  ansible.builtin.debug:
+    msg: "默认 namespace 已创建"
+  when: namespace_created is defined and namespace_created.changed

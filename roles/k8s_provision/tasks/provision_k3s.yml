@@ -33,16 +33,30 @@
     enabled: yes
   become: yes
 
+- name: Check k3s service status
+  ansible.builtin.systemd:
+    name: k3s
+  register: k3s_service_status
+  become: yes
+
+- name: Display k3s service status
+  ansible.builtin.debug:
+    msg:
+      - "K3s service status: {{ k3s_service_status.status.ActiveState }}"
+      - "Service is {{ 'running' if k3s_service_status.status.ActiveState == 'active' else 'not ready yet' }}"
+
 - name: Wait for k3s node to be ready
   ansible.builtin.command: kubectl get nodes
   environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+    KUBECONFIG: "{{ k3s_kubeconfig_path }}"
   register: node_status
   until: "'Ready' in node_status.stdout"
-  retries: 30
-  delay: 10
+  retries: 60  # 增加重试次数以应对慢速启动
+  delay: 5     # 减少延迟间隔，更频繁检查
   changed_when: false
   become: yes
+  tags:
+    - skip_ansible_lint  # kubectl 命令是必需的
 
 - name: Create .kube directory for non-root user (if needed)
   ansible.builtin.file:
@@ -53,7 +67,7 @@
 
 - name: Copy kubeconfig for non-root user
   ansible.builtin.copy:
-    src: "{{ kubeconfig_path }}"
+    src: "{{ k3s_kubeconfig_path }}"
     dest: "{{ ansible_env.HOME }}/.kube/config"
     remote_src: yes
     mode: '0600'
@@ -63,7 +77,7 @@
 - name: Display k3s cluster information
   ansible.builtin.command: kubectl get nodes -o wide
   environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+    KUBECONFIG: "{{ k3s_kubeconfig_path }}"
   register: k3s_nodes
   changed_when: false
   become: yes

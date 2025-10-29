@@ -1,0 +1,120 @@
+---
+# =============================================================================
+# Remote K8s Test Playbook (K3s)
+# =============================================================================
+# 用于在远程服务器上创建 K3s 集群（不使用 Helm，不自动部署应用）
+# Create K3s cluster on remote servers (without Helm, no automatic application deployment)
+# =============================================================================
+#
+# 使用方法 | Usage:
+#
+#   基本使用 | Basic usage:
+#     ansible-playbook playbooks/deployment/remote-test.yml -i inventory/hosts.yml
+#
+#   通过脚本 | Via script:
+#     bash scripts/anixops.sh deploy-remote-test
+#
+# 说明：
+#   - 在远程服务器上安装 K3s
+#   - 不使用 Helm
+#   - 不自动部署任何应用（包括 Cloudflared）
+#   - 应用部署请使用 kubectl apply -f <manifest>
+#
+# =============================================================================
+
+- name: "Provision Remote K3s Cluster"
+  hosts: k8s_test
+  gather_facts: yes
+  become: yes
+  
+  tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Provision Remote K3s Cluster                                 ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "🔧 Provider: K3s"
+          - "📦 Cluster: {{ cluster_name | default('k3s-test') }}"
+          - "🌍 Location: {{ server_aliases[inventory_hostname].location | default('Unknown') }}"
+
+    - name: Include k8s_provision role
+      ansible.builtin.include_role:
+        name: k8s_provision
+      tags:
+        - k8s
+        - provision
+
+- name: "Download kubeconfig from remote server"
+  hosts: k8s_test
+  gather_facts: no
+  become: yes
+  
+  tasks:
+    - name: Display kubeconfig download information
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Download Kubeconfig                                          ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+
+    - name: Fetch kubeconfig from remote server
+      ansible.builtin.fetch:
+        src: "{{ kubeconfig_remote_path }}"
+        dest: "/tmp/k3s-{{ inventory_hostname }}-kubeconfig.yaml"
+        flat: yes
+      tags:
+        - kubeconfig
+
+    - name: Modify kubeconfig server address
+      delegate_to: localhost
+      ansible.builtin.replace:
+        path: "/tmp/k3s-{{ inventory_hostname }}-kubeconfig.yaml"
+        regexp: 'https://127\.0\.0\.1:6443'
+        replace: "https://{{ ansible_host }}:6443"
+      tags:
+        - kubeconfig
+
+    - name: Display kubeconfig location
+      ansible.builtin.debug:
+        msg:
+          - "✅ Kubeconfig downloaded to: /tmp/k3s-{{ inventory_hostname }}-kubeconfig.yaml"
+          - ""
+          - "Use it with:"
+          - "  export KUBECONFIG=/tmp/k3s-{{ inventory_hostname }}-kubeconfig.yaml"
+          - "  kubectl get nodes"
+
+- name: "Display Deployment Summary"
+  hosts: k8s_test
+  gather_facts: no
+  
+  tasks:
+    - name: Display final summary
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  🎉 K3s Cluster Created Successfully!                          ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✅ K3s cluster is running on {{ ansible_host }}"
+          - "✅ Kubeconfig is available locally"
+          - ""
+          - "📋 Next Steps:"
+          - "  1. Export kubeconfig:"
+          - "     export KUBECONFIG=/tmp/k3s-{{ inventory_hostname }}-kubeconfig.yaml"
+          - ""
+          - "  2. Check cluster:"
+          - "     kubectl cluster-info"
+          - "     kubectl get nodes"
+          - ""
+          - "  3. Deploy applications:"
+          - "     kubectl apply -f k8s_manifests/api-with-cloudflared-sidecar/deployment.yaml"
+          - ""
+          - "🔍 Useful Commands:"
+          - "  • View all pods: kubectl get pods --all-namespaces"
+          - "  • SSH to server: ssh root@{{ ansible_host }}"
+          - "  • Uninstall K3s: /usr/local/bin/k3s-uninstall.sh"

@@ -64,9 +64,9 @@
     # -------------------------------------------------------------------------
     # Helm 配置 | Helm Configuration
     # -------------------------------------------------------------------------
-    helm_repo_name: "cloudflare"
-    helm_repo_url: "https://cloudflare.github.io/helm-charts"
-    helm_chart_name: "cloudflare/cloudflared"
+    # 使用本地 Helm Chart | Use local Helm Chart
+    helm_chart_path: "{{ playbook_dir }}/../../cloudflare-tunnel"
+    helm_chart_name: "cloudflare-tunnel"  # 本地 chart 名称
     helm_chart_version: ""  # 留空使用最新版本 | Empty for latest version
     
     # -------------------------------------------------------------------------
@@ -219,36 +219,15 @@
         - cloudflared
 
     # -------------------------------------------------------------------------
-    # Helm 仓库管理 | Helm Repository Management
-    # -------------------------------------------------------------------------
-
-    - name: Add Cloudflare Helm repository
-      kubernetes.core.helm_repository:
-        name: "{{ helm_repo_name }}"
-        repo_url: "{{ helm_repo_url }}"
-      tags:
-        - helm
-        - cloudflared
-
-    - name: Update Helm repositories
-      ansible.builtin.command: helm repo update
-      changed_when: false
-      tags:
-        - helm
-        - cloudflared
-
-    # -------------------------------------------------------------------------
     # 使用 Helm 部署 Cloudflared | Deploy Cloudflared using Helm
     # -------------------------------------------------------------------------
 
-    - name: Deploy cloudflared using Helm Chart
+    - name: Deploy cloudflared using local Helm Chart
       kubernetes.core.helm:
         name: "{{ k8s_release_name }}"
-        chart_ref: "{{ helm_chart_name }}"
-        chart_version: "{{ helm_chart_version if helm_chart_version else omit }}"
+        chart_ref: "{{ helm_chart_path }}"
         release_namespace: "{{ k8s_namespace }}"
         create_namespace: false  # 已经创建 | Already created
-        update_repo_cache: true
         wait: true
         wait_timeout: "5m"
         values:

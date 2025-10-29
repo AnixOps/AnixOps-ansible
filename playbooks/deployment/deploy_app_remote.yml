@@ -1,0 +1,210 @@
+---
+# =============================================================================
+# 在远程 K8s 集群服务器上直接部署应用
+# Deploy Application Directly on Remote K8s Cluster Server
+# =============================================================================
+# 此 playbook 通过 SSH 连接到 K8s 集群服务器，直接在服务器上执行部署
+# This playbook connects to K8s cluster server via SSH and deploys directly
+#
+# 使用方法 | Usage:
+#   ansible-playbook playbooks/deployment/deploy_app_remote.yml \
+#     -i inventory/hosts.yml \
+#     -e "target_group=nginx_test"
+# =============================================================================
+
+- name: Deploy Application on Remote K8s Server
+  hosts: "{{ target_group | default('nginx_test') }}"
+  gather_facts: yes
+  become: yes
+  
+  vars:
+    default_namespace: "default"
+    actual_namespace: "{{ app_namespace | default(default_namespace) }}"
+    default_manifest_path: "k8s_manifests/nginx-test"
+    actual_manifest_path: "{{ app_manifest_path | default(default_manifest_path) }}"
+    temp_manifest_dir: "/tmp/k8s-manifests-{{ ansible_date_time.epoch }}"
+    
+  tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  🚀 Deploy Application on Remote K8s Server                  ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target Server: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "🏷️  App Name: {{ app_name | default('unknown') }}"
+          - "📦 Namespace: {{ actual_namespace }}"
+          - "🔧 K8s Provider: {{ k8s_provider | default('k3s') }}"
+          - "📁 Local Manifest Path: {{ actual_manifest_path }}"
+          - "📂 Remote Temp Dir: {{ temp_manifest_dir }}"
+
+    - name: Check if kubectl is available on remote server
+      ansible.builtin.command: which kubectl
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if kubectl not found
+      ansible.builtin.fail:
+        msg: "❌ kubectl not found on {{ inventory_hostname }}. Please provision K8s cluster first."
+      when: kubectl_check.rc != 0
+
+    - name: Display kubectl status
+      ansible.builtin.debug:
+        msg: "✅ kubectl found: {{ kubectl_check.stdout }}"
+
+    - name: Check K8s cluster status
+      ansible.builtin.command: kubectl get nodes
+      environment:
+        KUBECONFIG: "{{ kubeconfig_remote_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+      register: cluster_nodes
+      changed_when: false
+      failed_when: false
+
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        msg: "{{ cluster_nodes.stdout_lines }}"
+      when: cluster_nodes.rc == 0
+
+    - name: Create temporary manifest directory on remote server
+      ansible.builtin.file:
+        path: "{{ temp_manifest_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy manifest files to remote server
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../{{ actual_manifest_path }}/"
+        dest: "{{ temp_manifest_dir }}/"
+        mode: '0644'
+
+    - name: Find all YAML manifests in temp directory
+      ansible.builtin.find:
+        paths: "{{ temp_manifest_dir }}"
+        patterns: "*.yaml,*.yml"
+        excludes: "*.example.yaml,*.example.yml"
+      register: found_manifests
+
+    - name: Display found manifests
+      ansible.builtin.debug:
+        msg:
+          - "📄 Found {{ found_manifests.files | length }} manifest files:"
+          - "{{ found_manifests.files | map(attribute='path') | map('basename') | list }}"
+
+    - name: Apply Kubernetes manifests
+      ansible.builtin.command: kubectl apply -f "{{ item.path }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_remote_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+      loop: "{{ found_manifests.files | sort(attribute='path') }}"
+      register: kubectl_apply
+      changed_when: "'configured' in kubectl_apply.stdout or 'created' in kubectl_apply.stdout"
+
+    - name: Display apply results
+      ansible.builtin.debug:
+        msg: "{{ item.stdout_lines }}"
+      loop: "{{ kubectl_apply.results }}"
+      when: item.stdout_lines is defined
+
+    - name: Wait for deployments to be ready
+      ansible.builtin.command: kubectl rollout status deployment -n {{ actual_namespace }} --timeout=300s
+      environment:
+        KUBECONFIG: "{{ kubeconfig_remote_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+      register: rollout_status
+      changed_when: false
+      failed_when: false
+
+    - name: Get all resources in namespace
+      ansible.builtin.command: kubectl get all -n {{ actual_namespace }}
+      environment:
+        KUBECONFIG: "{{ kubeconfig_remote_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+      register: namespace_resources
+      changed_when: false
+
+    - name: Get pod details
+      ansible.builtin.command: kubectl get pods -n {{ actual_namespace }} -o wide
+      environment:
+        KUBECONFIG: "{{ kubeconfig_remote_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+      register: pod_details
+      changed_when: false
+
+    - name: Get service details
+      ansible.builtin.command: kubectl get svc -n {{ actual_namespace }} -o wide
+      environment:
+        KUBECONFIG: "{{ kubeconfig_remote_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+      register: svc_details
+      changed_when: false
+
+    - name: Display deployment status
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  ✅ Deployment Complete                                       ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "📦 All Resources:"
+          - "{{ namespace_resources.stdout_lines }}"
+          - ""
+          - "🔍 Pod Details:"
+          - "{{ pod_details.stdout_lines }}"
+          - ""
+          - "🌐 Service Details:"
+          - "{{ svc_details.stdout_lines }}"
+          - ""
+          - "📋 Access Application (from cluster server):"
+          - "  • SSH to server: ssh root@{{ ansible_host }}"
+          - "  • Check pods: kubectl get pods -n {{ actual_namespace }}"
+          - "  • Check logs: kubectl logs -n {{ actual_namespace }} <pod-name>"
+          - "  • Port forward: kubectl port-forward -n {{ actual_namespace }} svc/{{ app_name }} 8080:80"
+          - "  • Test service: curl http://{{ app_name }}.{{ actual_namespace }}.svc.cluster.local"
+          - ""
+          - "🔧 Troubleshooting:"
+          - "  • View events: kubectl get events -n {{ actual_namespace }}"
+          - "  • Describe pod: kubectl describe pod -n {{ actual_namespace }} <pod-name>"
+
+    - name: Cleanup temporary manifest directory
+      ansible.builtin.file:
+        path: "{{ temp_manifest_dir }}"
+        state: absent
+
+    - name: Create deployment summary
+      ansible.builtin.copy:
+        content: |
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  Deployment Summary                                           ║
+          ╚════════════════════════════════════════════════════════════════╝
+          
+          Date: {{ ansible_date_time.iso8601 }}
+          Server: {{ inventory_hostname }} ({{ ansible_host }})
+          App: {{ app_name }}
+          Namespace: {{ actual_namespace }}
+          
+          Resources:
+          {{ namespace_resources.stdout }}
+          
+          Pods:
+          {{ pod_details.stdout }}
+          
+          Services:
+          {{ svc_details.stdout }}
+          
+          Access Instructions:
+          1. SSH to server:
+             ssh root@{{ ansible_host }}
+          
+          2. Check deployment:
+             kubectl get pods -n {{ actual_namespace }}
+             kubectl get svc -n {{ actual_namespace }}
+          
+          3. Access service (from server):
+             curl http://{{ app_name }}.{{ actual_namespace }}.svc.cluster.local
+          
+          4. Port forward to local (if needed):
+             kubectl port-forward -n {{ actual_namespace }} svc/{{ app_name }} 8080:80
+             # Then access: curl http://localhost:8080
+        dest: "/root/deployment-{{ app_name }}-{{ ansible_date_time.epoch }}.txt"
+        mode: '0644'
+
+    - name: Display summary file location
+      ansible.builtin.debug:
+        msg: "📝 Deployment summary saved to: /root/deployment-{{ app_name }}-{{ ansible_date_time.epoch }}.txt"

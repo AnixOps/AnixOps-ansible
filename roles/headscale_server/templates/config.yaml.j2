@@ -1,0 +1,90 @@
+---
+# =============================================================================
+# Headscale 配置文件模板 | Headscale Configuration Template
+# =============================================================================
+# 基于 Headscale 官方配置格式
+# Based on official Headscale configuration format
+# =============================================================================
+
+server_url: {{ headscale_server_url }}
+
+listen_addr: {{ headscale_listen_addr }}
+
+metrics_listen_addr: {{ headscale_metrics_listen_addr }}
+
+grpc_listen_addr: {{ headscale_grpc_listen_addr }}
+
+grpc_allow_insecure: false
+
+# 私钥文件路径 | Private key file path
+private_key_path: {{ headscale_data_dir }}/private.key
+
+# Noise 协议密钥 | Noise protocol key
+noise:
+  private_key_path: {{ headscale_data_dir }}/noise_private.key
+
+# IP 前缀配置 | IP prefix configuration
+ip_prefixes:
+  - fd7a:115c:a1e0::/48
+  - 100.64.0.0/10
+
+# DERP 配置 | DERP Configuration
+derp:
+  server:
+    enabled: false
+    region_id: 999
+    region_code: "headscale"
+    region_name: "Headscale Embedded DERP"
+    stun_listen_addr: "0.0.0.0:3478"
+
+  urls:
+{% for url in headscale_derp_urls %}
+    - {{ url }}
+{% endfor %}
+
+  paths: []
+
+  auto_update_enabled: true
+  update_frequency: 24h
+
+# 数据库配置 | Database Configuration
+database:
+  type: {{ headscale_db_type }}
+  sqlite:
+    path: {{ headscale_db_path }}
+
+# ACL 策略路径 | ACL Policy Path
+acl_policy_path: {{ headscale_acl_policy_path }}
+
+# DNS 配置 | DNS Configuration
+dns_config:
+  override_local_dns: true
+  
+  nameservers:
+{% for ns in headscale_dns_config.nameservers %}
+    - {{ ns }}
+{% endfor %}
+
+  domains: {{ headscale_dns_config.domains | default([]) | to_json }}
+
+  magic_dns: {{ headscale_dns_config.magic_dns | lower }}
+  
+  base_domain: {{ headscale_dns_config.base_domain }}
+
+# Unix socket
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+
+# 日志配置 | Logging Configuration
+log:
+  format: text
+  level: {{ headscale_log_level }}
+
+# 禁用检查更新 | Disable update check
+disable_check_updates: false
+
+# Ephemeral node 配置 | Ephemeral node inactivity timeout
+ephemeral_node_inactivity_timeout: 30m
+
+# Node update check interval
+node_update_check_interval: 10s

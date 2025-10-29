@@ -1,0 +1,134 @@
+---
+# =============================================================================
+# Headscale 完整部署 Playbook | Headscale Full Deployment Playbook
+# =============================================================================
+# 用途：一次性部署 Headscale 服务器和所有客户端
+# Purpose: Deploy Headscale server and all clients in one go
+#
+# 使用方法 | Usage:
+#   ansible-playbook playbooks/headscale/deploy_all.yml
+#
+# 环境变量要求 | Required Environment Variables:
+#   - PL_1_V4_SSH: Headscale 服务器的 IP 地址
+#
+# 注意：此 playbook 会自动生成 pre-auth key
+# Note: This playbook will automatically generate pre-auth key
+# =============================================================================
+
+- name: Deploy Headscale Server
+  hosts: headscale_server
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Phase 1: Headscale Server Deployment
+          ========================================
+          Target Host: {{ inventory_hostname }}
+          Server IP: {{ ansible_host }}
+          ========================================
+
+  roles:
+    - role: headscale_server
+      tags:
+        - headscale
+        - headscale_server
+
+  post_tasks:
+    - name: Wait for Headscale service to be ready
+      ansible.builtin.wait_for:
+        port: 8080
+        host: "{{ ansible_host }}"
+        delay: 5
+        timeout: 60
+
+    - name: Generate pre-authentication key
+      ansible.builtin.command: >
+        headscale preauthkeys create
+        --namespace default
+        --reusable
+        --expiration 24h
+        --output json
+      register: preauth_key_output
+      changed_when: true
+
+    - name: Parse pre-authentication key
+      ansible.builtin.set_fact:
+        headscale_preauth_key_value: "{{ (preauth_key_output.stdout | from_json).key }}"
+
+    - name: Display pre-authentication key
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Pre-authentication Key Generated
+          ========================================
+          Key: {{ headscale_preauth_key_value }}
+          ========================================
+
+    - name: Save pre-auth key to local file
+      ansible.builtin.copy:
+        content: "{{ headscale_preauth_key_value }}"
+        dest: /tmp/headscale_preauth_key.txt
+        mode: '0600'
+      delegate_to: localhost
+
+- name: Deploy Headscale Clients
+  hosts: headscale_clients
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Phase 2: Headscale Client Deployment
+          ========================================
+          Target Hosts: {{ groups['headscale_clients'] | join(', ') }}
+          Total Clients: {{ groups['headscale_clients'] | length }}
+          ========================================
+      run_once: true
+
+    - name: Load pre-auth key from file
+      ansible.builtin.slurp:
+        src: /tmp/headscale_preauth_key.txt
+      register: preauth_key_file
+      delegate_to: localhost
+      run_once: true
+
+    - name: Set pre-auth key fact
+      ansible.builtin.set_fact:
+        headscale_preauth_key: "{{ preauth_key_file.content | b64decode | trim }}"
+
+  roles:
+    - role: headscale_client
+      tags:
+        - headscale
+        - headscale_client
+
+  post_tasks:
+    - name: Clean up pre-auth key file
+      ansible.builtin.file:
+        path: /tmp/headscale_preauth_key.txt
+        state: absent
+      delegate_to: localhost
+      run_once: true
+
+    - name: Display final deployment summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Headscale Mesh Network Deployed!
+          ========================================
+          Server: {{ groups['headscale_server'][0] }}
+          Clients: {{ groups['headscale_clients'] | join(', ') }}
+          
+          Verify the network:
+            ssh root@{{ lookup('env', 'PL_1_V4_SSH') }}
+            headscale nodes list
+            headscale routes list
+          ========================================
+      run_once: true

@@ -1,0 +1,71 @@
+---
+# =============================================================================
+# Headscale 客户端部署 Playbook | Headscale Client Deployment Playbook
+# =============================================================================
+# 用途：在所有客户端节点上部署 Tailscale 并连接到 Headscale 服务器
+# Purpose: Deploy Tailscale on all client nodes and connect to Headscale server
+#
+# 使用方法 | Usage:
+#   ansible-playbook playbooks/headscale/deploy_clients.yml
+#
+# 环境变量要求 | Required Environment Variables:
+#   - HEADSCALE_PREAUTH_KEY: 从 Headscale 服务器生成的预授权密钥
+#   - PL_1_V4_SSH: Headscale 服务器的 IP 地址
+# =============================================================================
+
+- name: Deploy Headscale Clients
+  hosts: headscale_clients
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Headscale Client Deployment
+          ========================================
+          Target Hosts: {{ groups['headscale_clients'] | join(', ') }}
+          Headscale Server: {{ lookup('env', 'PL_1_V4_SSH') }}
+          Total Clients: {{ groups['headscale_clients'] | length }}
+          ========================================
+
+    - name: Validate client hosts are defined
+      ansible.builtin.fail:
+        msg: "No headscale_clients defined in inventory"
+      when: groups['headscale_clients'] is not defined or groups['headscale_clients'] | length == 0
+      run_once: true
+
+    - name: Check if HEADSCALE_PREAUTH_KEY is set
+      ansible.builtin.fail:
+        msg: |
+          HEADSCALE_PREAUTH_KEY is not set!
+          
+          Please generate a pre-auth key on the Headscale server:
+            ssh root@{{ lookup('env', 'PL_1_V4_SSH') }}
+            headscale preauthkeys create --namespace default --reusable --expiration 24h
+          
+          Then export it:
+            export HEADSCALE_PREAUTH_KEY="your-preauth-key-here"
+      when: lookup('env', 'HEADSCALE_PREAUTH_KEY') == ''
+      run_once: true
+
+  roles:
+    - role: headscale_client
+      tags:
+        - headscale
+        - headscale_client
+
+  post_tasks:
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Headscale Client Deployment Complete!
+          ========================================
+          Deployed to: {{ inventory_hostname }}
+          
+          You can verify the mesh network on the Headscale server:
+            ssh root@{{ lookup('env', 'PL_1_V4_SSH') }}
+            headscale nodes list
+          ========================================

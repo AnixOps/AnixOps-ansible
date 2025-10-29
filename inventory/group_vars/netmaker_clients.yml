@@ -1,0 +1,133 @@
+---
+# =============================================================================
+# Netmaker Clients 组变量 | Netmaker Clients Group Variables
+# =============================================================================
+# 此文件包含 netmaker_clients 主机组的配置变量
+# This file contains configuration variables for the netmaker_clients host group
+#
+# 🔐 安全配置 | Security Configuration:
+# ------------------------------------------------------------------------------
+# 敏感信息通过环境变量或 GitHub Secrets 传递
+# Sensitive information is passed via environment variables or GitHub Secrets
+#
+# 本地开发 | Local Development:
+#   在 .env 文件中设置环境变量（不要提交到 Git）
+#   Set environment variables in .env file (do not commit to Git)
+#
+# GitHub Actions:
+#   在 Repository Settings > Secrets 中配置
+#   Configure in Repository Settings > Secrets
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Netmaker 服务器配置 | Netmaker Server Configuration
+# -----------------------------------------------------------------------------
+
+# Netmaker 服务器地址（使用 PL-1 服务器）
+# Netmaker server address (using PL-1 server)
+netmaker_server_host: "{{ lookup('env', 'PL_1_V4_SSH') }}"
+
+# 或者使用域名（如果已配置）| Or use domain name (if configured)
+# netmaker_server_host: "{{ lookup('env', 'NETMAKER_SERVER_HOST') | default('nm.anixops.example.com', true) }}"
+
+# Netmaker 访问密钥 / 注册令牌（从环境变量读取）
+# Netmaker access key / enrollment token (read from environment variable)
+# 
+# 从 Netmaker UI 的 "Access Keys" 或 "Enrollment Keys" 页面生成
+# Generate from "Access Keys" or "Enrollment Keys" page in Netmaker UI
+#
+# 本地设置 | Local setup:
+#   export NETMAKER_ACCESS_KEY="your-access-key-here"
+#
+# GitHub Actions:
+#   在 Repository Secrets 中设置 NETMAKER_ACCESS_KEY
+#   Set NETMAKER_ACCESS_KEY in Repository Secrets
+netmaker_access_key: "{{ lookup('env', 'NETMAKER_ACCESS_KEY') }}"
+
+# 要加入的 Netmaker 网络名称
+# Network name to join
+# 可以通过环境变量覆盖 | Can be overridden via environment variable
+netmaker_network_name: "{{ lookup('env', 'NETMAKER_NETWORK_NAME') | default('anixops-mesh', true) }}"
+
+# Netmaker gRPC 端口（可选）| Netmaker gRPC port (optional)
+# 通常使用默认值，除非你的 Netmaker 服务器配置了不同的端口
+# Usually uses default unless your Netmaker server is configured differently
+# netmaker_server_grpc_port: "{{ lookup('env', 'NETMAKER_GRPC_PORT') | default('50051', true) }}"
+
+# -----------------------------------------------------------------------------
+# 客户端配置 | Client Configuration
+# -----------------------------------------------------------------------------
+
+# 是否显示详细状态信息 | Whether to show detailed status information
+netmaker_show_status: true
+
+# -----------------------------------------------------------------------------
+# 环境变量说明 | Environment Variables Documentation
+# -----------------------------------------------------------------------------
+# 需要设置的环境变量 | Required environment variables:
+#
+# 1. NETMAKER_ACCESS_KEY (必需 | Required)
+#    从 Netmaker UI 生成的访问密钥
+#    Access key generated from Netmaker UI
+#
+# 2. NETMAKER_NETWORK_NAME (可选 | Optional, 默认: anixops-mesh)
+#    要加入的网络名称
+#    Network name to join
+#
+# 3. PL_1_V4_SSH (必需 | Required)
+#    Netmaker 服务器的 IP 地址
+#    IP address of Netmaker server
+#
+# 本地开发示例 | Local development example:
+# ----------------------------------------------
+# export NETMAKER_ACCESS_KEY="abc123xyz..."
+# export NETMAKER_NETWORK_NAME="anixops-mesh"
+# export PL_1_V4_SSH="192.168.1.100"
+#
+# GitHub Actions 示例 | GitHub Actions example:
+# ----------------------------------------------
+# 在 Repository Settings > Secrets and variables > Actions 中添加：
+# Add in Repository Settings > Secrets and variables > Actions:
+#   - NETMAKER_ACCESS_KEY
+#   - NETMAKER_NETWORK_NAME (可选 | optional)
+#   - PL_1_V4_SSH (应该已存在 | should already exist)
+# =============================================================================
+
+# Netmaker gRPC 端口（可选，默认 50051）
+# netmaker_server_grpc_port: 50051
+
+# -----------------------------------------------------------------------------
+# 客户端配置 | Client Configuration
+# -----------------------------------------------------------------------------
+
+# 是否显示详细状态信息
+netmaker_show_status: true
+
+# -----------------------------------------------------------------------------
+# 网络配置示例 | Network Configuration Examples
+# -----------------------------------------------------------------------------
+
+# 如果你有多个网络环境，可以在这里定义不同的配置
+# If you have multiple network environments, you can define different configs here
+
+# # 生产环境网络
+# netmaker_network_name: "prod-mesh"
+# netmaker_access_key: !vault |
+#   $ANSIBLE_VAULT;1.1;AES256
+#   ... (your encrypted production key)
+
+# # 开发环境网络
+# netmaker_network_name: "dev-mesh"
+# netmaker_access_key: !vault |
+#   $ANSIBLE_VAULT;1.1;AES256
+#   ... (your encrypted development key)
+
+# -----------------------------------------------------------------------------
+# 高级配置（可选）| Advanced Configuration (Optional)
+# -----------------------------------------------------------------------------
+
+# 自定义 MTU（如果网络环境需要）
+# netmaker_mtu: 1420
+
+# 是否使用 WireGuard 内核模块
+# netmaker_use_kernel_wireguard: true

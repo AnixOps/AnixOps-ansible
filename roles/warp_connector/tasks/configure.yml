@@ -1,0 +1,66 @@
+---
+# WARP Connector 配置任务
+# WARP Connector Configuration Tasks
+
+- name: 断开现有 WARP 连接 (如果存在)
+  ansible.builtin.command:
+    cmd: "warp-cli disconnect"
+  when: warp_install_method == "package"
+  register: warp_disconnect
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+
+- name: 删除旧的 WARP 注册信息 (如果存在)
+  ansible.builtin.command:
+    cmd: "warp-cli registration delete"
+  when: warp_install_method == "package"
+  register: warp_delete
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+
+- name: 注册 WARP Connector (包安装方式)
+  ansible.builtin.command:
+    cmd: "warp-cli --accept-tos connector new {{ warp_token }}"
+  when: warp_install_method == "package"
+  register: warp_register
+  changed_when: warp_register.rc == 0
+  failed_when: warp_register.rc != 0 and 'Old registration' not in warp_register.stderr
+
+- name: 连接 WARP (包安装方式)
+  ansible.builtin.command:
+    cmd: "warp-cli --accept-tos connect"
+  when: warp_install_method == "package"
+  register: warp_connect
+  changed_when: warp_connect.rc == 0
+
+- name: 设置日志级别 (包安装方式)
+  ansible.builtin.command:
+    cmd: "warp-cli set-log-level {{ warp_log_level }}"
+  when: warp_install_method == "package"
+  changed_when: true
+
+- name: 启用 WARP 服务
+  ansible.builtin.systemd:
+    name: "{{ warp_service_name }}"
+    state: started
+    enabled: yes
+  when: warp_install_method == "package"
+
+- name: 等待 WARP 连接建立
+  ansible.builtin.wait_for:
+    timeout: 30
+  delegate_to: localhost
+
+- name: 检查 WARP 状态 (包安装方式)
+  ansible.builtin.command:
+    cmd: "warp-cli status"
+  when: warp_install_method == "package"
+  register: warp_status
+  changed_when: false
+
+- name: 显示 WARP 状态
+  ansible.builtin.debug:
+    var: warp_status.stdout_lines
+  when: warp_install_method == "package" and warp_status.stdout_lines is defined

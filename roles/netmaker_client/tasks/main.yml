@@ -1,0 +1,208 @@
+---
+# =============================================================================
+# Netmaker Client (netclient) 部署任务 | Netmaker Client Deployment Tasks
+# =============================================================================
+# 此 Role 自动安装、配置并加入 Netmaker 网络
+# This role automatically installs, configures and joins Netmaker network
+#
+# 核心功能 | Core Features:
+#   - 幂等性设计 | Idempotent design
+#   - 多发行版支持 | Multi-distro support
+#   - 自动检测已加入状态 | Auto-detect joined status
+#   - Systemd 服务管理 | Systemd service management
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 前置检查 | Pre-flight Checks
+# -----------------------------------------------------------------------------
+
+- name: 检查操作系统是否受支持 | Check if OS is supported
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in ['Debian', 'RedHat']
+    fail_msg: "不支持的操作系统: {{ ansible_os_family }}. 仅支持 Debian/Ubuntu 和 RHEL/CentOS/Rocky."
+    success_msg: "操作系统检查通过: {{ ansible_os_family }}"
+
+- name: 验证必需变量是否已定义 | Verify required variables are defined
+  ansible.builtin.assert:
+    that:
+      - netmaker_server_host is defined
+      - netmaker_server_host | length > 0
+      - netmaker_access_key is defined
+      - netmaker_access_key | length > 0
+      - netmaker_network_name is defined
+      - netmaker_network_name | length > 0
+    fail_msg: "缺少必需的变量。请确保定义了 netmaker_server_host, netmaker_access_key 和 netmaker_network_name"
+    success_msg: "所有必需变量已定义"
+
+# -----------------------------------------------------------------------------
+# 检查 netclient 安装状态 | Check netclient Installation Status
+# -----------------------------------------------------------------------------
+
+- name: 检查 netclient 是否已安装 | Check if netclient is already installed
+  ansible.builtin.stat:
+    path: /usr/sbin/netclient
+  register: netclient_binary
+
+- name: 检查 netclient 版本 | Check netclient version
+  ansible.builtin.command: netclient --version
+  register: netclient_version_output
+  changed_when: false
+  failed_when: false
+  when: netclient_binary.stat.exists
+
+- name: 显示当前 netclient 版本 | Display current netclient version
+  ansible.builtin.debug:
+    msg: "netclient 已安装，版本: {{ netclient_version_output.stdout }}"
+  when: 
+    - netclient_binary.stat.exists
+    - netclient_version_output.rc == 0
+
+# -----------------------------------------------------------------------------
+# 安装 netclient | Install netclient
+# -----------------------------------------------------------------------------
+
+- name: 安装必需的依赖包 | Install required dependencies
+  ansible.builtin.package:
+    name:
+      - curl
+      - wget
+      - wireguard-tools
+    state: present
+  when: not netclient_binary.stat.exists
+
+- name: 下载并安装 netclient (使用官方安装命令) | Download and install netclient (using official command)
+  ansible.builtin.shell: |
+    curl -sfL https://github.com/gravitl/netmaker/releases/download/v1.1.0/netclient-linux-amd64 -o /tmp/netclient && \
+    chmod +x /tmp/netclient && \
+    mv /tmp/netclient /usr/sbin/netclient
+  args:
+    creates: /usr/sbin/netclient
+  when: 
+    - not netclient_binary.stat.exists
+    - ansible_architecture == 'x86_64'
+  register: netclient_install_amd64
+
+- name: 下载并安装 netclient ARM64 | Download and install netclient ARM64
+  ansible.builtin.shell: |
+    curl -sfL https://github.com/gravitl/netmaker/releases/download/v1.1.0/netclient-linux-arm64 -o /tmp/netclient && \
+    chmod +x /tmp/netclient && \
+    mv /tmp/netclient /usr/sbin/netclient
+  args:
+    creates: /usr/sbin/netclient
+  when: 
+    - not netclient_binary.stat.exists
+    - ansible_architecture == 'aarch64'
+  register: netclient_install_arm64
+
+- name: 验证 netclient 安装成功 | Verify netclient installation
+  ansible.builtin.stat:
+    path: /usr/sbin/netclient
+  register: netclient_installed
+  failed_when: not netclient_installed.stat.exists
+
+# -----------------------------------------------------------------------------
+# 检查网络加入状态 | Check Network Join Status
+# -----------------------------------------------------------------------------
+
+- name: 检查 netclient 配置目录 | Check netclient config directory
+  ansible.builtin.stat:
+    path: /etc/netclient
+  register: netclient_config_dir
+
+- name: 列出当前加入的网络 | List currently joined networks
+  ansible.builtin.command: netclient list
+  register: netclient_list
+  changed_when: false
+  failed_when: false
+  when: netclient_config_dir.stat.exists
+
+- name: 检查是否已加入目标网络 | Check if already joined target network
+  ansible.builtin.set_fact:
+    already_joined: "{{ netmaker_network_name in netclient_list.stdout }}"
+  when: 
+    - netclient_config_dir.stat.exists
+    - netclient_list.rc == 0
+
+- name: 显示网络加入状态 | Display network join status
+  ansible.builtin.debug:
+    msg: "节点已加入网络 '{{ netmaker_network_name }}', 跳过 join 步骤"
+  when: 
+    - already_joined is defined
+    - already_joined | bool
+
+# -----------------------------------------------------------------------------
+# 加入 Netmaker 网络 | Join Netmaker Network
+# -----------------------------------------------------------------------------
+
+- name: 加入 Netmaker 网络 | Join Netmaker network
+  ansible.builtin.command: >
+    netclient join
+    -s {{ netmaker_server_host }}
+    -k {{ netmaker_access_key }}
+    -n {{ netmaker_network_name }}
+    {% if netmaker_server_grpc_port is defined %}-p {{ netmaker_server_grpc_port }}{% endif %}
+  register: netclient_join_result
+  when: 
+    - already_joined is not defined or not already_joined | bool
+  no_log: true  # 隐藏敏感的 access key | Hide sensitive access key
+
+- name: 显示加入结果 | Display join result
+  ansible.builtin.debug:
+    msg: "成功加入 Netmaker 网络 '{{ netmaker_network_name }}'"
+  when: 
+    - netclient_join_result is defined
+    - netclient_join_result.changed
+
+# -----------------------------------------------------------------------------
+# Systemd 服务管理 | Systemd Service Management
+# -----------------------------------------------------------------------------
+
+- name: 确保 netclient 服务已启动并设置为开机自启 | Ensure netclient service is started and enabled
+  ansible.builtin.systemd:
+    name: netclient
+    state: started
+    enabled: true
+    daemon_reload: true
+  register: netclient_service
+
+- name: 等待 netclient 服务稳定 | Wait for netclient service to stabilize
+  ansible.builtin.wait_for:
+    timeout: 5
+  when: netclient_service.changed
+
+- name: 验证 netclient 服务状态 | Verify netclient service status
+  ansible.builtin.systemd:
+    name: netclient
+  register: netclient_service_status
+
+- name: 显示服务状态 | Display service status
+  ansible.builtin.debug:
+    msg: "netclient 服务状态: {{ netclient_service_status.status.ActiveState }}"
+
+# -----------------------------------------------------------------------------
+# 最终验证 | Final Verification
+# -----------------------------------------------------------------------------
+
+- name: 获取节点信息 | Get node information
+  ansible.builtin.command: netclient list
+  register: netclient_final_status
+  changed_when: false
+
+- name: 显示节点信息 | Display node information
+  ansible.builtin.debug:
+    msg: "{{ netclient_final_status.stdout_lines }}"
+  when: netclient_show_status | bool
+
+- name: 获取 WireGuard 接口状态 | Get WireGuard interface status
+  ansible.builtin.command: wg show
+  register: wireguard_status
+  changed_when: false
+  failed_when: false
+
+- name: 显示 WireGuard 接口信息 | Display WireGuard interface information
+  ansible.builtin.debug:
+    msg: "{{ wireguard_status.stdout_lines }}"
+  when: 
+    - netclient_show_status | bool
+    - wireguard_status.rc == 0

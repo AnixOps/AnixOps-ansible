@@ -15,9 +15,10 @@ kind_api_server_port: 6443
 k3s_version: "v1.28.5+k3s1"
 k3s_server_options: "--disable traefik --write-kubeconfig-mode 644"
 k3s_install_script: "https://get.k3s.io"
+k3s_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
 
 # Kubeconfig 路径 | Kubeconfig path
-kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
+kubeconfig_path: "{{ k3s_kubeconfig_path if k8s_provider == 'k3s' else ansible_env.HOME + '/.kube/config' }}"
 
 # 检查工具 | Check tools
 required_tools:

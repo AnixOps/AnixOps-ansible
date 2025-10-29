@@ -1,0 +1,209 @@
+---
+# Kubernetes Control Plane Deployment Playbook
+# 部署 Kubernetes 控制面板反向代理 + SSL
+# 支持 K8s Dashboard, K8s API, K8s Metrics Server
+
+- name: Deploy Kubernetes Control Plane Reverse Proxy
+  hosts: k8s_control_plane
+  become: yes
+  gather_facts: yes
+
+  vars_files:
+    - ../../inventory/server_aliases.yml
+
+  vars:
+    # SSL/TLS 配置
+    k8s_control_ssl_enabled: "{{ lookup('env', 'K8S_CONTROL_SSL_ENABLED') | default('false', true) | bool }}"
+    k8s_control_ssl_method: "{{ lookup('env', 'K8S_CONTROL_SSL_METHOD') | default('acme', true) }}"  # acme, custom
+    
+    # 域名配置
+    k8s_dashboard_domain: "{{ lookup('env', 'K8S_DASHBOARD_DOMAIN') | default('k8s-dashboard.anixops.com', true) }}"
+    k8s_api_domain: "{{ lookup('env', 'K8S_API_DOMAIN') | default('k8s-api.anixops.com', true) }}"
+    k8s_metrics_domain: "{{ lookup('env', 'K8S_METRICS_DOMAIN') | default('k8s-metrics.anixops.com', true) }}"
+    
+    # 自定义 SSL 证书配置
+    ssl_certificate_pem: "{{ lookup('env', 'SSL_CERTIFICATE_PEM') }}"
+    ssl_certificate_key_pem: "{{ lookup('env', 'SSL_CERTIFICATE_KEY_PEM') }}"
+    
+    # ACME.sh 配置
+    acme_email: "{{ lookup('env', 'ACME_EMAIL') | default('admin@example.com') }}"
+    acme_ca_server: "{{ lookup('env', 'ACME_CA_SERVER') | default('letsencrypt') }}"
+    
+    # Cloudflare 配置
+    cloudflare_email: "{{ lookup('env', 'CLOUDFLARE_EMAIL') }}"
+    cloudflare_api_key: "{{ lookup('env', 'CLOUDFLARE_API_KEY') }}"
+    cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') }}"
+    cloudflare_zone_id: "{{ lookup('env', 'CLOUDFLARE_ZONE_ID') }}"
+
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Deploy Kubernetes Control Plane Reverse Proxy               ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "🔧 SSL Enabled: {{ k8s_control_ssl_enabled }}"
+          - "📦 SSL Method: {{ k8s_control_ssl_method }}"
+          - ""
+          - "Domains:"
+          - "  - Dashboard: {{ k8s_dashboard_domain }}"
+          - "  - API: {{ k8s_api_domain }}"
+          - "  - Metrics: {{ k8s_metrics_domain }}"
+
+    - name: Validate SSL configuration
+      assert:
+        that:
+          - k8s_control_ssl_method in ['acme', 'custom']
+          - not k8s_control_ssl_enabled or (k8s_control_ssl_enabled and acme_email != 'admin@example.com')
+        fail_msg: "Please configure proper email for SSL certificates"
+      when: k8s_control_ssl_enabled
+
+    - name: Validate custom SSL certificates
+      assert:
+        that:
+          - ssl_certificate_pem != ''
+          - ssl_certificate_key_pem != ''
+        fail_msg: "Please set SSL_CERTIFICATE_PEM and SSL_CERTIFICATE_KEY_PEM in .env"
+      when:
+        - k8s_control_ssl_enabled
+        - k8s_control_ssl_method == 'custom'
+
+    - name: Validate Cloudflare credentials
+      assert:
+        that:
+          - cloudflare_api_token != '' or (cloudflare_email != '' and cloudflare_api_key != '')
+          - cloudflare_zone_id != ''
+        fail_msg: "Please set CLOUDFLARE_API_TOKEN (or EMAIL+KEY) and CLOUDFLARE_ZONE_ID"
+      when: 
+        - k8s_control_ssl_enabled
+        - k8s_control_ssl_method == 'acme'
+
+  roles:
+    - role: nginx
+      tags: [nginx]
+    
+    # Deploy Kubernetes Dashboard first
+    - role: k8s_dashboard_deploy
+      tags: [dashboard, k8s]
+    
+    - role: custom_ssl
+      vars:
+        ssl_domains:
+          - "{{ k8s_dashboard_domain }}"
+          - "{{ k8s_api_domain }}"
+          - "{{ k8s_metrics_domain }}"
+      when: 
+        - k8s_control_ssl_enabled
+        - k8s_control_ssl_method == 'custom'
+      tags: [ssl, custom]
+    
+    - role: acme_ssl
+      vars:
+        acme_dns_provider: "cloudflare"
+        acme_domains:
+          - "{{ k8s_dashboard_domain }}"
+          - "{{ k8s_api_domain }}"
+          - "{{ k8s_metrics_domain }}"
+      when: 
+        - k8s_control_ssl_enabled
+        - k8s_control_ssl_method == 'acme'
+      tags: [ssl, acme]
+
+  tasks:
+    - name: Deploy Nginx reverse proxy for K8s Dashboard
+      template:
+        src: ../../roles/nginx/templates/k8s/k8s-dashboard.conf.j2
+        dest: /etc/nginx/sites-available/k8s-dashboard
+        mode: '0644'
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Enable K8s Dashboard site
+      file:
+        src: /etc/nginx/sites-available/k8s-dashboard
+        dest: /etc/nginx/sites-enabled/k8s-dashboard
+        state: link
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Deploy Nginx reverse proxy for K8s API
+      template:
+        src: ../../roles/nginx/templates/k8s/k8s-api.conf.j2
+        dest: /etc/nginx/sites-available/k8s-api
+        mode: '0644'
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Enable K8s API site
+      file:
+        src: /etc/nginx/sites-available/k8s-api
+        dest: /etc/nginx/sites-enabled/k8s-api
+        state: link
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Deploy Nginx reverse proxy for K8s Metrics
+      template:
+        src: ../../roles/nginx/templates/k8s/k8s-metrics.conf.j2
+        dest: /etc/nginx/sites-available/k8s-metrics
+        mode: '0644'
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Enable K8s Metrics site
+      file:
+        src: /etc/nginx/sites-available/k8s-metrics
+        dest: /etc/nginx/sites-enabled/k8s-metrics
+        state: link
+      notify: reload nginx
+      tags: [nginx, config]
+
+    - name: Test Nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+      tags: [nginx, config]
+
+    - name: Reload Nginx if configuration is valid
+      service:
+        name: nginx
+        state: reloaded
+      when: nginx_test.rc == 0
+      tags: [nginx, config]
+
+  handlers:
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          🎉 Kubernetes Control Plane Reverse Proxy Deployed!
+          ═══════════════════════════════════════════════════════════
+          
+          Services:
+          {% if k8s_control_ssl_enabled %}
+          ✓ Dashboard: https://{{ k8s_dashboard_domain }}
+          ✓ API:       https://{{ k8s_api_domain }}
+          ✓ Metrics:   https://{{ k8s_metrics_domain }}
+          
+          SSL: Enabled ({{ k8s_control_ssl_method | upper }})
+          {% else %}
+          ✓ Dashboard: http://{{ ansible_host }}:8001
+          ✓ API:       http://{{ ansible_host }}:6443
+          ✓ Metrics:   http://{{ ansible_host }}:10250
+          
+          SSL: Disabled
+          {% endif %}
+          
+          Next Steps:
+          1. Deploy Kubernetes Dashboard if not already installed
+          2. Configure authentication tokens
+          3. Test access to all endpoints
+          ═══════════════════════════════════════════════════════════

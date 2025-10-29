@@ -1,0 +1,391 @@
+---
+# =============================================================================
+# Cloudflare Tunnel Token Secret
+# =============================================================================
+# 用于存储 Cloudflare Tunnel Token 的 Kubernetes Secret
+# Kubernetes Secret for storing Cloudflare Tunnel Token
+#
+# 使用前请替换 TUNNEL_TOKEN 的值为你的实际 Token (base64 编码)
+# Please replace the TUNNEL_TOKEN value with your actual Token (base64 encoded)
+#
+# 获取 base64 编码的 Token:
+# echo -n "your-actual-token-here" | base64
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared-secret
+  namespace: default  # 请根据需要修改 namespace
+  labels:
+    app: api-service
+    component: tunnel
+type: Opaque
+data:
+  # ⚠️  请替换此占位符为你的实际 Cloudflare Tunnel Token (base64 编码)
+  # ⚠️  Please replace this placeholder with your actual Cloudflare Tunnel Token (base64 encoded)
+  # 
+  # 示例: 如果你的 token 是 "eyJhIjoiY2FmZS0xMjM0..."
+  # 运行: echo -n "eyJhIjoiY2FmZS0xMjM0..." | base64
+  TUNNEL_TOKEN: W+i/meaYr+aYr+aIkeeahOmakOmBk1RPS0VO]  # [这里是我的隧道TOKEN]
+
+---
+# =============================================================================
+# API Service with Cloudflared Sidecar Deployment
+# =============================================================================
+# 使用 Sidecar 模式部署 API 服务和 cloudflared
+# Deploy API service with cloudflared using Sidecar pattern
+#
+# 架构说明 | Architecture:
+#   - Pod 包含两个容器，共享同一网络命名空间
+#   - API 服务监听 localhost:8080
+#   - cloudflared 通过 localhost:8080 转发流量到 API 服务
+#   - 外部流量通过 Cloudflare Tunnel 安全访问
+#
+# Pod contains two containers sharing the same network namespace:
+#   - API service listens on localhost:8080
+#   - cloudflared forwards traffic to API service via localhost:8080
+#   - External traffic securely accesses via Cloudflare Tunnel
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service-with-tunnel
+  namespace: default  # 请根据需要修改 namespace
+  labels:
+    app: api-service
+    component: backend
+    tunnel: cloudflared
+    managed-by: anixops
+  annotations:
+    description: "API service with Cloudflare Tunnel sidecar"
+spec:
+  # -------------------------------------------------------------------------
+  # 副本配置 | Replica Configuration
+  # -------------------------------------------------------------------------
+  replicas: 2  # 建议至少 2 个副本以实现高可用
+  
+  # -------------------------------------------------------------------------
+  # 更新策略 | Update Strategy
+  # -------------------------------------------------------------------------
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1          # 更新时最多额外创建 1 个 Pod
+      maxUnavailable: 0    # 更新时确保服务不中断
+  
+  # -------------------------------------------------------------------------
+  # 选择器 | Selector
+  # -------------------------------------------------------------------------
+  selector:
+    matchLabels:
+      app: api-service
+      component: backend
+  
+  # -------------------------------------------------------------------------
+  # Pod 模板 | Pod Template
+  # -------------------------------------------------------------------------
+  template:
+    metadata:
+      labels:
+        app: api-service
+        component: backend
+        tunnel: cloudflared
+        version: "1.0.0"
+      annotations:
+        # Prometheus 监控配置
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "2000"
+        prometheus.io/path: "/metrics"
+        # Pod 重启策略说明
+        description: "API service with cloudflared sidecar for secure external access"
+    
+    spec:
+      # ---------------------------------------------------------------------
+      # 容器配置 | Container Configuration
+      # ---------------------------------------------------------------------
+      containers:
+        # ===================================================================
+        # 容器 1: API 服务主容器
+        # Container 1: API Service Main Container
+        # ===================================================================
+        - name: my-api-service
+          # ⚠️  请替换为你的实际 API 镜像
+          # ⚠️  Please replace with your actual API image
+          image: [请在这里替换成我的API镜像:latest]  # 例如: your-registry.com/your-api:v1.0.0
+          
+          imagePullPolicy: IfNotPresent
+          
+          # 容器端口配置
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          
+          # 环境变量（根据你的 API 需求配置）
+          env:
+            - name: PORT
+              value: "8080"
+            - name: LOG_LEVEL
+              value: "info"
+            # 添加其他你的 API 需要的环境变量
+            # Add other environment variables your API needs
+          
+          # 资源限制和请求
+          resources:
+            requests:
+              cpu: "100m"        # 请求 0.1 核 CPU
+              memory: "128Mi"    # 请求 128MB 内存
+            limits:
+              cpu: "500m"        # 限制 0.5 核 CPU
+              memory: "512Mi"    # 限制 512MB 内存
+          
+          # 健康检查 - 存活探针
+          # Health check - Liveness probe
+          livenessProbe:
+            httpGet:
+              path: /health      # 请根据你的 API 修改健康检查路径
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          # 健康检查 - 就绪探针
+          # Health check - Readiness probe
+          readinessProbe:
+            httpGet:
+              path: /ready       # 请根据你的 API 修改就绪检查路径
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # 启动探针（用于慢启动的应用）
+          # Startup probe (for slow-starting applications)
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30  # 允许最多 300 秒启动时间
+        
+        # ===================================================================
+        # 容器 2: Cloudflared Sidecar 容器
+        # Container 2: Cloudflared Sidecar Container
+        # ===================================================================
+        - name: cloudflared-sidecar
+          # 使用官方 cloudflared 镜像
+          image: cloudflare/cloudflared:latest
+          
+          imagePullPolicy: IfNotPresent
+          
+          # Cloudflared 启动参数
+          # Cloudflared startup arguments
+          args:
+            - tunnel
+            - --no-autoupdate
+            - run
+            - --token
+            - $(TUNNEL_TOKEN)
+          
+          # 从 Secret 中获取 Tunnel Token
+          # Get Tunnel Token from Secret
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflared-secret
+                  key: TUNNEL_TOKEN
+            # 日志级别配置
+            - name: TUNNEL_LOGLEVEL
+              value: "info"
+            # Metrics 端口
+            - name: TUNNEL_METRICS
+              value: "0.0.0.0:2000"
+          
+          # 端口配置
+          ports:
+            # Metrics 端口（用于 Prometheus 监控）
+            - name: metrics
+              containerPort: 2000
+              protocol: TCP
+          
+          # 资源限制和请求
+          resources:
+            requests:
+              cpu: "50m"         # 请求 0.05 核 CPU
+              memory: "64Mi"     # 请求 64MB 内存
+            limits:
+              cpu: "200m"        # 限制 0.2 核 CPU
+              memory: "256Mi"    # 限制 256MB 内存
+          
+          # 健康检查 - 存活探针
+          # Health check - Liveness probe
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # 健康检查 - 就绪探针
+          # Health check - Readiness probe
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      
+      # ---------------------------------------------------------------------
+      # Pod 级别配置 | Pod-level Configuration
+      # ---------------------------------------------------------------------
+      
+      # 重启策略
+      restartPolicy: Always
+      
+      # DNS 策略
+      dnsPolicy: ClusterFirst
+      
+      # 终止宽限期（秒）
+      terminationGracePeriodSeconds: 30
+      
+      # 安全上下文（可选，根据需要配置）
+      # Security context (optional, configure as needed)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532        # 非 root 用户
+        fsGroup: 65532
+      
+      # Pod 反亲和性（可选，用于跨节点分布）
+      # Pod anti-affinity (optional, for cross-node distribution)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - api-service
+                topologyKey: kubernetes.io/hostname
+
+---
+# =============================================================================
+# Kubernetes Service (可选)
+# Kubernetes Service (Optional)
+# =============================================================================
+# 如果需要在集群内部访问 API 服务，可以创建此 Service
+# Create this Service if you need to access the API service within the cluster
+#
+# 注意：由于使用了 cloudflared，外部流量通过 Tunnel 访问，
+#       此 Service 主要用于集群内部通信
+# Note: Since cloudflared is used, external traffic goes through the Tunnel,
+#       this Service is mainly for internal cluster communication
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: default  # 请根据需要修改 namespace
+  labels:
+    app: api-service
+    component: backend
+spec:
+  type: ClusterIP  # 仅集群内部访问
+  selector:
+    app: api-service
+    component: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+  sessionAffinity: None
+
+---
+# =============================================================================
+# HorizontalPodAutoscaler (可选)
+# HorizontalPodAutoscaler (Optional)
+# =============================================================================
+# 根据 CPU 使用率自动扩缩容
+# Auto-scale based on CPU utilization
+#
+# 前提：需要安装 Metrics Server
+# Prerequisite: Metrics Server must be installed
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-service-hpa
+  namespace: default  # 请根据需要修改 namespace
+  labels:
+    app: api-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-service-with-tunnel
+  minReplicas: 2              # 最小副本数
+  maxReplicas: 10             # 最大副本数
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70  # CPU 使用率达到 70% 时扩容
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # 内存使用率达到 80% 时扩容
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 缩容稳定窗口 5 分钟
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max
+
+---
+# =============================================================================
+# PodDisruptionBudget (可选)
+# PodDisruptionBudget (Optional)
+# =============================================================================
+# 确保高可用：在节点维护或升级时，至少保持 1 个 Pod 运行
+# Ensure high availability: Keep at least 1 Pod running during node maintenance
+# =============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-service-pdb
+  namespace: default  # 请根据需要修改 namespace
+  labels:
+    app: api-service
+spec:
+  minAvailable: 1  # 至少保持 1 个 Pod 可用
+  selector:
+    matchLabels:
+      app: api-service
+      component: backend

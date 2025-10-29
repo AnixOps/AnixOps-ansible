@@ -1,0 +1,93 @@
+---
+# 部署 WARP Connector 到宿主机
+# Deploy WARP Connector to Host Machines
+#
+# 此 playbook 直接在服务器宿主机上部署 WARP Connector
+# 比 K8s 部署更简单，让整个服务器都能享受 WARP 网络
+#
+# 使用方法:
+#   # 方式 1: 使用默认 inventory (推荐，ansible.cfg 已配置)
+#   ansible-playbook playbooks/deployment/deploy_warp_host.yml -e "warp_token=YOUR_WARP_TOKEN"
+#
+#   # 方式 2: 显式指定 inventory
+#   ansible-playbook playbooks/deployment/deploy_warp_host.yml \
+#     -i inventory/hosts.yml \
+#     -e "warp_token=YOUR_WARP_TOKEN"
+#
+# 或使用环境变量:
+#   export WARP_TOKEN=your_token
+#   ansible-playbook playbooks/deployment/deploy_warp_host.yml
+
+- name: 部署 WARP Connector 到宿主机
+  hosts: dev_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # 从环境变量或命令行参数获取 token
+    warp_token: "{{ lookup('env', 'WARP_TOKEN') | default(warp_token | default('')) }}"
+    warp_install_method: "package"  # 可选: package 或 docker
+    warp_log_level: "info"
+  
+  pre_tasks:
+    - name: 显示部署横幅
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔══════════════════════════════════════════════════════════╗"
+          - "║                                                          ║"
+          - "║      🌐 部署 WARP Connector 到宿主机                     ║"
+          - "║      🌐 Deploy WARP Connector to Host Machines          ║"
+          - "║                                                          ║"
+          - "╚══════════════════════════════════════════════════════════╝"
+          - ""
+          - "📊 部署信息:"
+          - "  • 目标主机: {{ ansible_play_hosts | length }} 台"
+          - "  • 安装方式: {{ warp_install_method }}"
+          - "  • 日志级别: {{ warp_log_level }}"
+          - ""
+      run_once: yes
+  
+  roles:
+    - role: warp_connector
+      tags: ['warp', 'network']
+  
+  post_tasks:
+    - name: 等待 WARP 连接稳定
+      ansible.builtin.pause:
+        seconds: 10
+        prompt: "等待 WARP 连接建立..."
+    
+    - name: 收集 WARP 状态信息 (包安装方式)
+      ansible.builtin.command:
+        cmd: warp-cli status
+      register: warp_status_info
+      changed_when: false
+      failed_when: false
+      when: warp_install_method == "package"
+    
+    - name: 显示部署结果
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔══════════════════════════════════════════════════════════╗"
+          - "║                                                          ║"
+          - "║      ✅ WARP Connector 部署完成                          ║"
+          - "║      ✅ WARP Connector Deployment Complete              ║"
+          - "║                                                          ║"
+          - "╚══════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎉 部署成功!"
+          - ""
+          - "📋 后续步骤:"
+          - "  1. 在 Cloudflare Zero Trust 中配置访问策略"
+          - "  2. 测试服务器间的连通性"
+          - "  3. 配置应用程序使用 WARP 网络"
+          - ""
+          - "🔍 常用命令:"
+          - "  • 查看状态: warp-cli status"
+          - "  • 查看日志: journalctl -u warp-svc -f"
+          - "  • 重启服务: systemctl restart warp-svc"
+          - ""
+          - "📚 文档: roles/warp_connector/README.md"
+          - ""

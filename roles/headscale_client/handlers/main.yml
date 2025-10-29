@@ -1,0 +1,10 @@
+---
+# =============================================================================
+# Headscale Client Handlers
+# =============================================================================
+
+- name: restart tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    state: restarted
+    daemon_reload: true

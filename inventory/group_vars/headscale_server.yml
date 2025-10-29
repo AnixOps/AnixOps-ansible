@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# Headscale 服务器组变量 | Headscale Server Group Variables
+# =============================================================================
+# 此文件定义 Headscale 服务器的配置
+# This file defines configuration for the Headscale server
+#
+# 环境变量 | Environment Variables:
+#   - PL_1_V4_SSH: Headscale 服务器的公网 IP 地址
+# =============================================================================
+
+# Headscale 服务器 URL（用于客户端连接）
+# Headscale Server URL (for client connections)
+headscale_server_url: "http://{{ lookup('env', 'PL_1_V4_SSH') }}:8080"
+
+# 公网地址（客户端连接使用）
+# Public address (used by clients to connect)
+headscale_public_address: "{{ lookup('env', 'PL_1_V4_SSH') }}"

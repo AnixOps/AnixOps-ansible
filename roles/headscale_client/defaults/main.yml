@@ -1,0 +1,36 @@
+---
+# =============================================================================
+# Headscale Client 默认变量 | Headscale Client Default Variables  
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Headscale 服务器配置 | Headscale Server Configuration
+# -----------------------------------------------------------------------------
+headscale_server_url: "{{ lookup('env', 'HEADSCALE_SERVER_URL') | default('http://' + lookup('env', 'PL_1_V4_SSH') + ':8080', true) }}"
+
+# Pre-authentication key（从环境变量读取）| Pre-authentication key (from environment)
+headscale_preauth_key: "{{ lookup('env', 'HEADSCALE_PREAUTH_KEY') }}"
+
+# Namespace/User
+headscale_namespace: "{{ lookup('env', 'HEADSCALE_NAMESPACE') | default('default', true) }}"
+
+# -----------------------------------------------------------------------------
+# Tailscale 客户端配置 | Tailscale Client Configuration
+# -----------------------------------------------------------------------------
+tailscale_version: "1.56.1"
+
+# 是否接受路由 | Whether to accept routes
+tailscale_accept_routes: true
+
+# 是否接受 DNS | Whether to accept DNS
+tailscale_accept_dns: true
+
+# 是否显示详细状态 | Whether to show detailed status
+tailscale_show_status: true
+
+# -----------------------------------------------------------------------------
+# 安装配置 | Installation Configuration
+# -----------------------------------------------------------------------------
+# Tailscale 使用官方安装脚本
+# Tailscale uses official installation script
+tailscale_install_script_url: "https://tailscale.com/install.sh"
