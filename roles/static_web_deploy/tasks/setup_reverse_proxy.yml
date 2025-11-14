@@ -1,0 +1,132 @@
+---
+# =============================================================================
+# Setup Reverse Proxy Configuration
+# =============================================================================
+# 配置反向代理，包括 SSL 证书部署
+# Configure reverse proxy including SSL certificate deployment
+# =============================================================================
+
+- name: Ensure Nginx SSL directory exists
+  file:
+    path: "{{ ssl_config.certificate_dir | default('/etc/nginx/ssl') }}"
+    state: directory
+    mode: '0755'
+  when: ssl_enabled | default(true)
+
+- name: Check if SSL certificates are provided
+  set_fact:
+    ssl_cert_provided: >-
+      {{ (ssl_config.certificate_pem | default('') | length > 0) and
+         (ssl_config.certificate_key_pem | default('') | length > 0) }}
+  when: ssl_enabled | default(true)
+
+- name: Decode and deploy SSL certificate
+  copy:
+    content: "{{ ssl_config.certificate_pem | b64decode }}"
+    dest: "{{ ssl_config.certificate_dir | default('/etc/nginx/ssl') }}/{{ static_site_domain }}.crt"
+    mode: '0644'
+  when:
+    - ssl_enabled | default(true)
+    - ssl_method == 'custom'
+    - ssl_cert_provided | default(false)
+  notify: reload nginx
+
+- name: Decode and deploy SSL certificate key
+  copy:
+    content: "{{ ssl_config.certificate_key_pem | b64decode }}"
+    dest: "{{ ssl_config.certificate_dir | default('/etc/nginx/ssl') }}/{{ static_site_domain }}.key"
+    mode: '0600'
+  when:
+    - ssl_enabled | default(true)
+    - ssl_method == 'custom'
+    - ssl_cert_provided | default(false)
+  notify: reload nginx
+
+- name: Warn if SSL is enabled but no certificates provided
+  debug:
+    msg:
+      - "WARNING: SSL is enabled but no certificates were provided!"
+      - "Please set CF_SSL_CERT and CF_SSL_KEY environment variables."
+      - "Or set SSL_CERTIFICATE_PEM and SSL_CERTIFICATE_KEY_PEM."
+  when:
+    - ssl_enabled | default(true)
+    - ssl_method == 'custom'
+    - not (ssl_cert_provided | default(false))
+
+- name: Add WebSocket upgrade mapping to nginx.conf
+  blockinfile:
+    path: /etc/nginx/nginx.conf
+    marker: "# {mark} ANSIBLE MANAGED WEBSOCKET MAP"
+    insertbefore: "^http {"
+    block: |
+      map $http_upgrade $connection_upgrade {
+          default upgrade;
+          '' close;
+      }
+    state: present
+  notify: reload nginx
+
+- name: Ensure map is inside http block
+  lineinfile:
+    path: /etc/nginx/nginx.conf
+    regexp: '^map \$http_upgrade \$connection_upgrade'
+    line: 'map $http_upgrade $connection_upgrade { default upgrade; '''' close; }'
+    insertafter: '^http {'
+    state: present
+  ignore_errors: yes
+
+- name: Configure Nginx for static site with backend port
+  template:
+    src: static-site-nginx.conf.j2
+    dest: "/etc/nginx/sites-available/{{ static_site_name }}-backend"
+    mode: '0644'
+  notify: reload nginx
+
+- name: Enable static site backend configuration
+  file:
+    src: "/etc/nginx/sites-available/{{ static_site_name }}-backend"
+    dest: "/etc/nginx/sites-enabled/{{ static_site_name }}-backend"
+    state: link
+  notify: reload nginx
+
+- name: Create reverse proxy site configuration data
+  set_fact:
+    proxy_site_config:
+      name: "{{ static_site_name }}"
+      domain: "{{ static_site_domain }}"
+      backend_host: "127.0.0.1"
+      backend_port: "{{ static_site_port }}"
+      ssl_enabled: "{{ ssl_enabled }}"
+      ssl_method: "{{ ssl_method }}"
+      description: "{{ site_description }}"
+
+- name: Deploy reverse proxy configuration
+  template:
+    src: reverse-proxy.conf.j2
+    dest: "/etc/nginx/sites-available/{{ static_site_name }}-proxy"
+    mode: '0644'
+  vars:
+    item: "{{ proxy_site_config }}"
+  notify: reload nginx
+
+- name: Enable reverse proxy configuration
+  file:
+    src: "/etc/nginx/sites-available/{{ static_site_name }}-proxy"
+    dest: "/etc/nginx/sites-enabled/{{ static_site_name }}-proxy"
+    state: link
+  notify: reload nginx
+
+- name: Test Nginx configuration
+  command: nginx -t
+  register: nginx_test
+  changed_when: false
+  failed_when: nginx_test.rc != 0
+
+- name: Display reverse proxy status
+  debug:
+    msg:
+      - "Reverse Proxy Configuration Completed"
+      - "Domain: {{ static_site_domain }}"
+      - "Backend: http://127.0.0.1:{{ static_site_port }}"
+      - "SSL: {{ 'Enabled' if ssl_enabled else 'Disabled' }}"
+      - "Certificates: {{ 'Deployed' if ssl_cert_provided | default(false) else 'Not Provided' }}"

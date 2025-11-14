@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ site_description | default('AnixOps Test Static Website') }}">
+    <title>{{ site_title | default('AnixOps 测试静态网站') }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 60px;
+            max-width: 800px;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+        
+        .subtitle {
+            font-size: 1.2em;
+            color: #666;
+            margin-bottom: 40px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 40px 0;
+            text-align: left;
+        }
+        
+        .info-item {
+            background: #f7f7f9;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .info-label {
+            font-size: 0.85em;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .info-value {
+            font-size: 1.1em;
+            color: #333;
+            font-weight: 600;
+            word-break: break-all;
+        }
+        
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #d4edda;
+            color: #155724;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-weight: 600;
+            margin: 30px 0;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            background: #28a745;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        .footer {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #eee;
+            color: #999;
+            font-size: 0.9em;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        code {
+            background: #f4f4f4;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #e83e8c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🚀</div>
+        <h1>{{ site_title | default('AnixOps 测试静态网站') }}</h1>
+        <p class="subtitle">{{ site_description | default('Ansible 自动化部署 - 反向代理测试') }}</p>
+        
+        <div class="status">
+            <span class="status-dot"></span>
+            <span>服务运行正常 | Service Running</span>
+        </div>
+        
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">服务器 Server</div>
+                <div class="info-value">{{ ansible_hostname | default('unknown') }}</div>
+            </div>
+            
+            <div class="info-item">
+                <div class="info-label">域名 Domain</div>
+                <div class="info-value">{{ site_domain | default('test-web-ansible.anixops.com') }}</div>
+            </div>
+            
+            <div class="info-item">
+                <div class="info-label">部署时间 Deployed</div>
+                <div class="info-value">{{ ansible_date_time.iso8601 | default('N/A') }}</div>
+            </div>
+            
+            <div class="info-item">
+                <div class="info-label">SSL 状态 SSL Status</div>
+                <div class="info-value">{{ 'Enabled ✓' if ssl_enabled | default(true) else 'Disabled' }}</div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>
+                <strong>AnixOps Ansible 自动化部署项目</strong><br>
+                Powered by <a href="https://github.com/AnixOps/AnixOps-ansible" target="_blank">AnixOps GitOps</a>
+            </p>
+            <p style="margin-top: 15px;">
+                反向代理由 <code>Nginx</code> 提供 | SSL by <code>Cloudflare</code>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+---
+# =============================================================================
+# Static Web Deploy Role - Default Variables
+# =============================================================================
+# 静态网站部署角色的默认变量
+# Default variables for static website deployment role
+# =============================================================================
+
+# 静态网站配置
+static_site_name: "test-web-ansible"
+static_site_port: 8080
+static_site_root: "/var/www/{{ static_site_name }}"
+static_site_domain: "{{ static_site_name }}.anixops.com"
+
+# 是否启用反向代理
+enable_reverse_proxy: true
+
+# SSL 配置
+ssl_enabled: true
+ssl_method: "custom"  # custom 或 acme
+
+# 网站内容配置
+site_title: "AnixOps 测试静态网站"
+site_description: "Ansible 自动化部署 - 反向代理测试"
+
+# Nginx 配置
+nginx_user: "www-data"
+nginx_group: "www-data"
+
+# WebSocket 支持映射
+map_hash_bucket_size: 128

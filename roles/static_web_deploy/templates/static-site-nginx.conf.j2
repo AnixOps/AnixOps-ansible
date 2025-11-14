@@ -1,0 +1,40 @@
+# {{ static_site_name }} Static Site Backend Configuration
+# {{ ansible_managed }}
+# Local backend server on port {{ static_site_port }}
+
+server {
+    listen {{ static_site_port }};
+    listen [::]:{{ static_site_port }};
+
+    server_name localhost;
+    root {{ static_site_root }};
+    index index.html;
+
+    # Server identification
+    add_header X-Server-Name {{ ansible_hostname }};
+    add_header X-Powered-By "AnixOps GitOps";
+
+    # Logging
+    access_log /var/log/nginx/{{ static_site_name }}-backend-access.log;
+    error_log /var/log/nginx/{{ static_site_name }}-backend-error.log;
+
+    # Main location
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        try_files $uri =200;
+        add_header Content-Type text/html;
+        return 200;
+    }
+
+    # Deny access to hidden files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+}

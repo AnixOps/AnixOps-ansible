@@ -4,7 +4,7 @@
 # 提供常用操作的快捷命令 | Provides shortcuts for common operations
 # =============================================================================
 
-.PHONY: help install lint syntax check deploy quick-setup health-check ping clean firewall-setup gen-inventory
+.PHONY: help install lint syntax check deploy quick-setup health-check ping clean firewall-setup gen-inventory deploy-static-web
 
 # -----------------------------------------------------------------------------
 # 默认目标：显示帮助信息 | Default target: Show help information
@@ -24,6 +24,7 @@ help:
 	@echo "  make firewall-setup - 配置防火墙 | Configure firewall and monitoring whitelist"
 	@echo "  make health-check   - 健康检查 | Health check"
 	@echo "  make deploy-web     - 部署 Web 服务器 | Deploy web servers"
+	@echo "  make deploy-static-web - 部署静态网站+反向代理 | Deploy static web + reverse proxy"
 	@echo "  make ssh-test       - 测试 SSH 配置 | Test SSH configuration"
 	@echo "  make ssh-fix        - 强制修复 SSH 配置 | Force fix SSH configuration"
 	@echo "  make list-hosts     - 列出主机 | List configured hosts"
@@ -123,6 +124,41 @@ deploy-web:
 	@echo "Deploying web servers... | 部署 Web 服务器..."
 	ansible-playbook -i inventory/hosts.yml playbooks/web-servers.yml
 	@echo "✓ Web servers deployed | Web 服务器部署完成"
+
+# -----------------------------------------------------------------------------
+# 部署静态网站和反向代理 | Deploy Static Website with Reverse Proxy
+# -----------------------------------------------------------------------------
+deploy-static-web:
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "🌐 部署静态网站和反向代理 | Deploy Static Web + Reverse Proxy"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	@if [ -z "$$CF_SSL_CERT" ] || [ -z "$$CF_SSL_KEY" ]; then \
+		echo "⚠️  Warning: CF_SSL_CERT or CF_SSL_KEY not set!"; \
+		echo "SSL certificates will not be deployed."; \
+		echo ""; \
+		echo "To enable SSL, set environment variables:"; \
+		echo "  export CF_SSL_CERT=\"\$$(cat cert.pem | base64 -w 0)\""; \
+		echo "  export CF_SSL_KEY=\"\$$(cat key.pem | base64 -w 0)\""; \
+		echo ""; \
+		read -p "Continue without SSL? (y/N): " confirm; \
+		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+			echo "Deployment cancelled."; \
+			exit 1; \
+		fi; \
+	else \
+		echo "✓ SSL certificates configured"; \
+	fi
+	@echo ""
+	@echo "📝 Starting deployment to dev_servers..."
+	@echo ""
+	ansible-playbook -i inventory/hosts.yml playbooks/deployment/deploy-static-web.yml
+	@echo ""
+	@echo "✅ Deployment completed!"
+	@echo ""
+	@echo "🔍 Test commands:"
+	@echo "  curl -I http://127.0.0.1:8080"
+	@echo "  curl -I https://test-web-ansible.anixops.com"
 
 # -----------------------------------------------------------------------------
 # SSH 配置测试 | SSH Configuration Test

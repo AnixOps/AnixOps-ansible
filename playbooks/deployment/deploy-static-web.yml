@@ -1,0 +1,139 @@
+---
+# =============================================================================
+# Deploy Static Website with Reverse Proxy
+# =============================================================================
+# 部署静态网站并配置反向代理
+# Deploy static website and configure reverse proxy
+#
+# 使用方法 | Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/deployment/deploy-static-web.yml
+#
+# 环境变量 | Environment Variables:
+#   CF_SSL_CERT          - Cloudflare SSL 证书 (base64 编码)
+#   CF_SSL_KEY           - Cloudflare SSL 私钥 (base64 编码)
+#   STATIC_SITE_DOMAIN   - 静态网站域名 (可选，默认: test-web-ansible.anixops.com)
+# =============================================================================
+
+- name: Deploy Static Website with Reverse Proxy on dev_servers
+  hosts: dev_servers
+  become: yes
+  gather_facts: yes
+
+  vars_files:
+    - ../../vars/reverse_proxy_configs.yml
+
+  vars:
+    # 从环境变量或使用默认值
+    static_site_domain: >-
+      {{ lookup('env', 'STATIC_SITE_DOMAIN') |
+         default('test-web-ansible.anixops.com') }}
+
+    # SSL 配置
+    ssl_enabled: true
+    ssl_method: custom  # custom 或 acme
+
+    # 静态网站配置
+    static_site_name: "test-web-ansible"
+    static_site_port: 8080
+    static_site_root: "/var/www/test-web-ansible"
+
+    # 网站内容
+    site_title: "AnixOps 测试静态网站"
+    site_description: >-
+      Ansible 自动化部署 - 反向代理测试 |
+      Ansible Automated Deployment - Reverse Proxy Test
+
+    # 启用反向代理
+    enable_reverse_proxy: true
+
+  pre_tasks:
+    - name: Display deployment configuration
+      debug:
+        msg:
+          - "=========================================="
+          - "Static Website Deployment Configuration"
+          - "=========================================="
+          - "Target Host: {{ ansible_hostname }}"
+          - "Site Domain: {{ static_site_domain }}"
+          - "Backend Port: {{ static_site_port }}"
+          - "SSL Enabled: {{ ssl_enabled }}"
+          - "Reverse Proxy: {{ enable_reverse_proxy }}"
+          - "=========================================="
+
+    - name: Check if SSL certificates are configured
+      debug:
+        msg:
+          - "SSL Certificate Status:"
+          - >-
+            CF_SSL_CERT: {{ 'Configured ✓'
+            if ssl_config.certificate_pem | default('') | length > 0
+            else 'Not Configured ✗' }}
+          - >-
+            CF_SSL_KEY: {{ 'Configured ✓'
+            if ssl_config.certificate_key_pem | default('') | length > 0
+            else 'Not Configured ✗' }}
+      when: ssl_enabled
+
+    - name: Validate SSL configuration when SSL is enabled
+      assert:
+        that:
+          - ssl_config.certificate_pem | default('') | length > 0
+          - ssl_config.certificate_key_pem | default('') | length > 0
+        fail_msg: >-
+          SSL is enabled but certificates are not provided.
+          Please set CF_SSL_CERT and CF_SSL_KEY environment variables.
+        success_msg: "SSL certificates are configured correctly."
+      when:
+        - ssl_enabled
+        - ssl_method == 'custom'
+
+  roles:
+    - role: static_web_deploy
+      tags:
+        - static_web
+        - nginx
+        - reverse_proxy
+
+  post_tasks:
+    - name: Wait for backend to be ready
+      wait_for:
+        host: 127.0.0.1
+        port: "{{ static_site_port }}"
+        state: started
+        timeout: 30
+
+    - name: Test backend accessibility
+      uri:
+        url: "http://127.0.0.1:{{ static_site_port }}"
+        status_code: 200
+        return_content: no
+      register: backend_test
+      retries: 3
+      delay: 5
+      until: backend_test.status == 200
+
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "=========================================="
+          - "✓ Static Website Deployment Successful"
+          - "=========================================="
+          - "Access URLs:"
+          - "  - Backend: http://127.0.0.1:{{ static_site_port }}"
+          - "  - Frontend: {{ 'https' if ssl_enabled else 'http' }}://{{ static_site_domain }}"
+          - ""
+          - "Next Steps:"
+          - "  1. Ensure DNS points to this server"
+          - "  2. Test: curl -I http://127.0.0.1:{{ static_site_port }}"
+          - "  3. Test: curl -I {{ 'https' if ssl_enabled else 'http' }}://{{ static_site_domain }}"
+          - "=========================================="
+
+    - name: Display troubleshooting tips
+      debug:
+        msg:
+          - "Troubleshooting Commands:"
+          - "  - Check Nginx config: sudo nginx -t"
+          - "  - View backend logs: sudo tail -f /var/log/nginx/{{ static_site_name }}-backend-*.log"
+          - "  - View proxy logs: sudo tail -f /var/log/nginx/{{ static_site_name }}-*.log"
+          - "  - Check Nginx status: sudo systemctl status nginx"
+          - "  - Test backend: curl http://127.0.0.1:{{ static_site_port }}"

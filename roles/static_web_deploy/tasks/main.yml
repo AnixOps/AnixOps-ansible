@@ -1,0 +1,102 @@
+---
+# =============================================================================
+# Static Web Deploy Role - Main Tasks
+# =============================================================================
+# 静态网站部署的主要任务
+# Main tasks for static website deployment
+# =============================================================================
+
+- name: Install required packages
+  apt:
+    name:
+      - nginx
+      - python3-pip
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Ensure Nginx is installed
+  package:
+    name: nginx
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Create static website root directory
+  file:
+    path: "{{ static_site_root }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+
+- name: Deploy static website content
+  template:
+    src: static-site.html.j2
+    dest: "{{ static_site_root }}/index.html"
+    mode: '0644'
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+
+- name: Create health check page
+  copy:
+    content: |
+      <!DOCTYPE html>
+      <html>
+      <head><title>Health Check</title></head>
+      <body><h1>OK</h1><p>Service is healthy</p></body>
+      </html>
+    dest: "{{ static_site_root }}/health"
+    mode: '0644'
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+
+- name: Configure Nginx for static site (without reverse proxy)
+  template:
+    src: static-site-nginx.conf.j2
+    dest: "/etc/nginx/sites-available/{{ static_site_name }}"
+    mode: '0644'
+  when: not enable_reverse_proxy | default(false)
+  notify: reload nginx
+
+- name: Enable static site configuration (without reverse proxy)
+  file:
+    src: "/etc/nginx/sites-available/{{ static_site_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ static_site_name }}"
+    state: link
+  when: not enable_reverse_proxy | default(false)
+  notify: reload nginx
+
+# Configure reverse proxy with SSL
+- name: Include reverse proxy configuration tasks
+  include_tasks: setup_reverse_proxy.yml
+  when: enable_reverse_proxy | default(true)
+
+- name: Ensure Nginx is started and enabled
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Test static site is accessible locally
+  uri:
+    url: "http://127.0.0.1:{{ static_site_port }}"
+    status_code: 200
+  register: site_health
+  retries: 3
+  delay: 5
+  until: site_health.status == 200
+  when: not enable_reverse_proxy | default(false)
+
+- name: Display deployment summary
+  debug:
+    msg:
+      - "=========================================="
+      - "Static Website Deployment Complete"
+      - "=========================================="
+      - "Site Name: {{ static_site_name }}"
+      - "Domain: {{ static_site_domain }}"
+      - "Local Port: {{ static_site_port }}"
+      - "Web Root: {{ static_site_root }}"
+      - "Reverse Proxy: {{ 'Enabled' if enable_reverse_proxy else 'Disabled' }}"
+      - "SSL: {{ 'Enabled' if ssl_enabled else 'Disabled' }}"
+      - "=========================================="

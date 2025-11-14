@@ -1,0 +1,101 @@
+---
+# =============================================================================
+# 反向代理配置文件 | Reverse Proxy Configuration File
+# =============================================================================
+# 用于集中管理所有反向代理配置
+# Centralized management of all reverse proxy configurations
+#
+# 使用方法 | Usage:
+#   在 playbook 中通过 vars_files 引入此文件
+#   Include this file in playbooks using vars_files
+#
+# 示例 | Example:
+#   vars_files:
+#     - ../vars/reverse_proxy_configs.yml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 反向代理配置列表 | Reverse Proxy Configuration List
+# -----------------------------------------------------------------------------
+# 每个配置项包含以下字段:
+# - name: 配置名称（用于标识）
+# - domain: 外部访问域名
+# - backend_host: 后端服务地址
+# - backend_port: 后端服务端口
+# - ssl_enabled: 是否启用 SSL（默认 true）
+# - ssl_method: SSL 证书获取方式（custom/acme，默认 custom）
+# - additional_config: 额外的 Nginx 配置（可选）
+# -----------------------------------------------------------------------------
+
+reverse_proxy_sites:
+  # 测试静态网站反向代理配置
+  - name: test-web-ansible
+    domain: test-web-ansible.anixops.com
+    backend_host: 127.0.0.1
+    backend_port: 8080
+    ssl_enabled: true
+    ssl_method: custom  # custom: 自定义证书（从环境变量）, acme: Let's Encrypt
+    description: >-
+      测试静态网站反向代理 | Test Static Web Reverse Proxy
+
+  # 可以添加更多反向代理配置
+  # Add more reverse proxy configurations here
+  # - name: another-service
+  #   domain: another.anixops.com
+  #   backend_host: 127.0.0.1
+  #   backend_port: 3000
+  #   ssl_enabled: true
+  #   ssl_method: custom
+
+# -----------------------------------------------------------------------------
+# SSL 证书配置 | SSL Certificate Configuration
+# -----------------------------------------------------------------------------
+# 自定义 SSL 证书配置（从环境变量读取）
+# Custom SSL certificate configuration (read from environment variables)
+#
+# Cloudflare SSL 证书：
+# - 登录 Cloudflare Dashboard
+# - 进入域名管理 -> SSL/TLS -> Origin Server
+# - 创建证书，复制 Certificate 和 Private Key
+# - 将内容进行 base64 编码后设置到环境变量
+# -----------------------------------------------------------------------------
+
+ssl_config:
+  # Cloudflare SSL 证书（PEM 格式，base64 编码）
+  # 环境变量: CF_SSL_CERT 或 SSL_CERTIFICATE_PEM
+  certificate_pem: >-
+    {{ lookup('env', 'CF_SSL_CERT') |
+       default(lookup('env', 'SSL_CERTIFICATE_PEM'), true) }}
+
+  # Cloudflare SSL 私钥（PEM 格式，base64 编码）
+  # 环境变量: CF_SSL_KEY 或 SSL_CERTIFICATE_KEY_PEM
+  certificate_key_pem: >-
+    {{ lookup('env', 'CF_SSL_KEY') |
+       default(lookup('env', 'SSL_CERTIFICATE_KEY_PEM'), true) }}
+
+  # SSL 证书存储路径
+  certificate_dir: /etc/nginx/ssl
+
+  # SSL 协议配置
+  protocols: "TLSv1.2 TLSv1.3"
+  ciphers: >-
+    ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:
+    ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
+
+# -----------------------------------------------------------------------------
+# 静态网站配置 | Static Website Configuration
+# -----------------------------------------------------------------------------
+# 用于部署静态网站的配置
+# Configuration for deploying static websites
+# -----------------------------------------------------------------------------
+
+static_websites:
+  # 测试静态网站配置
+  - name: test-web-ansible
+    local_port: 8080
+    web_root: /var/www/test-web-ansible
+    index_file: index.html
+    description: "测试静态网站 | Test Static Website"
+
+    # 可以添加更多静态网站配置
+    # Add more static website configurations here
