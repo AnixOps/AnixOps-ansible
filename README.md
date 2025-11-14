@@ -28,6 +28,18 @@ vim inventories/production/hosts.ini
 ./scripts/anixops.sh deploy-production --vault-password ~/.vault_pass
 ```
 
+### 3. 静态网站部署（新功能）
+
+```bash
+# 部署静态网站并配置反向代理（支持 SSL）
+export CF_SSL_CERT="$(cat cert.pem | base64 -w 0)"
+export CF_SSL_KEY="$(cat key.pem | base64 -w 0)"
+make deploy-static-web
+
+# 详细文档
+# 查看 docs/STATIC_WEB_DEPLOYMENT.md
+```
+
 ---
 
 ## 📁 项目结构
@@ -419,9 +431,11 @@ helm search repo cloudflare
 ## 📚 更多文档
 
 - [完整部署指南](docs/REFACTORED_DEPLOYMENT_GUIDE.md) - 详细的部署说明
+- [静态网站部署指南](docs/STATIC_WEB_DEPLOYMENT.md) - 静态网站+反向代理部署 ⭐ 新
 - [Playbooks 目录说明](playbooks/README.md) - 所有 playbooks 的详细说明
 - [K8s Provision Role](roles/k8s_provision/README.md) - K8s 集群部署
 - [Cloudflared Deploy Role](roles/cloudflared_deploy/README.md) - Cloudflared 部署
+- [Static Web Deploy Role](roles/static_web_deploy/README.md) - 静态网站部署 ⭐ 新
 
 ---
 
