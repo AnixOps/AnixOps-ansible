@@ -15,6 +15,7 @@
   hosts: all
   become: yes
   gather_facts: yes
+  ignore_unreachable: yes
   
   roles:
     - common

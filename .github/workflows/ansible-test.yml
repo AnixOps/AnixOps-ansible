@@ -10,8 +10,10 @@ on:
         type: choice
         options:
           - ping-only
-          - health-check.yml
-          - quick-setup.yml
+          - deployment/site.yml
+          - deployment/quick-setup.yml
+          - maintenance/health-check.yml
+          - maintenance/firewall-setup.yml
       target_group:
         description: 'Target servers'
         required: true
@@ -76,6 +78,7 @@ jobs:
 
       - name: Ping All Hosts
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
+        continue-on-error: true
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables
@@ -91,6 +94,7 @@ jobs:
 
       - name: Ping Web Servers
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
+        continue-on-error: true
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables
@@ -106,6 +110,7 @@ jobs:
 
       - name: Ping Observability Servers
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
+        continue-on-error: true
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables

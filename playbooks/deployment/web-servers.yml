@@ -9,6 +9,7 @@
   hosts: web_servers
   become: yes
   gather_facts: yes
+  ignore_unreachable: yes
   
   roles:
     - nginx

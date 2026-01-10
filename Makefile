@@ -89,7 +89,7 @@ ping:
 # -----------------------------------------------------------------------------
 deploy:
 	@echo "Starting full deployment... | 开始完整部署..."
-	ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+	ansible-playbook -i inventory/hosts.yml playbooks/deployment/site.yml
 	@echo "✓ Deployment completed | 部署完成"
 
 # -----------------------------------------------------------------------------
@@ -97,7 +97,7 @@ deploy:
 # -----------------------------------------------------------------------------
 quick-setup:
 	@echo "Starting quick setup (common + monitoring + firewall)... | 开始快速设置..."
-	ansible-playbook -i inventory/hosts.yml playbooks/quick-setup.yml
+	ansible-playbook -i inventory/hosts.yml playbooks/deployment/quick-setup.yml
 	@echo "✓ Quick setup completed | 快速设置完成"
 
 # -----------------------------------------------------------------------------
@@ -105,7 +105,7 @@ quick-setup:
 # -----------------------------------------------------------------------------
 firewall-setup:
 	@echo "Configuring firewall and monitoring whitelist... | 配置防火墙和监控白名单..."
-	ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml
+	ansible-playbook -i inventory/hosts.yml playbooks/maintenance/firewall-setup.yml
 	@echo "✓ Firewall setup completed | 防火墙设置完成"
 
 # -----------------------------------------------------------------------------
@@ -113,7 +113,7 @@ firewall-setup:
 # -----------------------------------------------------------------------------
 health-check:
 	@echo "Running health check... | 运行健康检查..."
-	ansible-playbook -i inventory/hosts.yml playbooks/health-check.yml
+	ansible-playbook -i inventory/hosts.yml playbooks/maintenance/health-check.yml
 	@echo "✓ Health check completed | 健康检查完成"
 
 # -----------------------------------------------------------------------------
@@ -121,7 +121,7 @@ health-check:
 # -----------------------------------------------------------------------------
 deploy-web:
 	@echo "Deploying web servers... | 部署 Web 服务器..."
-	ansible-playbook -i inventory/hosts.yml playbooks/web-servers.yml
+	ansible-playbook -i inventory/hosts.yml playbooks/deployment/web-servers.yml
 	@echo "✓ Web servers deployed | Web 服务器部署完成"
 
 # -----------------------------------------------------------------------------

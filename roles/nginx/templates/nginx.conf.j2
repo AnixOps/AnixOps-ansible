@@ -55,6 +55,13 @@ http {
     gzip_disable "msie6";
 
     ##
+    # Extra Http Configs
+    ##
+    {% if nginx.extra_http_configs is defined %}
+    {{ nginx.extra_http_configs }}
+    {% endif %}
+
+    ##
     # Virtual Host Configs
     ##
     include /etc/nginx/conf.d/*.conf;

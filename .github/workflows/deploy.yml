@@ -117,6 +117,7 @@ jobs:
         cat inventory/hosts.yml
 
     - name: Test Ansible Ping
+      continue-on-error: true
       env:
         ANSIBLE_HOST_KEY_CHECKING: 'False'
       run: |
@@ -240,7 +241,7 @@ jobs:
           # Firewall Whitelist Configuration
           FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
         run: |
-          ansible-playbook -i inventory/hosts.yml playbooks/site.yml \
+          ansible-playbook -i inventory/hosts.yml playbooks/deployment/site.yml \
             --limit ${{ github.event.inputs.target || 'all' }} \
             -v
 

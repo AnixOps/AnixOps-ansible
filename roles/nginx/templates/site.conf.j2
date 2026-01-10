@@ -1,0 +1,67 @@
+server {
+    listen {{ item.listen | default(80) }}{% if item.default_server | default(false) %} default_server{% endif %};
+    {% if item.listen_ipv6 | default(false) %}
+    listen [::]:{{ item.listen | default(80) }}{% if item.default_server | default(false) %} default_server{% endif %};
+    {% endif %}
+
+    server_name {{ item.server_name | default('_') }};
+
+    {% if item.root is defined %}
+    root {{ item.root }};
+    {% endif %}
+
+    {% if item.index is defined %}
+    index {{ item.index }};
+    {% endif %}
+
+    # SSL configuration if defined
+    {% if item.ssl is defined %}
+    ssl_certificate {{ item.ssl.cert }};
+    ssl_certificate_key {{ item.ssl.key }};
+    {% if item.ssl.protocols is defined %}
+    ssl_protocols {{ item.ssl.protocols }};
+    {% endif %}
+    {% endif %}
+
+    # Custom additions head
+    {% if item.custom_head is defined %}
+    {{ item.custom_head }}
+    {% endif %}
+
+    {% for location in item.locations | default([]) %}
+    location {{ location.path }} {
+        {% if location.root is defined %}
+        root {{ location.root }};
+        {% endif %}
+        {% if location.try_files is defined %}
+        try_files {{ location.try_files }};
+        {% endif %}
+        {% if location.proxy_pass is defined %}
+        proxy_pass {{ location.proxy_pass }};
+        include /etc/nginx/proxy_params;
+        {% endif %}
+        {% if location.return is defined %}
+        return {{ location.return }};
+        {% endif %}
+        {% if location.custom_content is defined %}
+        {{ location.custom_content | indent(8) }}
+        {% endif %}
+    }
+    {% endfor %}
+
+    # Default location if none provided and root is defined
+    {% if item.locations is not defined and item.root is defined %}
+    location / {
+        try_files $uri $uri/ =404;
+    }
+    {% endif %}
+
+    # Custom additions tail
+    {% if item.custom_tail is defined %}
+    {{ item.custom_tail }}
+    {% endif %}
+
+    # Logging
+    access_log {{ item.access_log | default('/var/log/nginx/' + item.name + '.access.log') }};
+    error_log {{ item.error_log | default('/var/log/nginx/' + item.name + '.error.log') }};
+}

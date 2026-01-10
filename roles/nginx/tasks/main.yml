@@ -39,18 +39,88 @@
     backup: yes
   notify: reload nginx
 
+- name: Create proxy_params
+  copy:
+    content: |
+      proxy_set_header Host $http_host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_connect_timeout 300;
+      proxy_send_timeout 300;
+      proxy_read_timeout 300;
+      send_timeout 300;
+    dest: /etc/nginx/proxy_params
+    mode: '0644'
+
+- name: Deploy custom configuration snippets
+  copy:
+    content: "{{ item.content }}"
+    dest: "/etc/nginx/conf.d/{{ item.name }}.conf"
+    mode: '0644'
+  loop: "{{ nginx_custom_configs }}"
+  notify: reload nginx
+
 - name: Deploy default virtual host
   template:
     src: default-site.conf.j2
     dest: /etc/nginx/sites-available/default
     mode: '0644'
+  when: nginx_default_site_enabled | default(true)
   notify: reload nginx
 
 - name: Enable default site
   file:
     src: /etc/nginx/sites-available/default
     dest: /etc/nginx/sites-enabled/default
+    state: "{% if nginx_default_site_enabled | default(true) %}link{% else %}absent{% endif %}"
+  notify: reload nginx
+
+- name: Deploy dynamic virtual hosts
+  template:
+    src: site.conf.j2
+    dest: "/etc/nginx/sites-available/{{ item.name }}.conf"
+    mode: '0644'
+  loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
+  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true))
+  notify: reload nginx
+
+- name: Enable dynamic virtual hosts
+  file:
+    src: "/etc/nginx/sites-available/{{ item.name }}.conf"
+    dest: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
     state: link
+  loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
+  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true))
+  notify: reload nginx
+
+- name: Disable unwanted virtual hosts
+  file:
+    path: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
+    state: absent
+  loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
+  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and not (item.enabled | default(true))
+  notify: reload nginx
+
+- name: Check for host-specific raw config files
+  local_action: stat path="{{ role_path }}/templates/hosts/{{ inventory_hostname }}.conf.j2"
+  register: host_specific_config
+  become: no
+
+- name: Deploy host-specific raw config
+  template:
+    src: "hosts/{{ inventory_hostname }}.conf.j2"
+    dest: "/etc/nginx/sites-available/{{ inventory_hostname }}_custom.conf"
+    mode: '0644'
+  when: host_specific_config.stat.exists
+  notify: reload nginx
+
+- name: Enable host-specific raw config
+  file:
+    src: "/etc/nginx/sites-available/{{ inventory_hostname }}_custom.conf"
+    dest: "/etc/nginx/sites-enabled/{{ inventory_hostname }}_custom.conf"
+    state: link
+  when: host_specific_config.stat.exists
   notify: reload nginx
 
 - name: Remove default Nginx welcome page (if exists)

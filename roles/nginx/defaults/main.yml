@@ -1,0 +1,31 @@
+---
+# Nginx default variables
+
+nginx:
+  worker_processes: auto
+  worker_connections: 1024
+  keepalive_timeout: 65
+  client_max_body_size: 16M
+  log_format: '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"'
+
+# List of Nginx sites to configure
+nginx_sites: []
+
+# Group-specific sites (can be defined in group_vars)
+nginx_group_sites: []
+
+# Host-specific sites (can be defined in host_vars)
+nginx_host_sites: []
+
+# Default site configuration
+nginx_default_site_enabled: true
+
+# Custom configuration snippets per host or group
+# This allows for arbitrary Nginx configuration to be injected
+nginx_custom_configs: []
+# Example:
+# nginx_custom_configs:
+#   - name: security_headers
+#     content: |
+#       add_header X-Frame-Options "SAMEORIGIN";
+#       add_header X-XSS-Protection "1; mode=block";
