@@ -38,6 +38,28 @@
 # -----------------------------------------------------------------------------
 # 更新包缓存 | Update Package Cache
 # -----------------------------------------------------------------------------
+- name: Clean broken Grafana apt sources (Debian/Ubuntu)
+  block:
+    - name: Remove conflicting Grafana source files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/grafana.list
+        - /etc/apt/sources.list.d/grafana.list.save
+      ignore_errors: yes
+
+    - name: Fix apt sources with signed-by conflicts
+      shell: |
+        find /etc/apt/sources.list.d -name '*.list' -exec grep -l 'apt.grafana.com' {} \; 2>/dev/null | while read f; do
+          if ! grep -q '\[signed-by=' "$f" 2>/dev/null; then
+            rm -f "$f"
+          fi
+        done
+        apt-get update 2>/dev/null || true
+      ignore_errors: yes
+  when: ansible_os_family == "Debian"
+
 - name: Update apt cache (Debian/Ubuntu) | 更新 apt 缓存 (Debian/Ubuntu)
   apt:
     update_cache: yes
