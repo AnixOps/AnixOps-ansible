@@ -17,14 +17,23 @@
   when: ansible_os_family == "Debian"
 
 - name: Add Grafana GPG key (Debian/Ubuntu)
-  apt_key:
+  get_url:
     url: https://apt.grafana.com/gpg.key
-    state: present
+    dest: /usr/share/keyrings/grafana.gpg
+    mode: '0644'
+  when: ansible_os_family == "Debian"
+
+- name: Remove conflicting Grafana repository files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/grafana.list
   when: ansible_os_family == "Debian"
 
 - name: Add Grafana repository (Debian/Ubuntu)
   apt_repository:
-    repo: deb https://apt.grafana.com stable main
+    repo: deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main
     state: present
     filename: grafana
   when: ansible_os_family == "Debian"
