@@ -87,6 +87,17 @@ jobs:
       - name: Verify Connectivity
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           echo "🔍 Verifying connectivity to target servers..."
           ansible ${{ github.event.inputs.target_group }} \
@@ -98,6 +109,17 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           ANSIBLE_FORCE_COLOR: 'True'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           # Build command
           CMD="ansible-playbook playbooks/${{ github.event.inputs.playbook }}"
@@ -122,6 +144,17 @@ jobs:
         if: success() && github.event.inputs.dry_run != 'true'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           echo "═══════════════════════════════════════════════════════════════"
           echo "🏥 Running Post-Deployment Health Check"
