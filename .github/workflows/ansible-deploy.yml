@@ -126,19 +126,6 @@ jobs:
           LOKI_URL: ${{ secrets.LOKI_URL }}
           GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
           OBSERVABILITY_SSL_ENABLED: ${{ secrets.OBSERVABILITY_SSL_ENABLED }}
-          OBSERVABILITY_SSL_METHOD: ${{ secrets.OBSERVABILITY_SSL_METHOD }}
-          GRAFANA_DOMAIN: ${{ secrets.GRAFANA_DOMAIN }}
-          PROMETHEUS_DOMAIN: ${{ secrets.PROMETHEUS_DOMAIN }}
-          LOKI_DOMAIN: ${{ secrets.LOKI_DOMAIN }}
-          SSL_CERTIFICATE_PEM: ${{ secrets.SSL_CERTIFICATE_PEM }}
-          SSL_CERTIFICATE_KEY_PEM: ${{ secrets.SSL_CERTIFICATE_KEY_PEM }}
-          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
-          ACME_CA_SERVER: ${{ secrets.ACME_CA_SERVER }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-          CLOUDFLARE_BASE_DOMAIN: ${{ secrets.CLOUDFLARE_BASE_DOMAIN }}
           GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
