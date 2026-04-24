@@ -39,12 +39,12 @@ jobs:
 
       - name: Syntax check all playbooks
         run: |
-          ansible-playbook --syntax-check playbooks/site.yml
-          ansible-playbook --syntax-check playbooks/quick-setup.yml
-          ansible-playbook --syntax-check playbooks/web-servers.yml
-          ansible-playbook --syntax-check playbooks/health-check.yml
-          ansible-playbook --syntax-check playbooks/firewall-setup.yml
-          ansible-playbook --syntax-check playbooks/observability.yml
+          ansible-playbook --syntax-check playbooks/deployment/site.yml
+          ansible-playbook --syntax-check playbooks/deployment/quick-setup.yml
+          ansible-playbook --syntax-check playbooks/deployment/web-servers.yml
+          ansible-playbook --syntax-check playbooks/maintenance/health-check.yml
+          ansible-playbook --syntax-check playbooks/maintenance/firewall-setup.yml
+          ansible-playbook --syntax-check playbooks/maintenance/observability.yml
 
       - name: Lint Summary
         if: always()
