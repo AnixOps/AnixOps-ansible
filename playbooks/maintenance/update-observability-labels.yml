@@ -16,7 +16,7 @@
   tasks:
     - name: Load server aliases from file
       include_vars:
-        file: ../inventory/server_aliases.yml
+        file: ../../inventory/server_aliases.yml
         name: server_aliases_config
       
     - name: Display loaded aliases
@@ -40,7 +40,7 @@
   gather_facts: yes
   
   vars_files:
-    - ../inventory/server_aliases.yml
+    - ../../inventory/server_aliases.yml
   
   tasks:
     - name: Update Prometheus configuration

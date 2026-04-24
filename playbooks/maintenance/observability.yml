@@ -9,7 +9,7 @@
   gather_facts: yes
 
   vars_files:
-    - ../inventory/server_aliases.yml
+    - ../../inventory/server_aliases.yml
 
   vars:
     # SSL/TLS 配置
