@@ -45,7 +45,7 @@
   tasks:
     - name: Update Prometheus configuration
       template:
-        src: ../roles/prometheus_server/templates/prometheus.yml.j2
+        src: ../../roles/prometheus_server/templates/prometheus.yml.j2
         dest: /etc/prometheus/prometheus.yml
         owner: prometheus
         group: prometheus
@@ -103,16 +103,16 @@
         group: grafana
         mode: '0644'
       loop:
-        - src: ../roles/grafana_server/templates/datasource-prometheus.yml.j2
+        - src: ../../roles/grafana_server/templates/datasource-prometheus.yml.j2
           dest: /etc/grafana/provisioning/datasources/prometheus.yml
-        - src: ../roles/grafana_server/templates/datasource-loki.yml.j2
+        - src: ../../roles/grafana_server/templates/datasource-loki.yml.j2
           dest: /etc/grafana/provisioning/datasources/loki.yml
       notify: restart grafana
       tags: [grafana]
     
     - name: Update Loki configuration
       template:
-        src: ../roles/loki_server/templates/loki-config.yml.j2
+        src: ../../roles/loki_server/templates/loki-config.yml.j2
         dest: /etc/loki/loki-config.yml
         owner: loki
         group: loki

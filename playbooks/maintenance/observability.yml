@@ -113,7 +113,7 @@
   tasks:
     - name: Deploy Nginx reverse proxy for Grafana
       template:
-        src: ../roles/nginx/templates/observability/grafana.conf.j2
+        src: ../../roles/nginx/templates/observability/grafana.conf.j2
         dest: /etc/nginx/sites-available/grafana
         mode: '0644'
       notify: reload nginx
@@ -129,7 +129,7 @@
 
     - name: Deploy Nginx reverse proxy for Prometheus
       template:
-        src: ../roles/nginx/templates/observability/prometheus.conf.j2
+        src: ../../roles/nginx/templates/observability/prometheus.conf.j2
         dest: /etc/nginx/sites-available/prometheus
         mode: '0644'
       notify: reload nginx
@@ -145,7 +145,7 @@
 
     - name: Deploy Nginx reverse proxy for Loki
       template:
-        src: ../roles/nginx/templates/observability/loki.conf.j2
+        src: ../../roles/nginx/templates/observability/loki.conf.j2
         dest: /etc/nginx/sites-available/loki
         mode: '0644'
       notify: reload nginx
