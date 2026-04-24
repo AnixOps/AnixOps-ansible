@@ -24,8 +24,7 @@ scrape_configs:
   - job_name: 'node_exporter'
     static_configs:
 {% for host in groups['all'] %}
-{% set env_var_name = host | upper | replace('-', '_') ~ '_V4_SSH' %}
-{% set instance_ip = lookup('env', env_var_name) %}
+{% set instance_ip = hostvars[host]['ansible_host'] | default('') %}
       - targets:
           - '{{ instance_ip }}:9100'
         labels:
