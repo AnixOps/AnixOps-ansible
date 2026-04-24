@@ -8,11 +8,13 @@ on:
         required: true
         type: choice
         options:
-          - quick-setup.yml
-          - site.yml
-          - web-servers.yml
-          - observability.yml
-        default: 'quick-setup.yml'
+          - deployment/site.yml
+          - deployment/quick-setup.yml
+          - deployment/web-servers.yml
+          - maintenance/observability.yml
+          - maintenance/health-check.yml
+          - maintenance/firewall-setup.yml
+        default: 'deployment/quick-setup.yml'
       
       target_group:
         description: 'Target servers'
@@ -102,8 +104,7 @@ jobs:
           echo "🔍 Verifying connectivity to target servers..."
           ansible ${{ github.event.inputs.target_group }} \
             -i inventory/hosts.yml \
-            -m ping \
-            --one-line
+            -m ping -v
 
       - name: Run Ansible Playbook
         env:
@@ -163,8 +164,7 @@ jobs:
           ansible ${{ github.event.inputs.target_group }} \
             -i inventory/hosts.yml \
             -m shell \
-            -a "uptime && df -h / && free -h" \
-            --one-line || true
+            -a "uptime && df -h / && free -h" || true
 
       - name: Deployment Summary
         if: always()
