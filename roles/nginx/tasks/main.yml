@@ -2,6 +2,20 @@
 # Nginx role - Web 服务器
 # 安装和配置 Nginx
 
+- name: Fix broken apt sources (Debian/Ubuntu)
+  shell: |
+    # Remove conflicting Grafana apt sources
+    rm -f /etc/apt/sources.list.d/grafana.list /etc/apt/sources.list.d/grafana.list.save
+    # Clean any broken sources
+    find /etc/apt/sources.list.d -name '*.list' -exec grep -l 'apt.grafana.com' {} \; 2>/dev/null | while read f; do
+      if ! grep -q '\[signed-by=' "$f" 2>/dev/null; then
+        rm -f "$f"
+      fi
+    done
+    apt-get update 2>/dev/null || true
+  ignore_errors: yes
+  when: ansible_os_family == "Debian"
+
 - name: Update apt cache
   apt:
     update_cache: yes
