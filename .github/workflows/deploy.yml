@@ -91,8 +91,6 @@ jobs:
           children:
             web_servers:
               hosts:
-                de-test-1:
-                  ansible_host: "${{ secrets.DE_1_V4_SSH }}"
                 pl-test-1:
                   ansible_host: "${{ secrets.PL_1_V4_SSH }}"
               vars:
@@ -168,8 +166,6 @@ jobs:
             children:
               web_servers:
                 hosts:
-                  de-test-1:
-                    ansible_host: "${{ secrets.DE_1_V4_SSH }}"
                   pl-test-1:
                     ansible_host: "${{ secrets.PL_1_V4_SSH }}"
                 vars:
@@ -197,7 +193,6 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # Server IP Configuration
-          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           US_W_1_V4: ${{ secrets.US_W_1_V4 }}
           US_W_1_V6: ${{ secrets.US_W_1_V6 }}

@@ -88,7 +88,7 @@ jobs:
             web_servers:
               hosts:
                 test-server:
-                  ansible_host: "${{ secrets.DE_1_V4_SSH }}"
+                  ansible_host: "${{ secrets.PL_1_V4_SSH }}"
               vars:
                 server_role: web
           vars:

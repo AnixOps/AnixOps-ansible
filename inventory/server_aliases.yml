@@ -20,13 +20,6 @@
 #       environment: "环境标签 (prod/staging/dev)"
 
 server_aliases:
-  # Web 服务器
-  de-1:
-    alias: "德国-测试-1"
-    description: "德国 Web 服务器 - 测试环境 - NubeCloud"
-    location: "Germany"
-    environment: "test"
-    
   # Observability 服务器
   pl-1:
     alias: "波兰-1"

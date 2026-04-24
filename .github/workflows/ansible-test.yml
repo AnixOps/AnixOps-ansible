@@ -22,9 +22,8 @@ on:
         options:
           - all
           - web_servers
+          - proxy_servers
           - observability
-          - dev
-          - prod
   push:
     branches: [ main ]
   pull_request:
@@ -57,8 +56,6 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-      - name: Create inventory from secrets
-        run: |
       - name: Create inventory from config
         run: |
           echo "Generating inventory from servers-config.yml..."
@@ -82,7 +79,6 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables
-          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
@@ -98,7 +94,6 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables
-          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
@@ -114,7 +109,6 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables
-          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
@@ -129,7 +123,6 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables
-          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
@@ -145,7 +138,6 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           # 设置服务器 IP 环境变量 | Set server IP environment variables
-          DE_1_V4_SSH: ${{ secrets.DE_1_V4_SSH }}
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}

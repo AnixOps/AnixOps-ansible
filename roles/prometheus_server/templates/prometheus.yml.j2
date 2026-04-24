@@ -45,3 +45,9 @@ scrape_configs:
       # 删除不需要的标签
       - regex: 'server|hostname'
         action: labeldrop
+
+  - job_name: 'speedtest'
+    honor_labels: true
+    static_configs:
+      - targets:
+          - '10.100.0.122:9091'
