@@ -13,34 +13,34 @@
 
   vars:
     # SSL/TLS 配置
-    observability_ssl_enabled: "{{ lookup('env', 'OBSERVABILITY_SSL_ENABLED') | default('false') | bool }}"
-    observability_ssl_method: "{{ lookup('env', 'OBSERVABILITY_SSL_METHOD') | default('acme') }}"  # acme, custom
-    
+    observability_ssl_enabled: "{{ lookup('env', 'OBSERVABILITY_SSL_ENABLED') | default('false', true) | bool }}"
+    observability_ssl_method: "{{ lookup('env', 'OBSERVABILITY_SSL_METHOD') | default('acme', true) }}"  # acme, custom
+
     # 域名配置
-    grafana_domain: "{{ lookup('env', 'GRAFANA_DOMAIN') | default('grafana.example.com') }}"
-    prometheus_domain: "{{ lookup('env', 'PROMETHEUS_DOMAIN') | default('prometheus.example.com') }}"
-    loki_domain: "{{ lookup('env', 'LOKI_DOMAIN') | default('loki.example.com') }}"
-    
+    grafana_domain: "{{ lookup('env', 'GRAFANA_DOMAIN') | default('grafana.example.com', true) }}"
+    prometheus_domain: "{{ lookup('env', 'PROMETHEUS_DOMAIN') | default('prometheus.example.com', true) }}"
+    loki_domain: "{{ lookup('env', 'LOKI_DOMAIN') | default('loki.example.com', true) }}"
+
     # 自定义 SSL 证书配置
-    ssl_certificate_pem: "{{ lookup('env', 'SSL_CERTIFICATE_PEM') }}"
-    ssl_certificate_key_pem: "{{ lookup('env', 'SSL_CERTIFICATE_KEY_PEM') }}"
-    
+    ssl_certificate_pem: "{{ lookup('env', 'SSL_CERTIFICATE_PEM') | default('', true) }}"
+    ssl_certificate_key_pem: "{{ lookup('env', 'SSL_CERTIFICATE_KEY_PEM') | default('', true) }}"
+
     # ACME.sh 配置
-    acme_email: "{{ lookup('env', 'ACME_EMAIL') | default('admin@example.com') }}"
-    acme_ca_server: "{{ lookup('env', 'ACME_CA_SERVER') | default('letsencrypt') }}"  # letsencrypt 或 letsencrypt_test
-    
+    acme_email: "{{ lookup('env', 'ACME_EMAIL') | default('admin@example.com', true) }}"
+    acme_ca_server: "{{ lookup('env', 'ACME_CA_SERVER') | default('letsencrypt', true) }}"  # letsencrypt 或 letsencrypt_test
+
     # Cloudflare 配置
-    cloudflare_email: "{{ lookup('env', 'CLOUDFLARE_EMAIL') }}"
-    cloudflare_api_key: "{{ lookup('env', 'CLOUDFLARE_API_KEY') }}"
-    cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') }}"
-    cloudflare_zone_id: "{{ lookup('env', 'CLOUDFLARE_ZONE_ID') }}"
-    
+    cloudflare_email: "{{ lookup('env', 'CLOUDFLARE_EMAIL') | default('', true) }}"
+    cloudflare_api_key: "{{ lookup('env', 'CLOUDFLARE_API_KEY') | default('', true) }}"
+    cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') | default('', true) }}"
+    cloudflare_zone_id: "{{ lookup('env', 'CLOUDFLARE_ZONE_ID') | default('', true) }}"
+
     # 防火墙白名单配置
-    observability_whitelist_ips: "{{ lookup('env', 'OBSERVABILITY_WHITELIST_IPS') | default('') }}"
-    
+    observability_whitelist_ips: "{{ lookup('env', 'OBSERVABILITY_WHITELIST_IPS') | default('', true) }}"
+
     # Grafana 认证配置
-    grafana_admin_user: "{{ lookup('env', 'GRAFANA_ADMIN_USER') | default('admin') }}"
-    grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') | default('admin') }}"
+    grafana_admin_user: "{{ lookup('env', 'GRAFANA_ADMIN_USER') | default('admin', true) }}"
+    grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') | default('admin', true) }}"
 
   pre_tasks:
     - name: Validate SSL configuration
