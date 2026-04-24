@@ -125,7 +125,6 @@ jobs:
           PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
           LOKI_URL: ${{ secrets.LOKI_URL }}
           GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
-          OBSERVABILITY_SSL_ENABLED: ${{ secrets.OBSERVABILITY_SSL_ENABLED }}
           GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
