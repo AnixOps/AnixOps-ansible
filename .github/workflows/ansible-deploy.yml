@@ -21,10 +21,10 @@ on:
         options:
           - all
           - web_servers
+          - proxy_servers
           - observability
-          - dev
-          - prod
-        default: 'dev'
+          - dev_servers
+        default: 'all'
       
       dry_run:
         description: 'Test only (no changes)'

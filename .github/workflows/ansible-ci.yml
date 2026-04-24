@@ -106,7 +106,7 @@ jobs:
         ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
       run: |
         echo "Running Ansible in check mode (dry run)..."
-        ansible-playbook -i inventory/hosts.yml playbooks/site.yml --check -v || true
+        ansible-playbook -i inventory/hosts.yml playbooks/deployment/site.yml --check -v || true
         
     - name: Test Summary
       if: always()

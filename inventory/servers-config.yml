@@ -16,17 +16,6 @@
 # 用于 CI/CD 流程的测试服务器配置
 # Test server configurations for CI/CD workflows
 github_actions_servers:
-  de-test-1:
-    secret_name: DE_1_V4_SSH
-    alias: "德国-测试-1 | Germany-Test-1"
-    location: "Germany"
-    groups:
-      - web_servers
-      - dev
-    roles:
-      - web
-    server_environment: development
-    
   pl-test-1:
     secret_name: PL_1_V4_SSH
     alias: "波兰-测试-1 | Poland-Test-1"
@@ -46,24 +35,7 @@ github_actions_servers:
 # 完整的生产服务器配置列表
 # Complete list of production server configurations
 production_servers:
-  
-  # ---------------------------------------------------------------------------
-  # Web 服务器组 | Web Server Group
-  # ---------------------------------------------------------------------------
-  # 部署 Web 应用和静态资源的服务器
-  # Servers for deploying web applications and static resources
-  
-  de-1:
-    env_var: DE_1_V4_SSH
-    alias: "德国-1 | Germany-1"
-    description: "德国 Web 服务器 - NubeCloud | Germany Web Server - NubeCloud"
-    location: "Germany"
-    groups:
-      - web_servers
-    roles:
-      - web
-    server_environment: test
-    
+
   jp-1:
     env_var: JP_1_V4_SSH
     alias: "日本-1 | Japan-1"

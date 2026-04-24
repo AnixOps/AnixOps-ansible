@@ -45,9 +45,9 @@ jobs:
         
     - name: Validate Ansible syntax
       run: |
-        ansible-playbook --syntax-check playbooks/site.yml
-        ansible-playbook --syntax-check playbooks/quick-setup.yml
-        ansible-playbook --syntax-check playbooks/web-servers.yml
+        ansible-playbook --syntax-check playbooks/deployment/site.yml
+        ansible-playbook --syntax-check playbooks/deployment/quick-setup.yml
+        ansible-playbook --syntax-check playbooks/deployment/web-servers.yml
 
     - name: Lint Summary
       if: always()
