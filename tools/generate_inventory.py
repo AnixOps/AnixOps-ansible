@@ -105,16 +105,14 @@ def generate_github_actions_inventory(config: Dict[str, Any],
             'vars': group_def.get('vars', {})
         }
     
-    # 添加 GitHub Actions 服务器
-    for server_name, server_info in config['github_actions_servers'].items():
-        # 使用 Ansible 环境变量查找语法
-        # Use Ansible environment variable lookup syntax
-        ansible_host = f"{{{{ lookup('env', '{server_info['secret_name']}') }}}}"
-        
+    # 添加生产环境服务器
+    for server_name, server_info in config.get('production_servers', {}).items():
+        ansible_host = f"{{{{ lookup('env', '{server_info['env_var']}') }}}}"
+
         host_config = {
             'ansible_host': ansible_host
         }
-        
+
         # 添加元数据
         if 'alias' in server_info:
             host_config['server_alias'] = server_info['alias']
@@ -122,7 +120,30 @@ def generate_github_actions_inventory(config: Dict[str, Any],
             host_config['location'] = server_info['location']
         if 'server_environment' in server_info:
             host_config['server_environment'] = server_info['server_environment']
-        
+
+        # 将服务器添加到所有属于的组
+        for group in server_info['groups']:
+            if group in groups:
+                groups[group]['hosts'][server_name] = host_config
+
+    # 添加 GitHub Actions 测试服务器（可覆盖生产服务器配置）
+    for server_name, server_info in config.get('github_actions_servers', {}).items():
+        # 使用 Ansible 环境变量查找语法
+        # Use Ansible environment variable lookup syntax
+        ansible_host = f"{{{{ lookup('env', '{server_info['secret_name']}') }}}}"
+
+        host_config = {
+            'ansible_host': ansible_host
+        }
+
+        # 添加元数据
+        if 'alias' in server_info:
+            host_config['server_alias'] = server_info['alias']
+        if 'location' in server_info:
+            host_config['location'] = server_info['location']
+        if 'server_environment' in server_info:
+            host_config['server_environment'] = server_info['server_environment']
+
         # 将服务器添加到所有属于的组
         for group in server_info['groups']:
             if group in groups:
