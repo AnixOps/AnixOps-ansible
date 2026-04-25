@@ -1,0 +1,5 @@
+---
+# US-West-1 专用配置
+# 开放 11111 端口（Proxy 服务端口）
+proxy_additional_ports:
+  - 11111  # Proxy 服务端口
