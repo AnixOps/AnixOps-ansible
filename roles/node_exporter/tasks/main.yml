@@ -5,10 +5,8 @@
 # Install and configure Prometheus Node Exporter
 #
 # 功能 | Features:
-#   - 自动检测系统架构 (amd64/arm64) | Auto-detect system architecture
 #   - 版本检查和更新 | Version checking and updates
 #   - Systemd 服务管理 | Systemd service management
-#   - 防火墙配置 | Firewall configuration
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -27,13 +25,6 @@
   failed_when: false
 
 # -----------------------------------------------------------------------------
-# 系统架构检测 | System Architecture Detection
-# -----------------------------------------------------------------------------
-- name: Detect system architecture | 检测系统架构
-  set_fact:
-    node_exporter_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
-
-# -----------------------------------------------------------------------------
 # 下载和安装 | Download and Install
 # -----------------------------------------------------------------------------
 - name: Download and install node_exporter | 下载并安装 node_exporter
@@ -46,19 +37,19 @@
 
     - name: Download node_exporter | 下载 node_exporter
       get_url:
-        url: "{{ prometheus.node_exporter.download_url }}/v{{ prometheus.node_exporter.version }}/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}.tar.gz"
-        dest: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}.tar.gz"
+        url: "{{ prometheus.node_exporter.download_url }}/v{{ prometheus.node_exporter.version }}/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}.tar.gz"
+        dest: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}.tar.gz"
         mode: '0644'
 
     - name: Extract node_exporter | 解压 node_exporter
       unarchive:
-        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}.tar.gz"
+        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}.tar.gz"
         dest: /tmp/node_exporter
         remote_src: yes
 
     - name: Copy node_exporter binary | 复制 node_exporter 二进制文件
       copy:
-        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ node_exporter_arch }}/node_exporter"
+        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}/node_exporter"
         dest: /usr/local/bin/node_exporter
         mode: '0755'
         remote_src: yes
@@ -86,6 +77,7 @@
     src: node_exporter.service.j2
     dest: /etc/systemd/system/node_exporter.service
     mode: '0644'
+    backup: yes
   notify:
     - reload systemd
     - restart node_exporter
@@ -95,28 +87,6 @@
     name: node_exporter
     state: started
     enabled: yes
-
-# -----------------------------------------------------------------------------
-# 防火墙配置 | Firewall Configuration
-# -----------------------------------------------------------------------------
-- name: Allow node_exporter port in firewall | 在防火墙中允许 node_exporter 端口
-  ufw:
-    rule: allow
-    port: "{{ prometheus.node_exporter.port }}"
-    proto: tcp
-  when: 
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(false)
-
-- name: Allow node_exporter port in firewalld
-  firewalld:
-    port: "{{ prometheus.node_exporter.port }}/tcp"
-    permanent: yes
-    state: enabled
-    immediate: yes
-  when: 
-    - ansible_os_family == "RedHat"
-    - firewall_enabled | default(false)
 
 - name: Verify node_exporter is responding
   uri:

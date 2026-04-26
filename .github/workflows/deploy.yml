@@ -15,67 +15,28 @@ on:
 jobs:
   lint:
     name: Code Quality Check
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install ansible ansible-lint yamllint
-        
-    - name: Run yamllint
-      run: |
-        yamllint -c .yamllint.yml .
-      continue-on-error: true
-        
-    - name: Run ansible-lint
-      run: |
-        ansible-lint --force-color playbooks/*.yml roles/*/tasks/*.yml
-      continue-on-error: true
-        
-    - name: Validate Ansible syntax
-      run: |
-        ansible-playbook --syntax-check playbooks/deployment/site.yml
-        ansible-playbook --syntax-check playbooks/deployment/quick-setup.yml
-        ansible-playbook --syntax-check playbooks/deployment/web-servers.yml
-
-    - name: Lint Summary
-      if: always()
-      run: |
-        echo "════════════════════════════════════════════"
-        echo "✓ Code Quality Check Completed"
-        echo "════════════════════════════════════════════"
+    uses: ./.github/workflows/reusable-lint.yml
 
   test:
     name: Ansible Connection Test
     runs-on: ubuntu-latest
     needs: lint
     if: github.event_name != 'pull_request'
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        
+
     - name: Install Ansible
       run: |
         python -m pip install --upgrade pip
         pip install ansible
-    
+
     - name: Setup SSH Key
       run: |
         mkdir -p ~/.ssh
@@ -85,7 +46,7 @@ jobs:
     - name: Create test inventory from secrets
       run: |
         echo "Creating test inventory from GitHub Secrets..."
-        cat > inventory/hosts.yml << 'EOF'
+        cat > inventories/production/hosts.yml << 'EOF'
         ---
         all:
           children:
@@ -95,14 +56,14 @@ jobs:
                   ansible_host: "${{ secrets.PL_1_V4_SSH }}"
               vars:
                 server_role: web
-            
+
             observability:
               hosts:
                 pl-test-1:
                   ansible_host: "${{ secrets.PL_1_V4_SSH }}"
               vars:
                 server_role: observability
-          
+
           vars:
             ansible_user: "${{ secrets.ANSIBLE_USER }}"
             ansible_port: "${{ secrets.ANSIBLE_PORT }}"
@@ -110,33 +71,33 @@ jobs:
             ansible_python_interpreter: /usr/bin/python3
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         EOF
-        
+
         echo "Generated test inventory:"
-        cat inventory/hosts.yml
+        cat inventories/production/hosts.yml
 
     - name: Test Ansible Ping
       continue-on-error: true
       env:
         ANSIBLE_HOST_KEY_CHECKING: 'False'
       run: |
-        echo "════════════════════════════════════════════"
+        echo "========================================"
         echo "Testing Ansible connectivity with ping..."
-        echo "════════════════════════════════════════════"
-        ansible all -i inventory/hosts.yml -m ping -v
-        
+        echo "========================================"
+        ansible all -i inventories/production/hosts.yml -m ping -v
+
     - name: Test Summary
       if: always()
       run: |
-        echo "════════════════════════════════════════════"
-        echo "✓ Connection Test Completed"
-        echo "════════════════════════════════════════════"
+        echo "========================================"
+        echo "Connection Test Completed"
+        echo "========================================"
 
   deploy:
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     name: Deploy Ansible Configuration
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -160,7 +121,7 @@ jobs:
       - name: Create dynamic inventory from secrets
         run: |
           echo "Creating dynamic inventory from GitHub Secrets..."
-          cat > inventory/hosts.yml << 'EOF'
+          cat > inventories/production/hosts.yml << 'EOF'
           ---
           all:
             children:
@@ -170,14 +131,14 @@ jobs:
                     ansible_host: "${{ secrets.PL_1_V4_SSH }}"
                 vars:
                   server_role: web
-              
+
               observability:
                 hosts:
                   pl-test-1:
                     ansible_host: "${{ secrets.PL_1_V4_SSH }}"
                 vars:
                   server_role: observability
-            
+
             vars:
               ansible_user: "${{ secrets.ANSIBLE_USER }}"
               ansible_port: "${{ secrets.ANSIBLE_PORT }}"
@@ -185,9 +146,9 @@ jobs:
               ansible_python_interpreter: /usr/bin/python3
               ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
           EOF
-          
+
           echo "Generated inventory:"
-          cat inventory/hosts.yml
+          cat inventories/production/hosts.yml
 
       - name: Run Ansible Playbook
         env:
@@ -236,23 +197,28 @@ jobs:
           # Firewall Whitelist Configuration
           FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
         run: |
-          ansible-playbook -i inventory/hosts.yml playbooks/deployment/site.yml \
+          ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml \
             --limit ${{ github.event.inputs.target || 'all' }} \
             -v
+
+      - name: Cleanup SSH keys
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
 
       - name: Deployment Summary
         if: success()
         run: |
-          echo "═══════════════════════════════════════════════════════════"
-          echo "✓ Deployment completed successfully!"
-          echo "═══════════════════════════════════════════════════════════"
+          echo "================================================================"
+          echo "Deployment completed successfully!"
+          echo "================================================================"
           echo "Commit: ${{ github.sha }}"
           echo "Branch: ${{ github.ref }}"
           echo "Target: ${{ github.event.inputs.target || 'all' }}"
-          echo "═══════════════════════════════════════════════════════════"
+          echo "================================================================"
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "✗ Deployment failed!"
+          echo "Deployment failed!"
           echo "Check the logs above for details."

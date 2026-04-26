@@ -22,7 +22,7 @@
 k8s_provider: kind  # 或 k3s
 
 # Kind 配置（本地开发）
-kind_cluster_name: cloudflared-dev
+kind_cluster_name: anixops-dev
 kind_cluster_config: /tmp/kind-config.yaml
 
 # K3s 配置（生产环境）

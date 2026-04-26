@@ -1,0 +1,6 @@
+---
+cloudflare_mesh_token: "{{ lookup('env', 'CLOUDFLARE_MESH_TOKEN') | default('') }}"
+cloudflare_mesh_node_name: "{{ inventory_hostname }}"
+cloudflare_mesh_mtu: 1381
+cloudflare_mesh_service_name: warp-svc
+cloudflare_mesh_advertise_subnets: "{{ lookup('env', 'CLOUDFLARE_MESH_ADVERTISE_SUBNETS') | default('') }}"

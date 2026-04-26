@@ -20,6 +20,9 @@ nginx_host_sites: []
 # Default site configuration
 nginx_default_site_enabled: true
 
+# Proxy timeout settings (seconds)
+nginx_proxy_timeout: 300
+
 # Custom configuration snippets per host or group
 # This allows for arbitrary Nginx configuration to be injected
 nginx_custom_configs: []

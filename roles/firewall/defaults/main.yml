@@ -1,0 +1,20 @@
+---
+# =============================================================================
+# Monitoring Firewall Role - Default Variables
+# =============================================================================
+
+firewall_enabled: true
+
+firewall_public_ports:
+  - "22"
+  - "80"
+  - "443"
+
+firewall_restricted_ports:
+  - "9100"
+  - "9090"
+  - "3100"
+  - "3000"
+
+monitoring_whitelist: []
+proxy_additional_ports: []

@@ -3,7 +3,7 @@
 # 使用 acme.sh 获取和管理 SSL 证书
 
 - name: Install dependencies for acme.sh
-  apt:
+  ansible.builtin.apt:
     name:
       - curl
       - socat
@@ -14,19 +14,19 @@
   when: ansible_os_family == "Debian"
 
 - name: Check if acme.sh is already installed
-  stat:
+  ansible.builtin.stat:
     path: /root/.acme.sh/acme.sh
   register: acme_installed
 
 - name: Download and install acme.sh
-  shell: |
+  ansible.builtin.shell: |
     curl https://get.acme.sh | sh -s email={{ acme_email }}
   args:
     creates: /root/.acme.sh/acme.sh
   when: not acme_installed.stat.exists
 
 - name: Configure Cloudflare DNS API (if using Cloudflare)
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /root/.acme.sh/account.conf
     regexp: "^{{ item.key }}="
     line: "{{ item.key }}='{{ item.value }}'"
@@ -34,14 +34,14 @@
   loop:
     - { key: 'CF_Token', value: '{{ cloudflare_api_token }}' }
     - { key: 'CF_Zone_ID', value: '{{ cloudflare_zone_id }}' }
-  when: 
+  when:
     - acme_dns_provider == 'cloudflare'
     - cloudflare_api_token is defined
     - cloudflare_zone_id is defined
   no_log: true
 
 - name: Issue SSL certificate
-  shell: |
+  ansible.builtin.shell: |
     /root/.acme.sh/acme.sh --issue \
       --dns dns_cf \
       -d {{ item }} \
@@ -49,17 +49,18 @@
   args:
     creates: /root/.acme.sh/{{ item }}_ecc/{{ item }}.cer
   loop: "{{ acme_domains }}"
-  when: 
+  when:
     - acme_dns_provider == 'cloudflare'
     - acme_domains is defined
   register: acme_issue
-  failed_when: 
+  failed_when:
     - acme_issue.rc != 0
     - "'Cert success' not in acme_issue.stdout"
   ignore_errors: yes
+  no_log: true
 
 - name: Create SSL certificate directory
-  file:
+  ansible.builtin.file:
     path: /etc/nginx/ssl
     state: directory
     mode: '0700'
@@ -67,7 +68,7 @@
     group: root
 
 - name: Install SSL certificates to Nginx
-  shell: |
+  ansible.builtin.shell: |
     /root/.acme.sh/acme.sh --install-cert -d {{ item }} \
       --key-file /etc/nginx/ssl/{{ item }}.key \
       --fullchain-file /etc/nginx/ssl/{{ item }}.crt \
@@ -75,9 +76,10 @@
   loop: "{{ acme_domains }}"
   when: acme_domains is defined
   notify: reload nginx
+  no_log: true
 
 - name: Set up auto-renewal cron job
-  cron:
+  ansible.builtin.cron:
     name: "acme.sh auto-renewal"
     minute: "0"
     hour: "0"

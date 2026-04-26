@@ -1,0 +1,35 @@
+---
+# =============================================================================
+# Cloudflare Mesh Role - Main Entry Point
+# =============================================================================
+# 验证配置 -> 按操作系统分发安装 -> 配置节点
+# Validate config -> Dispatch by OS -> Configure node
+
+- name: Validate CLOUDFLARE_MESH_TOKEN is set | 验证 Mesh Token 已设置
+  ansible.builtin.fail:
+    msg: |
+      错误：CLOUDFLARE_MESH_TOKEN 未设置！
+      Error: CLOUDFLARE_MESH_TOKEN is not set!
+
+      请设置环境变量或在 defaults/main.yml 中配置：
+      Please set the environment variable or configure in defaults/main.yml:
+
+        export CLOUDFLARE_MESH_TOKEN=your-mesh-enrollment-token
+
+      获取 Token：
+      Get the token:
+        1. Dashboard > Networking > Mesh
+        2. Click "Add node"
+        3. Copy the enrollment token
+  when: cloudflare_mesh_token | default('') | length == 0
+
+- name: Include Debian/Ubuntu installation tasks | 包含 Debian/Ubuntu 安装任务
+  ansible.builtin.include_tasks: install_debian.yml
+  when: ansible_os_family == 'Debian'
+
+- name: Include RHEL/CentOS installation tasks | 包含 RHEL/CentOS 安装任务
+  ansible.builtin.include_tasks: install_rhel.yml
+  when: ansible_os_family == 'RedHat'
+
+- name: Configure Mesh node | 配置 Mesh 节点
+  ansible.builtin.include_tasks: configure.yml

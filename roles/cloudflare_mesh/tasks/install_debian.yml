@@ -1,0 +1,55 @@
+---
+# =============================================================================
+# Debian/Ubuntu Installation Tasks
+# =============================================================================
+# 添加 Cloudflare WARP apt repo 并安装 cloudflare-warp 包
+
+- name: Install prerequisites | 安装依赖
+  ansible.builtin.apt:
+    name:
+      - gpg
+      - curl
+    state: present
+    update_cache: yes
+
+- name: Download Cloudflare WARP GPG key | 下载 Cloudflare WARP GPG key
+  ansible.builtin.shell: |
+    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | \
+    gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+
+- name: Add Cloudflare WARP apt repository | 添加 Cloudflare WARP apt repo
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ {{ ansible_distribution_release }} main"
+    state: present
+    filename: cloudflare-client
+    update_cache: yes
+
+- name: Install cloudflare-warp package | 安装 cloudflare-warp 包
+  ansible.builtin.apt:
+    name: cloudflare-warp
+    state: present
+    update_cache: yes
+
+- name: Configure sysctl for Mesh node | 配置 sysctl
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
+    content: |
+      net.ipv4.ip_forward=1
+      net.ipv6.conf.all.forwarding=1
+      net.ipv4.conf.all.accept_ra=1
+      net.ipv6.conf.all.accept_ra=1
+    mode: '0644'
+  notify: Restart warp-svc
+
+- name: Apply sysctl settings | 应用 sysctl 配置
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
+  changed_when: true
+
+- name: Configure MTU for Mesh interface | 配置 Mesh 接口 MTU
+  ansible.builtin.shell: |
+    ip link show | grep -q 'mtu {{ cloudflare_mesh_mtu }}' || \
+    ip link set dev CloudflareMesh mtu {{ cloudflare_mesh_mtu }} 2>/dev/null || true
+  changed_when: false
+  failed_when: false

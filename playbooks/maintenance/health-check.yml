@@ -1,12 +1,20 @@
 # =============================================================================
-# 健康检查 Playbook | Health Check Playbook
+# 健康检查 Play书 | Health Check Playbook
 # =============================================================================
 # 检查所有服务器和服务的健康状态
 # Check the health status of all servers and services
+#
+# Scope: all servers (serial: 1, max_fail: 50%)
+# Rollback: N/A (read-only checks, no modifications)
+# Risk Level: LOW (read-only operations)
+# Pre-flight: Yes (fact gathering)
+# Post-check: N/A (this IS the post-check)
 # =============================================================================
 
 - name: Health check for all servers | 所有服务器健康检查
   hosts: all
+  serial: 1
+  max_fail_percentage: 50
   become: yes
   gather_facts: yes
   ignore_unreachable: yes

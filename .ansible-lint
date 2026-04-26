@@ -1,0 +1,29 @@
+# Ansible Lint Configuration
+# https://ansible.readthedocs.io/projects/lint/
+
+# Use the production profile for stricter checks
+profile: production
+
+# Skip rules that are not applicable or intentionally violated
+skip_list:
+  # Allow shell commands where no dedicated module exists
+  - no-changed-when
+  # Allow command without changed_when for read-only operations
+  - command-instead-of-module
+  # We intentionally use shell for piped commands in some cases
+  - no-shell
+
+# Warn only for these (don't fail)
+warn_list:
+  # Role name convention warnings
+  - role-name
+  # Experimental rules
+  - experimental
+
+# Custom rules configuration
+rules:
+  # Ensure idempotency checks are enforced
+  yaml:
+    line-length:
+      max: 200
+      level: warning

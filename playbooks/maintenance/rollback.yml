@@ -1,0 +1,210 @@
+---
+# =============================================================================
+# 回滚 Playbook | Rollback Playbook
+# =============================================================================
+# 将配置文件回滚到之前的备份版本
+# Rolls back configuration files to a previous backup version
+#
+# 使用方法 | Usage:
+#   # 回滚到最近的备份 | Rollback to most recent backup
+#   ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=nginx"
+#
+#   # 回滚到特定时间戳的备份 | Rollback to specific timestamp
+#   ansible-playbook playbooks/maintenance/rollback.yml \
+#     -e "rollback_role=prometheus rollback_timestamp=20260426_120000"
+#
+#   # 列出可用备份（不执行回滚）| List available backups (dry run)
+#   ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=nginx rollback_dry_run=yes"
+#
+# 支持的角色 | Supported roles:
+#   nginx, common (ssh/chrony/fail2ban), prometheus, loki,
+#   grafana, node_exporter, promtail
+# =============================================================================
+
+- name: Configuration Rollback | 配置回滚
+  hosts: all
+  serial: 1
+  max_fail_percentage: 0
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # 前置验证 | Pre-flight Validation
+    # -------------------------------------------------------------------------
+    - name: Validate rollback_role is set | 验证 rollback_role 已设置
+      ansible.builtin.fail:
+        msg: >
+          必须指定 rollback_role 参数！
+          Must specify rollback_role parameter!
+
+          用法 | Usage:
+            ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=<role_name>"
+
+          支持的角色 | Supported roles:
+            nginx, common, prometheus, loki,
+            grafana, node_exporter, promtail
+      when: rollback_role is not defined or rollback_role == ''
+
+    - name: Define backup file patterns for each role | 定义各角色的备份文件模式
+      ansible.builtin.set_fact:
+        rollback_patterns:
+          nginx:
+            - "/etc/nginx/nginx.conf.backup.*"
+            - "/etc/nginx/sites-available/default.backup.*"
+            - "/etc/nginx/sites-available/*.conf.backup.*"
+          common:
+            - "/etc/ssh/sshd_config.backup.*"
+            - "/etc/chrony/chrony.conf.backup.*"
+            - "/etc/chrony.conf.backup.*"
+            - "/etc/fail2ban/jail.local.backup.*"
+          prometheus:
+            - "/etc/prometheus/prometheus.yml.backup.*"
+            - "/etc/systemd/system/prometheus.service.backup.*"
+          loki:
+            - "/etc/loki/loki-config.yml.backup.*"
+            - "/etc/systemd/system/loki.service.backup.*"
+          grafana:
+            - "/etc/grafana/grafana.ini.backup.*"
+          node_exporter:
+            - "/etc/systemd/system/node_exporter.service.backup.*"
+          promtail:
+            - "/etc/promtail/config.yml.backup.*"
+            - "/etc/systemd/system/promtail.service.backup.*"
+
+    - name: Define service names for each role | 定义各角色的服务名称
+      ansible.builtin.set_fact:
+        rollback_services:
+          nginx: nginx
+          common: "ssh|chrony|fail2ban"
+          prometheus: prometheus
+          loki: loki
+          grafana: grafana-server
+          node_exporter: node_exporter
+          promtail: promtail
+
+    # -------------------------------------------------------------------------
+    # 查找可用备份 | Find Available Backups
+    # -------------------------------------------------------------------------
+    - name: Find backup files for the specified role | 查找指定角色的备份文件
+      ansible.builtin.find:
+        paths: "{{ item | dirname }}"
+        patterns: "{{ item | basename | replace('.*', '.*') }}"
+        use_regex: yes
+      loop: "{{ rollback_patterns[rollback_role] | default([]) }}"
+      register: backup_files_raw
+      when: rollback_role is defined
+
+    - name: Flatten backup files list | 展平备份文件列表
+      ansible.builtin.set_fact:
+        backup_files: "{{ backup_files_raw.results | default([]) | map(attribute='files') | flatten }}"
+      when: rollback_role is defined
+
+    - name: Fail if no backups found | 如果未找到备份则失败
+      ansible.builtin.fail:
+        msg: >
+          未找到 {{ rollback_role }} 的备份文件！
+          No backup files found for {{ rollback_role }}!
+
+          备份文件应该以 .backup. 或 .bak. 结尾。
+          Backup files should end with .backup. or .bak.
+
+          提示：确保 playbook 中的 template 任务设置了 backup: yes。
+          Hint: Ensure template tasks in playbooks have backup: yes set.
+      when: backup_files | default([]) | length == 0
+
+    # -------------------------------------------------------------------------
+    # 列出可用备份 | List Available Backups
+    # -------------------------------------------------------------------------
+    - name: List available backups | 列出可用备份
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          可用备份文件 | Available Backup Files
+          角色 | Role: {{ rollback_role }}
+          主机 | Host: {{ inventory_hostname }}
+          ═══════════════════════════════════════════════════════════
+          {% for f in backup_files | sort(reverse=true) %}
+          {{ f.path }}
+          {% endfor %}
+          ═══════════════════════════════════════════════════════════
+
+    # -------------------------------------------------------------------------
+    # 干运行模式（仅列出，不执行回滚）| Dry Run (list only, no rollback)
+    # -------------------------------------------------------------------------
+    - name: Exit in dry run mode | 干运行模式退出
+      ansible.builtin.meta: end_play
+      when: rollback_dry_run | default(false) | bool
+
+    # -------------------------------------------------------------------------
+    # 执行回滚 | Perform Rollback
+    # -------------------------------------------------------------------------
+    - name: Determine the most recent backup file | 确定最新的备份文件
+      ansible.builtin.set_fact:
+        latest_backup: "{{ (backup_files | sort(attribute='mtime', reverse=true) | first).path }}"
+      when: rollback_timestamp is not defined or rollback_timestamp == ''
+
+    - name: Find backup matching timestamp | 查找匹配时间戳的备份
+      ansible.builtin.set_fact:
+        timestamped_backup: "{{ item }}"
+      loop: "{{ backup_files | map(attribute='path') | list | sort(reverse=true) }}"
+      when: rollback_timestamp is defined and rollback_timestamp != ''
+      # Takes the last match (most recent for the given timestamp prefix)
+
+    - name: Fail if timestamped backup not found | 如果未找到指定时间戳的备份则失败
+      ansible.builtin.fail:
+        msg: >
+          未找到包含时间戳 "{{ rollback_timestamp }}" 的备份文件！
+          No backup file found containing timestamp "{{ rollback_timestamp }}"!
+      when: >
+        rollback_timestamp is defined and rollback_timestamp != '' and
+        (timestamped_backup is not defined)
+
+    - name: Set target backup file | 设置目标备份文件
+      ansible.builtin.set_fact:
+        target_backup: "{{ timestamped_backup | default(latest_backup) }}"
+
+    - name: Confirm backup target | 确认回滚目标
+      ansible.builtin.debug:
+        msg: "Will rollback {{ target_backup }} -> {{ target_backup | regex_replace('\\.backup\\.[^/]+$', '') }}"
+
+    - name: Copy backup file to original location | 将备份文件复制到原始位置
+      ansible.builtin.copy:
+        src: "{{ target_backup }}"
+        dest: "{{ target_backup | regex_replace('\\.backup\\.[^/]+$', '') }}"
+        remote_src: yes
+        mode: 'preserve'
+      register: rollback_result
+
+    - name: Restart service after rollback | 回滚后重启服务
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: restarted
+      loop: "{{ rollback_services[rollback_role] | default('') | split('|') }}"
+      when:
+        - rollback_result.changed
+        - item != ''
+
+    # -------------------------------------------------------------------------
+    # 验证回滚 | Verify Rollback
+    # -------------------------------------------------------------------------
+    - name: Verify service is running after rollback | 验证回滚后服务正在运行
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ rollback_services[rollback_role] | default('') | split('|') }}"
+      when: item != ''
+
+    - name: Display rollback summary | 显示回滚摘要
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          {% if rollback_result.changed %}
+          ✓ 配置已回滚 | Configuration rolled back
+          从备份 | From backup: {{ target_backup }}
+          {% else %}
+          ℹ 配置未改变 | Configuration unchanged
+          备份已是当前版本 | Backup is already the current version
+          {% endif %}
+          主机 | Host: {{ inventory_hostname }}
+          ═══════════════════════════════════════════════════════════

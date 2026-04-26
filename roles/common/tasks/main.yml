@@ -19,12 +19,12 @@
 # 主机名配置 | Hostname Configuration
 # -----------------------------------------------------------------------------
 - name: Set server hostname | 设置服务器主机名
-  hostname:
+  ansible.builtin.hostname:
     name: "{{ inventory_hostname }}"
   when: inventory_hostname is defined
 
 - name: Update /etc/hosts with new hostname | 更新 /etc/hosts 文件
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^127\.0\.1\.1'
     line: "127.0.1.1 {{ inventory_hostname }}"
@@ -32,7 +32,7 @@
   when: inventory_hostname is defined
 
 - name: Display hostname change | 显示主机名更改
-  debug:
+  ansible.builtin.debug:
     msg: "主机名已设置为 | Hostname set to: {{ inventory_hostname }}"
 
 # -----------------------------------------------------------------------------
@@ -41,7 +41,7 @@
 - name: Clean broken Grafana apt sources (Debian/Ubuntu)
   block:
     - name: Remove conflicting Grafana source files
-      file:
+      ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
@@ -50,7 +50,7 @@
       ignore_errors: yes
 
     - name: Fix apt sources with signed-by conflicts
-      shell: |
+      ansible.builtin.shell: |
         find /etc/apt/sources.list.d -name '*.list' -exec grep -l 'apt.grafana.com' {} \; 2>/dev/null | while read f; do
           if ! grep -q '\[signed-by=' "$f" 2>/dev/null; then
             rm -f "$f"
@@ -61,13 +61,13 @@
   when: ansible_os_family == "Debian"
 
 - name: Update apt cache (Debian/Ubuntu) | 更新 apt 缓存 (Debian/Ubuntu)
-  apt:
+  ansible.builtin.apt:
     update_cache: yes
     cache_valid_time: 3600
   when: ansible_os_family == "Debian"
 
 - name: Update yum cache (RedHat/CentOS) | 更新 yum 缓存 (RedHat/CentOS)
-  yum:
+  ansible.builtin.yum:
     update_cache: yes
   when: ansible_os_family == "RedHat"
 
@@ -75,7 +75,7 @@
 # 安装常用软件包 | Install Common Packages
 # -----------------------------------------------------------------------------
 - name: Install common packages | 安装常用软件包
-  package:
+  ansible.builtin.package:
     name: "{{ common_packages }}"
     state: present
 
@@ -83,11 +83,11 @@
 # 时区和本地化配置 | Timezone and Localization Configuration
 # -----------------------------------------------------------------------------
 - name: Set timezone | 设置时区
-  timezone:
+  ansible.builtin.timezone:
     name: "{{ timezone }}"
 
 - name: Set system locale | 设置系统区域设置
-  locale_gen:
+  ansible.builtin.locale_gen:
     name: "{{ locale }}"
     state: present
   when: ansible_os_family == "Debian"
@@ -96,37 +96,39 @@
 # NTP 时间同步配置 | NTP Time Synchronization Configuration
 # -----------------------------------------------------------------------------
 - name: Ensure chrony config directory exists | 确保 chrony 配置目录存在
-  file:
+  ansible.builtin.file:
     path: /etc/chrony
     state: directory
     mode: '0755'
   when: ansible_os_family == "Debian"
 
 - name: Configure NTP servers (Debian/Ubuntu) | 配置 NTP 服务器 (Debian/Ubuntu)
-  template:
+  ansible.builtin.template:
     src: chrony.conf.j2
     dest: /etc/chrony/chrony.conf
     mode: '0644'
+    backup: yes
   notify: restart chrony
   when: ansible_os_family == "Debian"
 
 - name: Configure NTP servers (RedHat/CentOS) | 配置 NTP 服务器 (RedHat/CentOS)
-  template:
+  ansible.builtin.template:
     src: chrony.conf.j2
     dest: /etc/chrony.conf
     mode: '0644'
+    backup: yes
   notify: restart chrony
   when: ansible_os_family == "RedHat"
 
 - name: Ensure chrony is running (RedHat/CentOS) | 确保 chrony 运行中 (RedHat/CentOS)
-  service:
+  ansible.builtin.service:
     name: chronyd
     state: started
     enabled: yes
   when: ansible_os_family == "RedHat"
 
 - name: Ensure chrony is running (Debian/Ubuntu) | 确保 chrony 运行中 (Debian/Ubuntu)
-  service:
+  ansible.builtin.service:
     name: chrony
     state: started
     enabled: yes
@@ -136,26 +138,26 @@
 # 用户管理 | User Management
 # -----------------------------------------------------------------------------
 - name: Create admin users (Debian/Ubuntu) | 创建管理员用户 (Debian/Ubuntu)
-  user:
+  ansible.builtin.user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"
     groups: sudo
     state: "{{ item.state }}"
     create_home: yes
   loop: "{{ admin_users }}"
-  when: 
+  when:
     - admin_users is defined
     - ansible_os_family == "Debian"
 
 - name: Create admin users (RedHat/CentOS) | 创建管理员用户 (RedHat/CentOS)
-  user:
+  ansible.builtin.user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"
     groups: wheel
     state: "{{ item.state }}"
     create_home: yes
   loop: "{{ admin_users }}"
-  when: 
+  when:
     - admin_users is defined
     - ansible_os_family == "RedHat"
 
@@ -163,7 +165,7 @@
 # SSH 安全配置 | SSH Security Configuration
 # -----------------------------------------------------------------------------
 - name: Configure SSH | 配置 SSH
-  template:
+  ansible.builtin.template:
     src: sshd_config.j2
     dest: /etc/ssh/sshd_config
     mode: '0600'
@@ -172,13 +174,13 @@
   notify: restart sshd
 
 - name: Ensure SSH service is enabled and started | 确保 SSH 服务已启用并启动
-  service:
+  ansible.builtin.service:
     name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
     state: started
     enabled: yes
 
 - name: Apply sysctl parameters
-  sysctl:
+  ansible.posix.sysctl:
     name: "{{ item.key }}"
     value: "{{ item.value }}"
     state: present
@@ -188,7 +190,7 @@
   when: sysctl_config is defined
 
 - name: Configure system limits
-  pam_limits:
+  ansible.builtin.pam_limits:
     domain: "{{ item.domain }}"
     limit_type: "{{ item.limit_type }}"
     limit_item: "{{ item.limit_item }}"
@@ -197,80 +199,29 @@
   when: security.limits is defined
 
 - name: Install fail2ban
-  package:
+  ansible.builtin.package:
     name: fail2ban
     state: present
   when: security.fail2ban_enabled | default(false)
 
 - name: Configure fail2ban
-  template:
+  ansible.builtin.template:
     src: jail.local.j2
     dest: /etc/fail2ban/jail.local
     mode: '0644'
+    backup: yes
   notify: restart fail2ban
   when: security.fail2ban_enabled | default(false)
 
 - name: Ensure fail2ban is running
-  service:
+  ansible.builtin.service:
     name: fail2ban
     state: started
     enabled: yes
   when: security.fail2ban_enabled | default(false)
 
-- name: Install UFW (Ubuntu/Debian)
-  package:
-    name: ufw
-    state: present
-  when:
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(false)
-
-- name: Configure UFW firewall (Ubuntu/Debian)
-  block:
-    - name: Allow SSH
-      ufw:
-        rule: allow
-        port: "{{ ssh_port }}"
-        proto: tcp
-
-    - name: Allow configured ports
-      ufw:
-        rule: allow
-        port: "{{ item }}"
-        proto: tcp
-      loop: "{{ firewall_allowed_ports }}"
-
-    - name: Enable UFW
-      ufw:
-        state: enabled
-        policy: deny
-  when: 
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(false)
-
-- name: Configure firewalld (RedHat/CentOS)
-  block:
-    - name: Allow SSH
-      firewalld:
-        port: "{{ ssh_port }}/tcp"
-        permanent: yes
-        state: enabled
-
-    - name: Allow configured ports
-      firewalld:
-        port: "{{ item }}/tcp"
-        permanent: yes
-        state: enabled
-      loop: "{{ firewall_allowed_ports }}"
-
-    - name: Reload firewalld
-      command: firewall-cmd --reload
-  when: 
-    - ansible_os_family == "RedHat"
-    - firewall_enabled | default(false)
-
 - name: Disable unnecessary services
-  service:
+  ansible.builtin.service:
     name: "{{ item }}"
     state: stopped
     enabled: no

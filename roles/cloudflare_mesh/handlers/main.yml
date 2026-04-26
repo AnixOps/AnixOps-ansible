@@ -1,0 +1,6 @@
+---
+- name: Restart warp-svc
+  ansible.builtin.systemd:
+    name: "{{ cloudflare_mesh_service_name }}"
+    state: restarted
+    daemon_reload: yes

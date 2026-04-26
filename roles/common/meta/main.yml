@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: AnixOps
+  description: Common system configuration (hostname, packages, timezone, SSH hardening, fail2ban)
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags: []
+dependencies: []

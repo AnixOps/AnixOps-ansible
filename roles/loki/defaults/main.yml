@@ -1,0 +1,4 @@
+---
+# Loki Server Default Variables
+
+loki_version: "2.9.0"

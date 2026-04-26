@@ -8,13 +8,12 @@ on:
         required: true
         type: choice
         options:
-          - deployment/site.yml
-          - deployment/quick-setup.yml
-          - deployment/web-servers.yml
-          - maintenance/observability.yml
+          - provision/site.yml
+          - provision/quick-setup.yml
+          - provision/web-servers.yml
           - maintenance/health-check.yml
           - maintenance/firewall-setup.yml
-        default: 'deployment/quick-setup.yml'
+        default: 'provision/quick-setup.yml'
       
       target_group:
         description: 'Target servers'
@@ -66,12 +65,12 @@ jobs:
       - name: Create inventory from config
         run: |
           echo "Generating inventory from servers-config.yml..."
-          python3 tools/generate_inventory.py github-actions > inventory/hosts.yml
+          python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
           
           echo "✓ Inventory generated successfully"
           echo ""
           echo "Generated inventory:"
-          cat inventory/hosts.yml
+          cat inventories/production/hosts.yml
 
       - name: Display Deployment Configuration
         run: |
@@ -103,7 +102,7 @@ jobs:
         run: |
           echo "🔍 Verifying connectivity to target servers..."
           ansible ${{ github.event.inputs.target_group }} \
-            -i inventory/hosts.yml \
+            -i inventories/production/hosts.yml \
             -m ping -v
 
       - name: Run Ansible Playbook
@@ -139,7 +138,7 @@ jobs:
         run: |
           # Build command
           CMD="ansible-playbook playbooks/${{ github.event.inputs.playbook }}"
-          CMD="$CMD -i inventory/hosts.yml"
+          CMD="$CMD -i inventories/production/hosts.yml"
           CMD="$CMD --limit ${{ github.event.inputs.target_group }}"
           CMD="$CMD -v"
           
@@ -177,9 +176,14 @@ jobs:
           echo "═══════════════════════════════════════════════════════════════"
           
           ansible ${{ github.event.inputs.target_group }} \
-            -i inventory/hosts.yml \
+            -i inventories/production/hosts.yml \
             -m shell \
             -a "uptime && df -h / && free -h" || true
+
+      - name: Cleanup SSH keys
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
 
       - name: Deployment Summary
         if: always()

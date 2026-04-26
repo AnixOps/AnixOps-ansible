@@ -1,0 +1,105 @@
+---
+# Grafana Server Installation Tasks
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install Grafana dependencies
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - software-properties-common
+      - wget
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add Grafana GPG key (Debian/Ubuntu)
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /usr/share/keyrings/grafana.gpg
+    mode: '0644'
+  when: ansible_os_family == "Debian"
+
+- name: Remove conflicting Grafana repository files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/grafana.list
+  when: ansible_os_family == "Debian"
+
+- name: Add Grafana repository (Debian/Ubuntu)
+  ansible.builtin.apt_repository:
+    repo: deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main
+    state: present
+    filename: grafana
+  when: ansible_os_family == "Debian"
+
+- name: Install Grafana
+  ansible.builtin.package:
+    name: grafana
+    state: present
+    update_cache: yes
+
+- name: Configure Grafana
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    owner: root
+    group: grafana
+    mode: '0640'
+    backup: yes
+  notify: restart grafana
+
+- name: Create Grafana provisioning directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: '0755'
+  loop:
+    - /etc/grafana/provisioning/datasources
+    - /etc/grafana/provisioning/dashboards
+
+- name: Provision Prometheus datasource
+  ansible.builtin.template:
+    src: datasource-prometheus.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: grafana
+    group: grafana
+    mode: '0644'
+    backup: yes
+  notify: restart grafana
+
+- name: Provision Loki datasource
+  ansible.builtin.template:
+    src: datasource-loki.yml.j2
+    dest: /etc/grafana/provisioning/datasources/loki.yml
+    owner: grafana
+    group: grafana
+    mode: '0644'
+    backup: yes
+  notify: restart grafana
+
+- name: Enable and start Grafana service
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Fail if grafana_admin_password is not set
+  ansible.builtin.fail:
+    msg: "grafana_admin_password must be set. Provide a strong password via group_vars or environment variable."
+  when: grafana_admin_password is not defined or grafana_admin_password == ''
+
+- name: Display Grafana info
+  ansible.builtin.debug:
+    msg: |
+      Grafana installed successfully
+      Access: http://{{ ansible_host }}:3000
+      Config: /etc/grafana/grafana.ini

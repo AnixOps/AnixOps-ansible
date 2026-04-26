@@ -194,7 +194,7 @@ def deploy_key_paramiko(host, port, username, password, public_key_content):
         
         # 创建 SSH 客户端
         ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
         
         # IPv6 地址需要去掉方括号（如果有）
         connect_host = host.strip('[]')
@@ -225,26 +225,29 @@ def deploy_key_paramiko(host, port, username, password, public_key_content):
             stdout.channel.recv_exit_status()  # 等待命令执行完成
         
         print(f"{Colors.OKBLUE}📝 正在写入公钥...{Colors.ENDC}")
-        
-        # 检查公钥是否已存在
-        check_cmd = f"grep -F '{public_key_content}' ~/.ssh/authorized_keys"
-        stdin, stdout, stderr = ssh.exec_command(check_cmd)
-        exit_code = stdout.channel.recv_exit_status()
-        
-        if exit_code == 0:
+
+        # Use SFTP to safely write the public key without shell injection risk
+        sftp = ssh.open_sftp()
+
+        # Read existing authorized_keys if present
+        try:
+            with sftp.open('/root/.ssh/authorized_keys', 'r') as f:
+                existing_keys = f.read()
+        except IOError:
+            existing_keys = b''
+
+        # Check if key already exists
+        if public_key_content.encode() in existing_keys:
             print(f"{Colors.WARNING}⚠️  公钥已存在，跳过添加{Colors.ENDC}")
+            sftp.close()
             return True
-        
-        # 追加公钥到 authorized_keys
-        append_cmd = f"echo '{public_key_content}' >> ~/.ssh/authorized_keys"
-        stdin, stdout, stderr = ssh.exec_command(append_cmd)
-        exit_code = stdout.channel.recv_exit_status()
-        
-        if exit_code != 0:
-            error = stderr.read().decode()
-            print(f"{Colors.FAIL}❌ 写入公钥失败: {error}{Colors.ENDC}")
-            return False
-        
+
+        # Append the new public key
+        with sftp.open('/root/.ssh/authorized_keys', 'a') as f:
+            f.write(public_key_content + '\n')
+
+        sftp.close()
+
         print(f"{Colors.OKGREEN}✓ 公钥部署成功{Colors.ENDC}")
         return True
         
@@ -465,15 +468,61 @@ def interactive_mode():
             if not hosts:
                 print(f"{Colors.FAIL}❌ 未从 .env 文件中找到服务器 IP{Colors.ENDC}")
                 continue
-            
+
             print(f"\n{Colors.OKGREEN}✓ 从 .env 文件读取到 {len(hosts)} 个服务器{Colors.ENDC}")
             for ip in hosts:
                 print(f"  • {ip}")
-            
+
             confirm = input(f"\n继续部署到这些服务器？[Y/n]: ").strip().lower()
             if confirm in ['', 'y', 'yes']:
-                # TODO: 实现从 .env 批量部署
-                print(f"{Colors.WARNING}此功能正在开发中...{Colors.ENDC}")
+                # 获取公钥路径
+                default_key = str(Path.home() / ".ssh" / "id_rsa.pub")
+                key_file = input(f"\n公钥文件路径 [{default_key}]: ").strip() or default_key
+
+                if not Path(key_file).exists():
+                    print(f"{Colors.FAIL}❌ 公钥文件不存在: {key_file}{Colors.ENDC}")
+                    continue
+
+                public_key = read_public_key(key_file)
+                if not public_key:
+                    continue
+
+                username = input(f"\nSSH 用户名（所有服务器） [root]: ").strip() or "root"
+                password = getpass.getpass(f"SSH 密码（所有服务器）: ")
+
+                if not password:
+                    print(f"{Colors.FAIL}❌ 密码不能为空{Colors.ENDC}")
+                    continue
+
+                print(f"\n{Colors.OKBLUE}🚀 开始批量部署...{Colors.ENDC}")
+                print_separator()
+
+                results = []
+                for idx, host in enumerate(hosts, 1):
+                    port = 22
+                    print(f"\n{Colors.OKBLUE}[{idx}/{len(hosts)}] 部署到 {host}:{port}{Colors.ENDC}")
+
+                    success = deploy_key_ssh_copy_id(host, username, password, key_file)
+
+                    if not success:
+                        success = deploy_key_paramiko(host, port, username, password, public_key)
+
+                    results.append((host, port, success))
+
+                # 汇总结果
+                print(f"\n{Colors.OKBLUE}{Colors.BOLD}📊 部署结果汇总{Colors.ENDC}")
+                print_separator()
+
+                success_count = sum(1 for _, _, s in results if s)
+                fail_count = len(results) - success_count
+
+                for host, port, success in results:
+                    status = f"{Colors.OKGREEN}✓{Colors.ENDC}" if success else f"{Colors.FAIL}✗{Colors.ENDC}"
+                    print(f"{status} {host}:{port}")
+
+                print_separator()
+                print(f"成功: {Colors.OKGREEN}{success_count}{Colors.ENDC} | "
+                      f"失败: {Colors.FAIL}{fail_count}{Colors.ENDC}")
         else:
             print(f"{Colors.FAIL}❌ 无效的选择{Colors.ENDC}")
 

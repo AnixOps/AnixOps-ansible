@@ -10,8 +10,8 @@ on:
         type: choice
         options:
           - ping-only
-          - deployment/site.yml
-          - deployment/quick-setup.yml
+          - provision/site.yml
+          - provision/quick-setup.yml
           - maintenance/health-check.yml
           - maintenance/firewall-setup.yml
       target_group:
@@ -59,7 +59,7 @@ jobs:
       - name: Create inventory from config
         run: |
           echo "Generating inventory from servers-config.yml..."
-          python3 tools/generate_inventory.py github-actions > inventory/hosts.yml
+          python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
           
           echo "✓ Inventory generated"
 
@@ -86,7 +86,7 @@ jobs:
           echo "════════════════════════════════════════════════════════════"
           echo "Testing connectivity to ALL hosts..."
           echo "════════════════════════════════════════════════════════════"
-          ansible all -i inventory/hosts.yml -m ping -v
+          ansible all -i inventories/production/hosts.yml -m ping -v
 
       - name: Ping Web Servers
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
@@ -101,7 +101,7 @@ jobs:
           echo "════════════════════════════════════════════════════════════"
           echo "Testing connectivity to WEB SERVERS..."
           echo "════════════════════════════════════════════════════════════"
-          ansible web_servers -i inventory/hosts.yml -m ping -v
+          ansible web_servers -i inventories/production/hosts.yml -m ping -v
 
       - name: Ping Observability Servers
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
@@ -116,7 +116,7 @@ jobs:
           echo "════════════════════════════════════════════════════════════"
           echo "Testing connectivity to OBSERVABILITY SERVERS..."
           echo "════════════════════════════════════════════════════════════"
-          ansible observability -i inventory/hosts.yml -m ping -v
+          ansible observability -i inventories/production/hosts.yml -m ping -v
 
       - name: Gather Facts Test
         if: github.event.inputs.playbook == 'ping-only' || github.event.inputs.playbook == '' || github.event_name != 'workflow_dispatch'
@@ -130,7 +130,7 @@ jobs:
           echo "════════════════════════════════════════════════════════════"
           echo "Testing fact gathering (setup module)..."
           echo "════════════════════════════════════════════════════════════"
-          ansible all -i inventory/hosts.yml -m setup -a "filter=ansible_distribution*" -v
+          ansible all -i inventories/production/hosts.yml -m setup -a "filter=ansible_distribution*" -v
         continue-on-error: true
 
       - name: Run Ansible Playbook
@@ -153,10 +153,15 @@ jobs:
           echo "════════════════════════════════════════════════════════════"
           
           # Build and execute command
-          CMD="ansible-playbook playbooks/${PLAYBOOK} -i inventory/hosts.yml --limit ${TARGET} -v"
+          CMD="ansible-playbook playbooks/${PLAYBOOK} -i inventories/production/hosts.yml --limit ${TARGET} -v"
           
           echo "Executing: $CMD"
           eval $CMD
+
+      - name: Cleanup SSH keys
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
 
       - name: Test Summary
         if: always()

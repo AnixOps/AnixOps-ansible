@@ -175,7 +175,7 @@ print(key_path)
 **4. Ansible 配置**
 
 ```yaml
-# inventory/hosts.yml
+# inventories/production/hosts.yml
 all:
   vars:
     ansible_ssh_private_key_file: "{{ lookup('pipe', 'python3 tools/vault_fetch_key.py') }}"
@@ -280,7 +280,7 @@ op signin
 
 # 获取 SSH 密钥并使用
 op read "op://Private/AnixOps SSH Key/private key" | \
-  ansible-playbook -i inventory/hosts.yml playbooks/site.yml \
+  ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml \
   --private-key /dev/stdin
 ```
 
@@ -312,7 +312,7 @@ op read "op://Private/AnixOps SSH Key/private key" | \
 ```bash
 # 创建加密的密钥文件
 ansible-vault encrypt ~/.ssh/anixops_rsa \
-  --output inventory/group_vars/all/ssh_key_encrypted.yml
+  --output inventories/production/group_vars/all/ssh_key_encrypted.yml
 ```
 
 **2. 在 playbook 中解密并使用**
@@ -326,7 +326,7 @@ ansible-vault encrypt ~/.ssh/anixops_rsa \
   tasks:
     - name: Read encrypted SSH key
       set_fact:
-        ssh_key_content: "{{ lookup('file', 'inventory/group_vars/all/ssh_key_encrypted.yml') }}"
+        ssh_key_content: "{{ lookup('file', 'inventories/production/group_vars/all/ssh_key_encrypted.yml') }}"
     
     - name: Write SSH key to temp file
       copy:

@@ -3,7 +3,13 @@
 # =============================================================================
 # 统一配置所有服务器的防火墙规则和监控白名单
 # Unified configuration of firewall rules and monitoring whitelist for all servers
-# 
+#
+# Scope: all servers (serial: 30%, max_fail: 25%)
+# Rollback: Manual — SSH to server and run `ufw reset` or restore rules
+# Risk Level: MEDIUM (firewall changes can block access)
+# Pre-flight: Yes (fact gathering + whitelist validation)
+# Post-check: Yes (UFW/firewalld status verification)
+#
 # 功能 | Features:
 # - 配置公开端口（22, 80, 443）无白名单访问
 #   Configure public ports (22, 80, 443) without whitelist access
@@ -13,14 +19,16 @@
 #   Unified management of IP whitelist for all servers
 #
 # 使用方法 | Usage:
-#   ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml
+#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/firewall-setup.yml
 #
 # 限制特定主机 | Limit to specific hosts:
-#   ansible-playbook -i inventory/hosts.yml playbooks/firewall-setup.yml --limit web_servers
+#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/firewall-setup.yml --limit web_servers
 # =============================================================================
 
 - name: Configure firewall rules and monitoring whitelist | 配置防火墙规则和监控白名单
   hosts: all
+  serial: "30%"
+  max_fail_percentage: 25
   become: yes
   gather_facts: yes
   
@@ -52,14 +60,14 @@
           
           请在以下位置配置 monitoring_allowed_ips：
           Please configure monitoring_allowed_ips in:
-          inventory/group_vars/all/main.yml
+          inventories/production/group_vars/all/main.yml
           
           或设置环境变量（或 | or set environment variables:
           DE_1_V4_SSH, PL_1_V4_SSH, etc.)
       when: monitoring_whitelist | length == 0
 
   roles:
-    - monitoring_firewall
+    - firewall
 
   post_tasks:
     - name: Verify firewall is active (UFW) | 验证防火墙状态 (UFW)

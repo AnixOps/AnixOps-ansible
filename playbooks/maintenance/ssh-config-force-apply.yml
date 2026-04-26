@@ -11,10 +11,10 @@
 #   This will immediately restart SSH service and may disconnect current SSH sessions
 #
 # 使用方法 | Usage:
-#   ansible-playbook -i inventory/hosts.yml playbooks/ssh-config-force-apply.yml
+#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-force-apply.yml
 #
 # 限制到特定主机 | Limit to specific hosts:
-#   ansible-playbook -i inventory/hosts.yml playbooks/ssh-config-force-apply.yml --limit server_name
+#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-force-apply.yml --limit server_name
 # =============================================================================
 
 - name: Force Apply SSH Configuration | 强制应用 SSH 配置
@@ -22,6 +22,7 @@
   become: yes
   gather_facts: yes
   serial: 1  # 一次只处理一台服务器 | Process one server at a time
+  max_fail_percentage: 0  # SSH 配置零容忍失败 | Zero tolerance for SSH config failure
   
   tasks:
     # -------------------------------------------------------------------------

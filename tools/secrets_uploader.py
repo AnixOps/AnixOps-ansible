@@ -17,8 +17,9 @@ import os
 import sys
 import argparse
 import base64
+import warnings
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import requests
 from nacl import encoding, public
 
@@ -265,13 +266,59 @@ def interactive_mode():
     upload_secrets(env_file, repo, token, exclude_patterns, interactive=True)
 
 
-def upload_secrets(env_file: str, repo: str, token: str, 
-                   exclude_patterns: List[str] = None, 
+def check_gitignore(env_file: Path) -> bool:
+    """
+    检查 .env 是否在 .gitignore 中
+
+    Args:
+        env_file: .env 文件路径
+
+    Returns:
+        .env 是否已在 .gitignore 中
+    """
+    search_dir = env_file.resolve().parent
+
+    while True:
+        gitignore = search_dir / ".gitignore"
+        if gitignore.exists():
+            try:
+                with open(gitignore, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            if line == '.env' or line.endswith('/.env'):
+                                return True
+            except Exception:
+                pass
+
+            print(f"  WARNING: .gitignore found at {gitignore}, but '.env' is not listed.")
+            print(f"  Your .env file may be accidentally committed to version control.")
+            return False
+
+        parent = search_dir.parent
+        if parent == search_dir:
+            break
+
+        # Stop if we reach a .git directory root
+        if (search_dir / ".git").exists():
+            print(f"  WARNING: No .gitignore found in the repository root.")
+            print(f"  Consider adding '.env' to .gitignore to prevent accidental commits.")
+            return False
+
+        search_dir = parent
+
+    # Reached filesystem root
+    print(f"  WARNING: No .gitignore found. Consider creating one with '.env' listed.")
+    return False
+
+
+def upload_secrets(env_file: str, repo: str, token: str,
+                   exclude_patterns: List[str] = None,
                    interactive: bool = False,
                    dry_run: bool = False):
     """
     执行 secrets 上传
-    
+
     Args:
         env_file: .env 文件路径
         repo: GitHub 仓库
@@ -281,9 +328,21 @@ def upload_secrets(env_file: str, repo: str, token: str,
         dry_run: 仅测试，不实际上传
     """
     try:
+        env_path = Path(env_file)
+
+        # Security check: verify .env is in .gitignore
+        if not check_gitignore(env_path):
+            if interactive:
+                confirm = input("\nContinue anyway? (yes/no): ").strip().lower()
+                if confirm not in ['yes', 'y']:
+                    print("Operation cancelled.")
+                    sys.exit(0)
+            else:
+                print("  Proceeding (non-interactive mode).")
+
         # 解析 .env 文件
         print(f"\n📖 读取文件: {env_file}")
-        env_vars = parse_env_file(Path(env_file))
+        env_vars = parse_env_file(env_path)
         print(f"✓ 找到 {len(env_vars)} 个环境变量")
         
         # 过滤 secrets
@@ -385,7 +444,13 @@ def main():
     
     parser.add_argument(
         '--token',
-        help='GitHub Personal Access Token (需要 repo 权限)'
+        help='[DEPRECATED] GitHub Personal Access Token. Use --token-env instead.'
+    )
+
+    parser.add_argument(
+        '--token-env',
+        action='store_true',
+        help='Read GitHub token from GITHUB_TOKEN environment variable'
     )
     
     parser.add_argument(
@@ -412,12 +477,27 @@ def main():
     default_env = script_dir.parent / ".env"
     
     # 检查是否需要交互式模式
-    if not args.env and not args.repo and not args.token:
+    if not args.env and not args.repo and not args.token and not args.token_env:
         interactive_mode()
     else:
-        # 命令行模式
-        if not args.repo or not args.token:
-            print("✗ 错误: --repo 和 --token 是必需的")
+        # 命令行模式 — resolve token
+        token: Optional[str] = None
+        if args.token_env:
+            token = os.environ.get("GITHUB_TOKEN")
+            if not token:
+                print("✗ 错误: --token-env 已指定，但 GITHUB_TOKEN 环境变量未设置")
+                sys.exit(1)
+        if args.token:
+            warnings.warn(
+                "--token is deprecated. Use --token-env with GITHUB_TOKEN env var instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            print("WARNING: --token is deprecated. Use --token-env with GITHUB_TOKEN instead.")
+            token = args.token
+
+        if not args.repo or not token:
+            print("✗ 错误: --repo 和认证（--token 或 --token-env）是必需的")
             parser.print_help()
             sys.exit(1)
         
@@ -426,9 +506,9 @@ def main():
         
         print_banner()
         upload_secrets(
-            env_file, 
-            args.repo, 
-            args.token, 
+            env_file,
+            args.repo,
+            token,
             exclude_patterns,
             interactive=not args.yes,
             dry_run=args.dry_run

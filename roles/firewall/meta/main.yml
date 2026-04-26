@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: AnixOps
+  description: Firewall rules for monitoring port access control
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags: []
+dependencies: []

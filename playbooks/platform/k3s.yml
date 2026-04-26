@@ -1,0 +1,112 @@
+---
+# =============================================================================
+# Production K3s Deployment Playbook
+# =============================================================================
+# 在生产环境远程服务器上部署 K3s 集群
+# Deploy K3s cluster on production remote servers
+#
+# Scope: k8s_servers hosts
+# Rollback: Manual — run `/usr/local/bin/k3s-uninstall.sh` on server
+# Risk Level: HIGH (production Kubernetes deployment)
+# Pre-flight: Yes (connectivity check + OS facts)
+# Post-check: Yes (kubectl get nodes verification)
+#
+# ⚠️  警告 | WARNING:
+#   这将在生产服务器上部署真实的 Kubernetes 集群！
+#   This will deploy a real Kubernetes cluster on production servers!
+# =============================================================================
+#
+# 使用方法 | Usage:
+#
+#   ansible-playbook playbooks/platform/k3s.yml -i inventories/production/hosts.yml
+#
+# 前置要求 | Prerequisites:
+#   1. SSH 密钥已配置
+#   2. 目标服务器可以访问互联网
+#
+# =============================================================================
+
+- name: "Pre-flight Check: Verify Production Environment"
+  hosts: k8s_servers
+  gather_facts: yes
+
+  tasks:
+    - name: Display pre-flight check information
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Pre-flight Check: Production Environment                     ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target Server: {{ inventory_hostname }}"
+          - "🌐 IP Address: {{ ansible_host }}"
+          - "💻 OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "🔧 Python: {{ ansible_python_version }}"
+
+    - name: Check server connectivity
+      ansible.builtin.ping:
+
+    - name: Display connectivity success
+      ansible.builtin.debug:
+        msg: "✅ Server connectivity verified"
+
+- name: "Provision Production Kubernetes Cluster (K3s)"
+  hosts: k8s_servers
+  gather_facts: no
+
+  tasks:
+    - name: Display stage information
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Provision Production Kubernetes Cluster (K3s)                ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Target: {{ inventory_hostname }}"
+          - "🔧 Provider: K3s"
+          - "📦 Role: {{ k8s_role | default('master') }}"
+
+    - name: Include k8s_provision role
+      ansible.builtin.include_role:
+        name: k8s_provision
+      tags:
+        - k8s
+        - provision
+
+- name: "Verify K3s Deployment"
+  hosts: k8s_servers
+  gather_facts: no
+
+  tasks:
+    - name: Wait for K3s to be ready
+      ansible.builtin.command: kubectl get nodes
+      register: k3s_nodes
+      retries: 10
+      delay: 10
+      until: k3s_nodes.rc == 0
+      changed_when: false
+
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  🎉 K3s Deployment Completed Successfully!                      ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✅ K3s cluster is running on {{ inventory_hostname }}"
+          - ""
+          - "📋 Next Steps:"
+          - "  1. Access your server: ssh {{ ansible_user }}@{{ ansible_host }}"
+          - "  2. Check cluster: kubectl get nodes"
+          - "  3. Deploy applications: kubectl apply -f your-manifest.yaml"
+          - ""
+          - "🔍 Useful Commands (on server):"
+          - "  • View all pods: kubectl get pods --all-namespaces"
+          - "  • Get cluster info: kubectl cluster-info"
+          - "  • Check k3s status: systemctl status k3s"
+          - ""
+          - "📝 Important Files:"
+          - "  • Kubeconfig: /etc/rancher/k3s/k3s.yaml"
+          - "  • K3s config: /etc/rancher/k3s/config.yaml"

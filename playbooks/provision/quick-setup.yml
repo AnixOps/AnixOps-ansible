@@ -1,0 +1,88 @@
+# =============================================================================
+# 快速设置 Playbook | Quick Setup Playbook
+# =============================================================================
+# 仅部署基础配置、监控和防火墙，用于快速初始化新服务器
+# Only deploys basic configuration, monitoring, and firewall for quick server initialization
+#
+# Scope: all servers (serial: 30%, max_fail: 25%)
+# Rollback: ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=common"
+# Risk Level: MEDIUM (affects all servers, but limited scope)
+# Pre-flight: Yes (fact gathering + unreachable handling)
+# Post-check: Yes (health-check playbook)
+#
+# 部署内容 | Deployment Content:
+#   - 通用配置 | Common configuration
+#   - Node Exporter | Node Exporter
+#   - Promtail | Promtail
+#   - 防火墙 | Firewall
+# =============================================================================
+
+- name: Quick server setup | 快速服务器设置
+  hosts: all
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  gather_facts: yes
+  ignore_unreachable: yes
+  
+  roles:
+    - common
+    - node_exporter
+    - promtail
+    - firewall
+
+  post_tasks:
+    - name: Display quick setup summary | 显示快速设置摘要
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          ✓ 快速设置完成 | Quick setup completed
+          服务器 | Server: {{ inventory_hostname }}
+          ═══════════════════════════════════════════════════════════
+          已安装组件 | Components installed:
+          ✓ 通用配置已应用 | Common configuration applied
+          ✓ Node Exporter 已安装（端口 {{ prometheus.node_exporter.port }}）| Node Exporter installed (port {{ prometheus.node_exporter.port }})
+          ✓ Promtail 配置完成（端口 {{ loki.promtail.port }}）| Promtail configured (port {{ loki.promtail.port }})
+          ✓ 防火墙规则已配置 | Firewall rules configured:
+            - 公开端口 | Public ports: {{ firewall_public_ports | join(', ') }}
+            - 受限端口 | Restricted ports: {{ firewall_restricted_ports | join(', ') }}
+            - 白名单 IP 数量 | Whitelisted IPs: {{ monitoring_whitelist | length }}
+          ═══════════════════════════════════════════════════════════
+
+# -----------------------------------------------------------------------------
+# Post-deployment Health Check | 部署后健康检查
+# -----------------------------------------------------------------------------
+- name: Post-deployment Health Check | 部署后健康检查
+  hosts: all
+  serial: 1
+  max_fail_percentage: 50
+  become: yes
+  gather_facts: no
+  ignore_unreachable: yes
+  tasks:
+    - name: Check system uptime | 检查系统运行时间
+      command: uptime
+      register: uptime_result
+      changed_when: false
+
+    - name: Check if node_exporter is running | 检查 node_exporter 运行状态
+      ansible.builtin.systemd:
+        name: node_exporter
+      register: node_exporter_status
+
+    - name: Check if promtail is running | 检查 promtail 运行状态
+      ansible.builtin.systemd:
+        name: promtail
+      register: promtail_status
+
+    - name: Display health summary | 显示健康摘要
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          健康检查报告 | Health Check Report
+          服务器 | Server: {{ inventory_hostname }}
+          ═══════════════════════════════════════════════════════════
+          - 运行时间 | Uptime: {{ uptime_result.stdout }}
+          - Node Exporter: {{ node_exporter_status.status.ActiveState }}
+          - Promtail: {{ promtail_status.status.ActiveState }}
+          ═══════════════════════════════════════════════════════════

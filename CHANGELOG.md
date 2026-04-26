@@ -1,5 +1,38 @@
 # AnixOps Ansible 项目更新日志
 
+## v0.2.0 - 2026-04-27 🚀 Cloudflare Mesh 迁移
+
+### 🔄 网络架构重构
+
+- **Cloudflare Mesh 统一网络方案**
+  - 删除旧的 Cloudflare Tunnel/WARP 方案（`cloudflared`、`cloudflared_deploy`、`warp_connector` roles）
+  - 删除 Headscale/Tailscale 方案（`headscale`、`headscale_agent` roles）
+  - 新增 `cloudflare_mesh` role：使用 Cloudflare One Client (`warp-cli`) headless 模式
+  - 原生 IP 路由（TCP/UDP/ICMP），地址空间 `100.96.0.0/12`
+  - Dashboard 端集中管理路由和访问控制
+
+### 🗑️ 删除的文件
+
+- **删除 5 个 roles**：`cloudflared`、`cloudflared_deploy`、`warp_connector`、`headscale`、`headscale_agent`
+- **删除 2 个工具**：`tools/tunnel_manager.py`、`tools/tunnel.example`
+- **删除 1 个脚本**：`scripts/deploy_netmaker_clients.sh`
+- **删除 1 个文档**：`docs/HEADSCALE_QUICK_REF.md`
+- **删除 2 个 group_vars**：`inventories/production/group_vars/headscale_clients.yml`、`headscale_server.yml`
+
+### ✨ 新增文件
+
+- `roles/cloudflare_mesh/` - 新的 Mesh 节点 role
+- `inventories/production/hosts.yml` 新增 `mesh_nodes` 组
+
+### 🔧 配置变更
+
+- `.env.example` 新增 `CLOUDFLARE_MESH_TOKEN`、`CLOUDFLARE_MESH_NODE_NAME`、`CLOUDFLARE_MESH_ADVERTISE_SUBNETS`
+- `.env.example` 删除 `CLOUDFLARE_TUNNEL_TOKEN`、`WARP_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 等旧变量
+- `playbooks/maintenance/rollback.yml` 删除 `headscale`、`cloudflared` 回滚支持
+- `roles/README-stability.md` 更新角色清单，新增 `cloudflare_mesh`
+
+---
+
 ## v0.1.0 - 2025-10-28 🎉 重大重构版本
 
 ### 🚀 重大功能更新

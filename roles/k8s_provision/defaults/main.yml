@@ -4,10 +4,13 @@
 # =============================================================================
 
 # K8s 提供商 | K8s provider (kind or k3s)
-k8s_provider: "{{ k8s_provider | default('kind') }}"
+k8s_provider: "kind"
+
+# Kind 版本 | Kind version
+kind_version: "0.20.0"
 
 # Kind 配置 | Kind configuration
-kind_cluster_name: "cloudflared-dev"
+kind_cluster_name: "anixops-dev"
 kind_cluster_config: "/tmp/kind-config.yaml"
 kind_api_server_port: 6443
 

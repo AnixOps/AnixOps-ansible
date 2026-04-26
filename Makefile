@@ -4,7 +4,7 @@
 # 提供常用操作的快捷命令 | Provides shortcuts for common operations
 # =============================================================================
 
-.PHONY: help install lint syntax check deploy quick-setup health-check ping clean firewall-setup gen-inventory
+.PHONY: help install install-dev lint syntax check deploy quick-setup health-check ping clean firewall-setup gen-inventoryssh-fix list-hosts show-varsdeploy-dry-run validate-inventory
 
 # -----------------------------------------------------------------------------
 # 默认目标：显示帮助信息 | Default target: Show help information
@@ -15,6 +15,7 @@ help:
 	@echo "═══════════════════════════════════════════════════════════"
 	@echo ""
 	@echo "  make install        - 安装所有依赖 | Install all dependencies"
+	@echo "  make install-dev    - 安装开发依赖 | Install dev dependencies"
 	@echo "  make gen-inventory  - 生成 inventory | Generate inventory from servers-config.yml"
 	@echo "  make lint           - 运行代码检查 | Run code linting"
 	@echo "  make syntax         - 检查语法 | Check playbook syntax"
@@ -29,10 +30,10 @@ help:
 	@echo "  make list-hosts     - 列出主机 | List configured hosts"
 	@echo "  make clean          - 清理临时文件 | Clean temporary files"
 	@echo ""
-	@echo "🚀 Cloudflare Tunnel (Kubernetes with Helm):"
-	@echo "  make cf-k8s-deploy  - 部署 CF Tunnel 到 K8s (Helm) | Deploy CF Tunnel to K8s"
-	@echo "  make cf-k8s-cleanup - 清理 CF Tunnel K8s 部署 | Cleanup CF Tunnel K8s deployment"
-	@echo "  make cf-k8s-verify  - 验证 CF Tunnel 部署 | Verify CF Tunnel deployment"
+	@echo ""
+	@echo "Dry-run & Validation:"
+	@echo "  make deploy-dry-run       - Check mode deployment (no changes)"
+	@echo "  make validate-inventory   - Validate generated inventory"
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════════"
 
@@ -45,15 +46,24 @@ install:
 	@echo "✓ Dependencies installed | 依赖安装完成"
 
 # -----------------------------------------------------------------------------
+# 安装开发依赖 | Install Development Dependencies
+# -----------------------------------------------------------------------------
+install-dev: install
+	@echo "Installing dev dependencies..."
+	pip install molecule molecule-plugins[docker] pytest pip-audit pre-commit
+	pre-commit install
+	@echo "Dev dependencies installed"
+
+# -----------------------------------------------------------------------------
 # 生成 Inventory | Generate Inventory
 # -----------------------------------------------------------------------------
 gen-inventory:
 	@echo "Generating inventory from servers-config.yml... | 从 servers-config.yml 生成 inventory..."
-	@python3 tools/generate_inventory.py local > inventory/hosts.yml
-	@echo "✓ Inventory generated: inventory/hosts.yml | Inventory 已生成"
+	@python3 tools/generate_inventory.py local > inventories/production/hosts.yml
+	@echo "✓ Inventory generated: inventories/production/hosts.yml | Inventory 已生成"
 	@echo ""
 	@echo "Preview (first 30 lines) | 预览（前 30 行）:"
-	@head -n 30 inventory/hosts.yml
+	@head -n 30 inventories/production/hosts.yml
 
 # -----------------------------------------------------------------------------
 # 代码检查 | Code Linting
@@ -62,7 +72,7 @@ lint:
 	@echo "Running yamllint... | 运行 yamllint..."
 	yamllint -c .yamllint.yml .
 	@echo "Running ansible-lint... | 运行 ansible-lint..."
-	ansible-lint --force-color playbooks/*.yml roles/*/tasks/*.yml
+	ansible-lint --force-color playbooks/provision/*.yml playbooks/maintenance/*.yml roles/*/tasks/*.yml
 	@echo "✓ Lint completed | 代码检查完成"
 
 # -----------------------------------------------------------------------------
@@ -70,10 +80,10 @@ lint:
 # -----------------------------------------------------------------------------
 syntax:
 	@echo "Checking playbook syntax... | 检查 playbook 语法..."
-	ansible-playbook --syntax-check playbooks/site.yml
-	ansible-playbook --syntax-check playbooks/quick-setup.yml
-	ansible-playbook --syntax-check playbooks/health-check.yml
-	ansible-playbook --syntax-check playbooks/firewall-setup.yml
+	ansible-playbook --syntax-check playbooks/provision/site.yml
+	ansible-playbook --syntax-check playbooks/provision/quick-setup.yml
+	ansible-playbook --syntax-check playbooks/maintenance/health-check.yml
+	ansible-playbook --syntax-check playbooks/maintenance/firewall-setup.yml
 	@echo "✓ Syntax check passed | 语法检查通过"
 
 # -----------------------------------------------------------------------------
@@ -89,7 +99,7 @@ ping:
 # -----------------------------------------------------------------------------
 deploy:
 	@echo "Starting full deployment... | 开始完整部署..."
-	ansible-playbook -i inventory/hosts.yml playbooks/deployment/site.yml
+	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml
 	@echo "✓ Deployment completed | 部署完成"
 
 # -----------------------------------------------------------------------------
@@ -97,7 +107,7 @@ deploy:
 # -----------------------------------------------------------------------------
 quick-setup:
 	@echo "Starting quick setup (common + monitoring + firewall)... | 开始快速设置..."
-	ansible-playbook -i inventory/hosts.yml playbooks/deployment/quick-setup.yml
+	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/quick-setup.yml
 	@echo "✓ Quick setup completed | 快速设置完成"
 
 # -----------------------------------------------------------------------------
@@ -105,7 +115,7 @@ quick-setup:
 # -----------------------------------------------------------------------------
 firewall-setup:
 	@echo "Configuring firewall and monitoring whitelist... | 配置防火墙和监控白名单..."
-	ansible-playbook -i inventory/hosts.yml playbooks/maintenance/firewall-setup.yml
+	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/firewall-setup.yml
 	@echo "✓ Firewall setup completed | 防火墙设置完成"
 
 # -----------------------------------------------------------------------------
@@ -113,7 +123,7 @@ firewall-setup:
 # -----------------------------------------------------------------------------
 health-check:
 	@echo "Running health check... | 运行健康检查..."
-	ansible-playbook -i inventory/hosts.yml playbooks/maintenance/health-check.yml
+	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/health-check.yml
 	@echo "✓ Health check completed | 健康检查完成"
 
 # -----------------------------------------------------------------------------
@@ -121,7 +131,7 @@ health-check:
 # -----------------------------------------------------------------------------
 deploy-web:
 	@echo "Deploying web servers... | 部署 Web 服务器..."
-	ansible-playbook -i inventory/hosts.yml playbooks/deployment/web-servers.yml
+	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/web-servers.yml
 	@echo "✓ Web servers deployed | Web 服务器部署完成"
 
 # -----------------------------------------------------------------------------
@@ -129,7 +139,7 @@ deploy-web:
 # -----------------------------------------------------------------------------
 ssh-test:
 	@echo "Testing SSH configuration... | 测试 SSH 配置..."
-	ansible-playbook -i inventory/hosts.yml playbooks/ssh-config-test.yml
+	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-test.yml
 	@echo "✓ SSH configuration test completed | SSH 配置测试完成"
 
 # -----------------------------------------------------------------------------
@@ -140,7 +150,7 @@ ssh-fix:
 	@echo "Press Ctrl+C within 5 seconds to cancel... | 5 秒内按 Ctrl+C 取消..."
 	@sleep 5
 	@echo "Forcing SSH configuration apply... | 强制应用 SSH 配置..."
-	ansible-playbook -i inventory/hosts.yml playbooks/ssh-config-force-apply.yml
+	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-force-apply.yml
 	@echo "✓ SSH configuration force applied | SSH 配置已强制应用"
 
 # -----------------------------------------------------------------------------
@@ -172,58 +182,23 @@ upload-key:
 	python tools/ssh_key_manager.py
 
 # -----------------------------------------------------------------------------
-# Cloudflare Tunnel Kubernetes 部署 (Helm) | CF Tunnel K8s Deployment (Helm)
 # -----------------------------------------------------------------------------
-cf-k8s-deploy:
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo "🚀 Deploying Cloudflare Tunnel to Kubernetes (Helm)"
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo ""
-	@if [ -z "$$CLOUDFLARE_TUNNEL_TOKEN" ]; then \
-		echo "❌ Error: CLOUDFLARE_TUNNEL_TOKEN is not set!"; \
-		echo ""; \
-		echo "Please set it first:"; \
-		echo "  export CLOUDFLARE_TUNNEL_TOKEN=\"your-token-here\""; \
-		echo ""; \
-		echo "Or use:"; \
-		echo "  make cf-k8s-deploy CLOUDFLARE_TUNNEL_TOKEN=your-token"; \
-		exit 1; \
-	fi
-	@echo "📦 Token: ✅ (first 10 chars: $${CLOUDFLARE_TUNNEL_TOKEN:0:10}...)"
-	@echo "📝 Starting deployment..."
-	@echo ""
-	ansible-playbook playbooks/cloudflared_k8s_helm.yml
-	@echo ""
-	@echo "✅ Deployment completed!"
-	@echo ""
-	@echo "🔍 Verify:"
-	@echo "  kubectl get pods -n cloudflare-tunnel"
-	@echo "  make cf-k8s-verify"
 
-cf-k8s-cleanup:
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo "🗑️  Cleaning up Cloudflare Tunnel Kubernetes deployment"
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo ""
-	@./scripts/cleanup_cloudflared.sh
 
-cf-k8s-verify:
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo "🔍 Verifying Cloudflare Tunnel Kubernetes deployment"
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📦 Checking namespace..."
-	@kubectl get namespace cloudflare-tunnel 2>/dev/null || echo "❌ Namespace not found"
-	@echo ""
-	@echo "📦 Checking Helm release..."
-	@helm list -n cloudflare-tunnel
-	@echo ""
-	@echo "📦 Checking pods..."
-	@kubectl get pods -n cloudflare-tunnel -o wide
-	@echo ""
-	@echo "📊 Checking pod status..."
-	@kubectl get pods -n cloudflare-tunnel -o json | jq -r '.items[] | "\(.metadata.name): \(.status.phase)"'
-	@echo ""
-	@echo "📝 Recent logs (last 10 lines)..."
-	@kubectl logs -n cloudflare-tunnel -l app.kubernetes.io/name=cloudflared --tail=10
+# -----------------------------------------------------------------------------
+# Dry-run deployment (check mode)
+# -----------------------------------------------------------------------------
+deploy-dry-run:
+	@echo "Running deployment in check mode (no changes)..."
+	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml --check --diff -v
 
+# -----------------------------------------------------------------------------
+# Validate generated inventory
+# -----------------------------------------------------------------------------
+validate-inventory:
+	@echo "Validating inventory generation..."
+	@python3 tools/generate_inventory.py local > /tmp/ansible-inventory-test.yml
+	@python3 -c "import yaml; yaml.safe_load(open('/tmp/ansible-inventory-test.yml'))" && echo "OK: Generated inventory is valid YAML" || (echo "FAIL: Invalid YAML output"; exit 1)
+	@ansible-inventory -i /tmp/ansible-inventory-test.yml --list > /dev/null && echo "OK: Inventory is Ansible-compatible" || (echo "FAIL: Inventory not compatible"; exit 1)
+	@rm -f /tmp/ansible-inventory-test.yml
+	@echo "Inventory validation passed"

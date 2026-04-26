@@ -1,0 +1,63 @@
+---
+# =============================================================================
+# Emergency Service Cleanup - Stop Old Cloudflared/WARP/Headscale Services
+# =============================================================================
+# 临时清理脚本 - 在迁移到 Cloudflare Mesh 之前停止所有旧网络服务
+# Temporary cleanup - stop all old networking services before Mesh migration
+#
+# WARNING: This will stop connectivity services. Run with caution.
+# =============================================================================
+
+- name: "Stop Old Network Services (Pre-Mesh Cleanup)"
+  hosts: all
+  gather_facts: yes
+  become: yes
+
+  tasks:
+    - name: Stop cloudflared service
+      ansible.builtin.systemd:
+        name: cloudflared
+        state: stopped
+        enabled: no
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Stop warp-svc service (old WARP Connector)
+      ansible.builtin.systemd:
+        name: warp-svc
+        state: stopped
+        enabled: no
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Stop headscale service
+      ansible.builtin.systemd:
+        name: headscale
+        state: stopped
+        enabled: no
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Stop tailscaled service (Headscale clients)
+      ansible.builtin.systemd:
+        name: tailscaled
+        state: stopped
+        enabled: no
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Display cleanup summary
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Service Cleanup Complete                                     ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "Stopped services (if they existed):"
+          - "  • cloudflared"
+          - "  • warp-svc (old WARP Connector)"
+          - "  • headscale"
+          - "  • tailscaled"
+          - ""
+          - "Next step: Deploy Cloudflare Mesh"
+          - "  ansible-playbook playbooks/provision/site.yml --tags cloudflare_mesh"

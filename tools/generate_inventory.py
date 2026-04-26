@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 
-def load_config(config_file: str = "inventory/servers-config.yml") -> Dict[str, Any]:
+def load_config(config_file: str = "inventories/production/servers-config.yml") -> Dict[str, Any]:
     """加载服务器配置"""
     # 获取脚本所在目录的父目录（项目根目录）
     # Get the parent directory of the script (project root)

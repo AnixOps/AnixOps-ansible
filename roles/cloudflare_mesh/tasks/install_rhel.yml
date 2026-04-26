@@ -1,0 +1,41 @@
+---
+# =============================================================================
+# RHEL/CentOS Installation Tasks
+# =============================================================================
+# 安装 Cloudflare WARP RPM repo 并安装 cloudflare-warp 包
+
+- name: Install Cloudflare WARP RPM repository | 安装 Cloudflare WARP RPM repo
+  ansible.builtin.yum_repository:
+    name: cloudflare-warp
+    description: Cloudflare WARP Client
+    baseurl: https://pkg.cloudflareclient.com/rpm/
+    gpgcheck: yes
+    gpgkey: https://pkg.cloudflareclient.com/pubkey.gpg
+    enabled: yes
+
+- name: Install cloudflare-warp package | 安装 cloudflare-warp 包
+  ansible.builtin.yum:
+    name: cloudflare-warp
+    state: present
+
+- name: Configure sysctl for Mesh node | 配置 sysctl
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
+    content: |
+      net.ipv4.ip_forward=1
+      net.ipv6.conf.all.forwarding=1
+      net.ipv4.conf.all.accept_ra=1
+      net.ipv6.conf.all.accept_ra=1
+    mode: '0644'
+  notify: Restart warp-svc
+
+- name: Apply sysctl settings | 应用 sysctl 配置
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
+  changed_when: true
+
+- name: Configure MTU for Mesh interface | 配置 Mesh 接口 MTU
+  ansible.builtin.shell: |
+    ip link show | grep -q 'mtu {{ cloudflare_mesh_mtu }}' || \
+    ip link set dev CloudflareMesh mtu {{ cloudflare_mesh_mtu }} 2>/dev/null || true
+  changed_when: false
+  failed_when: false

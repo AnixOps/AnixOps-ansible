@@ -218,7 +218,7 @@ Cloudflare 代理提供：
 
 ### 1. 准备 Inventory
 
-编辑 `inventory/hosts.yml`，添加可观测性服务器组：
+编辑 `inventories/production/hosts.yml`，添加可观测性服务器组：
 
 ```yaml
 all:

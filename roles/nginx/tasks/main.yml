@@ -60,10 +60,10 @@
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_connect_timeout 300;
-      proxy_send_timeout 300;
-      proxy_read_timeout 300;
-      send_timeout 300;
+      proxy_connect_timeout {{ nginx_proxy_timeout }};
+      proxy_send_timeout {{ nginx_proxy_timeout }};
+      proxy_read_timeout {{ nginx_proxy_timeout }};
+      send_timeout {{ nginx_proxy_timeout }};
     dest: /etc/nginx/proxy_params
     mode: '0644'
 
@@ -80,6 +80,7 @@
     src: default-site.conf.j2
     dest: /etc/nginx/sites-available/default
     mode: '0644'
+    backup: yes
   when: nginx_default_site_enabled | default(true)
   notify: reload nginx
 
@@ -95,6 +96,7 @@
     src: site.conf.j2
     dest: "/etc/nginx/sites-available/{{ item.name }}.conf"
     mode: '0644'
+    backup: yes
   loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
   when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true))
   notify: reload nginx
@@ -163,59 +165,6 @@
     name: nginx
     state: started
     enabled: yes
-
-- name: Check if UFW is installed
-  stat:
-    path: /usr/sbin/ufw
-  register: ufw_installed
-  when: ansible_os_family == "Debian"
-
-- name: Install UFW if firewall is enabled
-  apt:
-    name: ufw
-    state: present
-  when:
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(false)
-    - not ufw_installed.stat.exists
-
-- name: Allow HTTP in firewall
-  ufw:
-    rule: allow
-    port: '80'
-    proto: tcp
-  when: 
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(false)
-
-- name: Allow HTTPS in firewall
-  ufw:
-    rule: allow
-    port: '443'
-    proto: tcp
-  when: 
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(false)
-
-- name: Allow HTTP in firewalld
-  firewalld:
-    service: http
-    permanent: yes
-    state: enabled
-    immediate: yes
-  when: 
-    - ansible_os_family == "RedHat"
-    - firewall_enabled | default(false)
-
-- name: Allow HTTPS in firewalld
-  firewalld:
-    service: https
-    permanent: yes
-    state: enabled
-    immediate: yes
-  when: 
-    - ansible_os_family == "RedHat"
-    - firewall_enabled | default(false)
 
 - name: Verify Nginx is responding
   uri:

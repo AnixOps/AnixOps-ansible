@@ -1,0 +1,117 @@
+---
+# =============================================================================
+# Reusable task: Download binary from GitHub release → install → systemd service
+# =============================================================================
+#
+# Usage (include_vars / import_tasks):
+#
+#   - name: Install node_exporter
+#     include_tasks: roles/common/tasks/download_binary.yml
+#     vars:
+#       binary_name:             "node_exporter"
+#       binary_version:          "{{ prometheus.node_exporter.version }}"
+#       binary_url:              "https://github.com/prometheus/node_exporter/releases/download/v{{ binary_version }}/node_exporter-{{ binary_version }}.linux-{{ _arch }}.tar.gz"
+#       install_path:            "/usr/local/bin/node_exporter"
+#       service_name:            "node_exporter"
+#       service_description:     "Node Exporter"
+#       service_exec:            "/usr/local/bin/node_exporter"
+#       service_user:            "node_exporter"
+#       binary_tmp_name:         "node_exporter"          # name of binary inside the archive (defaults to binary_name)
+#       archive_type:            "tar.gz"                  # "tar.gz" or "zip" (defaults to "tar.gz")
+#       version_check_args:      "--version"               # CLI flag to print version (defaults to "--version")
+#       version_pattern:         "version \\K[0-9.]+"      # grep -oP regex to extract version (defaults to "version \\K[0-9.]+")
+#       version_match_var:       "prometheus.node_exporter.version"  # variable holding the target version string
+#
+# Optional (defaults shown):
+#   binary_tmp_name   — filename of the binary inside the extracted archive (same as binary_name)
+#   archive_type      — "tar.gz" or "zip"; default "tar.gz"
+#   version_check_args — CLI args to get version; default "--version"
+#   version_pattern   — grep -oP pattern; default "version \\K[0-9.]+"
+#   version_match_var — the desired version string to compare against; required for version skip logic
+#   service_user      — systemd service user; omitted if not provided
+#   service_group     — systemd service group; omitted if not provided
+#
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Check if binary is already installed
+# ---------------------------------------------------------------------------
+- name: Check if {{ binary_name }} is already installed
+  ansible.builtin.stat:
+    path: "{{ install_path }}"
+  register: _binary_stat
+
+# ---------------------------------------------------------------------------
+# 2. Get installed version (when binary exists)
+# ---------------------------------------------------------------------------
+- name: Get installed {{ binary_name }} version
+  ansible.builtin.shell:
+    cmd: "{{ install_path }} {{ version_check_args | default('--version') }} 2>&1 | grep -oP '{{ version_pattern | default('version \\K[0-9.]+') }}'"
+  register: _installed_version
+  when: _binary_stat.stat.exists
+  changed_when: false
+  failed_when: false
+
+# ---------------------------------------------------------------------------
+# 3. System architecture detection
+# ---------------------------------------------------------------------------
+- name: Detect system architecture for {{ binary_name }}
+  ansible.builtin.set_fact:
+    _download_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
+# ---------------------------------------------------------------------------
+# 4. Download, extract, and install (when missing or version mismatch)
+# ---------------------------------------------------------------------------
+- name: Download and install {{ binary_name }}
+  block:
+    - name: Create temporary directory for {{ binary_name }}
+      ansible.builtin.file:
+        path: "/tmp/{{ binary_name }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download {{ binary_name }} archive
+      ansible.builtin.get_url:
+        url: "{{ binary_url }}"
+        dest: "/tmp/{{ binary_name }}/{{ binary_name }}.{{ archive_type | default('tar.gz') }}"
+        mode: "0644"
+
+    - name: Extract {{ binary_name }} archive
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ binary_name }}/{{ binary_name }}.{{ archive_type | default('tar.gz') }}"
+        dest: "/tmp/{{ binary_name }}"
+        remote_src: yes
+
+    - name: Copy {{ binary_name }} binary to {{ install_path }}
+      ansible.builtin.copy:
+        src: "/tmp/{{ binary_name }}/{{ binary_tmp_name | default(binary_name) }}"
+        dest: "{{ install_path }}"
+        mode: "0755"
+        remote_src: yes
+
+    - name: Clean up temporary files for {{ binary_name }}
+      ansible.builtin.file:
+        path: "/tmp/{{ binary_name }}"
+        state: absent
+  when: >
+    not _binary_stat.stat.exists or
+    (
+      _installed_version.stdout is defined and
+      _installed_version.stdout != '' and
+      version_match_var is defined and
+      _installed_version.stdout != version_match_var
+    )
+  notify:
+    - "restart {{ service_name }}"
+
+# ---------------------------------------------------------------------------
+# 5. Deploy systemd service unit
+# ---------------------------------------------------------------------------
+- name: Create {{ service_name }} systemd service
+  ansible.builtin.template:
+    src: "{{ service_template | default(binary_name + '.service.j2') }}"
+    dest: "/etc/systemd/system/{{ service_name }}.service"
+    mode: "0644"
+  notify:
+    - reload systemd
+    - "restart {{ service_name }}"

@@ -1,0 +1,37 @@
+# =============================================================================
+# Web 服务器 Play书 | Web Servers Playbook
+# =============================================================================
+# 专门用于部署 Web 服务器 (Nginx)
+# Specifically used for deploying web servers (Nginx)
+#
+# Scope: web_servers group (serial: 30%, max_fail: 25%)
+# Rollback: ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=nginx"
+# Risk Level: MEDIUM (affects web-facing servers)
+# Pre-flight: Yes (fact gathering)
+# Post-check: Yes (URI health check)
+# =============================================================================
+
+- name: Deploy web servers | 部署 Web 服务器
+  hosts: web_servers
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  gather_facts: yes
+  ignore_unreachable: yes
+  
+  roles:
+    - nginx
+
+  post_tasks:
+    - name: Verify Nginx is accessible | 验证 Nginx 可访问性
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}"
+        status_code: 200
+      register: web_check
+      
+    - name: Display web server info | 显示 Web 服务器信息
+      debug:
+        msg: |
+          ✓ Web 服务器部署成功 | Web server deployed successfully
+          - URL: http://{{ ansible_default_ipv4.address }}
+          - 状态 | Status: {{ web_check.status }}

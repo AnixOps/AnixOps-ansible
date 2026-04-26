@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# Grafana Server Role - Default Variables
+# =============================================================================
+
+grafana_version: "10.0.0"
+grafana_http_port: 3000
+grafana_domain: "localhost"
+grafana_admin_user: "admin"
+observability_ssl_enabled: false
+
+# NOTE: grafana_admin_password has no default -- it must be provided via
+# group_vars, inventory vars, or environment variable. The role will fail
+# explicitly if it is not set.

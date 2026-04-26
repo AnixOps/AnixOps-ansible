@@ -5,7 +5,6 @@
 # Install and configure Grafana Loki Promtail
 #
 # 功能 | Features:
-#   - 自动检测系统架构 | Auto-detect system architecture
 #   - 版本检查和更新 | Version checking and updates
 #   - 日志文件读取权限配置 | Log file read permission configuration
 #   - Systemd 服务管理 | Systemd service management
@@ -27,13 +26,6 @@
   failed_when: false
 
 # -----------------------------------------------------------------------------
-# 系统架构检测 | System Architecture Detection
-# -----------------------------------------------------------------------------
-- name: Detect system architecture | 检测系统架构
-  set_fact:
-    promtail_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
-
-# -----------------------------------------------------------------------------
 # 下载和安装 | Download and Install
 # -----------------------------------------------------------------------------
 - name: Download and install promtail | 下载并安装 promtail
@@ -46,19 +38,19 @@
 
     - name: Download promtail | 下载 promtail
       get_url:
-        url: "{{ loki.promtail.download_url }}/v{{ loki.promtail.version }}/promtail-linux-{{ promtail_arch }}.zip"
-        dest: "/tmp/promtail/promtail-linux-{{ promtail_arch }}.zip"
+        url: "{{ loki.promtail.download_url }}/v{{ loki.promtail.version }}/promtail-linux-{{ _target_arch }}.zip"
+        dest: "/tmp/promtail/promtail-linux-{{ _target_arch }}.zip"
         mode: '0644'
 
     - name: Extract promtail | 解压 promtail
       unarchive:
-        src: "/tmp/promtail/promtail-linux-{{ promtail_arch }}.zip"
+        src: "/tmp/promtail/promtail-linux-{{ _target_arch }}.zip"
         dest: /tmp/promtail
         remote_src: yes
 
     - name: Copy promtail binary | 复制 promtail 二进制文件
       copy:
-        src: "/tmp/promtail/promtail-linux-{{ promtail_arch }}"
+        src: "/tmp/promtail/promtail-linux-{{ _target_arch }}"
         dest: /usr/local/bin/promtail
         mode: '0755'
         remote_src: yes
@@ -108,6 +100,7 @@
     mode: '0644'
     owner: promtail
     group: promtail
+    backup: yes
   notify: restart promtail
 
 - name: Create promtail systemd service | 创建 promtail systemd 服务
@@ -115,6 +108,7 @@
     src: promtail.service.j2
     dest: /etc/systemd/system/promtail.service
     mode: '0644'
+    backup: yes
   notify:
     - reload systemd
     - restart promtail

@@ -104,9 +104,6 @@ Commands:
   deploy-local              创建本地 Kind 集群（不部署应用）
   deploy-remote-test        创建远程 K3s 测试集群（波兰服务器）
   deploy-production         部署到生产环境 K3s 集群
-  deploy-app                部署应用到 K8s 集群（本地 kubectl）
-  deploy-app-remote         部署应用到远程 K8s 集群（SSH 到服务器）
-  deploy-warp               部署 WARP Connector 到宿主机（建立服务器内网连接）
   deploy-k8s-control-panel  部署 K8s 控制面板（Dashboard + 反向代理 + SSL）
   cleanup-local             清理本地 Kind 集群
   cleanup-remote-test       清理远程测试集群
@@ -119,12 +116,7 @@ Commands:
 
 Options:
   -t, --token TOKEN         Cloudflare Tunnel Token (仅生产环境需要)
-  -w, --warp-token TOKEN    WARP Connector Token (用于服务器内网互联)
-  -g, --target-group GROUP  目标分组 (默认: nginx_test)
-  -m, --manifest-dir DIR    K8s manifest 目录 (默认: k8s_manifests/api-with-cloudflared-sidecar)
-  -i, --inventory FILE      指定 inventory 文件 (默认: inventory/hosts.yml)
-  --warp-install-method     WARP 安装方式: package(推荐) 或 docker (默认: package)
-  --warp-log-level          WARP 日志级别: debug, info, warn, error (默认: info)
+  -i, --inventory FILE      指定 inventory 文件 (默认: inventories/production/hosts.yml)
   --vault-password FILE     Vault 密码文件
   --ask-vault-pass          交互式输入 Vault 密码
   --tags TAGS               只运行指定的 tags
@@ -137,22 +129,13 @@ Examples:
   $0 quick-setup
 
   # 快速初始化指定服务器
-  $0 quick-setup -i inventory/hosts.yml --limit jp-2,uk-1
+  $0 quick-setup -i inventories/production/hosts.yml --limit jp-2,uk-1
 
   # 创建本地 Kind 集群（不需要 token）
   $0 deploy-local
 
   # 创建远程 K3s 测试集群
   $0 deploy-remote-test
-
-  # 部署 WARP Connector 到所有服务器（宿主机）
-  $0 deploy-warp -w YOUR_WARP_TOKEN
-
-  # 部署 WARP 使用 Docker 方式
-  $0 deploy-warp -w YOUR_WARP_TOKEN --warp-install-method docker
-
-  # 部署 WARP 启用 debug 日志
-  $0 deploy-warp -w YOUR_WARP_TOKEN --warp-log-level debug
 
   # 部署 K8s 控制面板（Dashboard + 反向代理 + SSL）
   $0 deploy-k8s-control-panel
@@ -162,12 +145,6 @@ Examples:
 
   # 只更新 nginx 配置
   $0 deploy-k8s-control-panel --tags config
-
-  # 部署应用到远程 K3s 集群（nginx_test 分组）
-  $0 deploy-app --target-group nginx_test
-
-  # 部署应用到指定 manifest 目录
-  $0 deploy-app -g nginx_test -m k8s_manifests/my-app
 
   # 部署到生产（使用 Vault）
   $0 deploy-production --vault-password ~/.vault_pass
@@ -214,23 +191,8 @@ check_requirements() {
     print_success "All requirements met"
 }
 
-# 检查 Token
-check_token() {
-    if [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-        print_warning "CLOUDFLARE_TUNNEL_TOKEN not set"
-        echo ""
-        echo "Please provide your Cloudflare Tunnel Token:"
-        read -r -p "Token: " token
-        export CLOUDFLARE_TUNNEL_TOKEN="$token"
-    else
-        print_success "Using CLOUDFLARE_TUNNEL_TOKEN from environment"
-    fi
-    
-    if [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-        print_error "No token provided. Cannot proceed."
-        exit 1
-    fi
-}
+# 检查 Token (已弃用 - Cloudflare Mesh 使用 CLOUDFLARE_MESH_TOKEN)
+# check_token 函数已移除，Mesh token 在 cloudflare_mesh role 中验证
 
 # 部署到本地
 deploy_local() {
@@ -240,7 +202,7 @@ deploy_local() {
     # 移除 check_token - 不再需要 Cloudflare Token
     
     local ansible_args=()
-    ansible_args+=("-i" "$PROJECT_ROOT/inventories/local/hosts.ini")
+    ansible_args+=("-i" "$PROJECT_ROOT/inventories/development/hosts.yml")
     
     if [ "$VERBOSE" = true ]; then
         ansible_args+=("-v")
@@ -263,7 +225,7 @@ deploy_local() {
     echo ""
     
     cd "$PROJECT_ROOT"
-    ansible-playbook playbooks/deployment/local.yml "${ansible_args[@]}"
+    ansible-playbook playbooks/platform/kind.yml "${ansible_args[@]}"
     
     if [ $? -eq 0 ]; then
         echo ""
@@ -274,7 +236,7 @@ deploy_local() {
         echo "  kubectl get pods --all-namespaces"
         echo ""
         echo "Deploy applications:"
-        echo "  kubectl apply -f k8s_manifests/api-with-cloudflared-sidecar/deployment.yaml"
+        echo "  kubectl apply -f your-manifest.yaml"
         echo ""
     else
         print_error "Deployment failed"
@@ -292,7 +254,7 @@ deploy_remote_test() {
     load_env "$PROJECT_ROOT/.env" || exit 1
     
     local ansible_args=()
-    ansible_args+=("-i" "$PROJECT_ROOT/inventory/hosts.yml")
+    ansible_args+=("-i" "$PROJECT_ROOT/inventories/production/hosts.yml")
     
     if [ "$VERBOSE" = true ]; then
         ansible_args+=("-v")
@@ -321,7 +283,7 @@ deploy_remote_test() {
     export ANSIBLE_USER="${ANSIBLE_USER:-root}"
     export ANSIBLE_PORT="${ANSIBLE_PORT:-22}"
     
-    ansible-playbook playbooks/deployment/remote-test.yml "${ansible_args[@]}"
+    ansible-playbook playbooks/platform/k3s-test.yml "${ansible_args[@]}"
     
     if [ $? -eq 0 ]; then
         echo ""
@@ -333,7 +295,7 @@ deploy_remote_test() {
         echo "  kubectl get pods --all-namespaces"
         echo ""
         echo "Deploy applications:"
-        echo "  kubectl apply -f k8s_manifests/api-with-cloudflared-sidecar/deployment.yaml"
+        echo "  kubectl apply -f your-manifest.yaml"
         echo ""
     else
         print_error "Deployment failed"
@@ -341,62 +303,7 @@ deploy_remote_test() {
     fi
 }
 
-# 部署应用到 K8s 集群
-deploy_app() {
-    print_header "Deploy Application to K8s Cluster"
-    
-    check_requirements
-    
-    # 加载环境变量
-    load_env "$PROJECT_ROOT/.env" || exit 1
-    
-    # 默认值
-    local target_group="${TARGET_GROUP:-nginx_test}"
-    local manifest_dir="${MANIFEST_DIR:-k8s_manifests/api-with-cloudflared-sidecar}"
-    
-    print_step "Deployment Configuration"
-    echo "  Target Group: $target_group"
-    echo "  Manifest Dir: $manifest_dir"
-    echo ""
-    
-    local ansible_args=()
-    ansible_args+=("-i" "$PROJECT_ROOT/inventory/hosts.yml")
-    ansible_args+=("-e" "target_group=$target_group")
-    ansible_args+=("-e" "manifest_dir=$manifest_dir")
-    
-    if [ "$VERBOSE" = true ]; then
-        ansible_args+=("-v")
-    fi
-    
-    if [ -n "$TAGS" ]; then
-        ansible_args+=("--tags" "$TAGS")
-    fi
-    
-    if [ -n "$SKIP_TAGS" ]; then
-        ansible_args+=("--skip-tags" "$SKIP_TAGS")
-    fi
-    
-    if [ "$DRY_RUN" = true ]; then
-        ansible_args+=("--check")
-        print_warning "Running in DRY-RUN mode"
-    fi
-    
-    print_step "Running Ansible playbook..."
-    echo ""
-    
-    cd "$PROJECT_ROOT"
-    
-    ansible-playbook playbooks/deployment/deploy_app_to_k8s.yml "${ansible_args[@]}"
-    
-    if [ $? -eq 0 ]; then
-        echo ""
-        print_success "Application deployed successfully!"
-        echo ""
-    else
-        print_error "Deployment failed"
-        exit 1
-    fi
-}
+# 部署 WARP Connector（宿主机方式）
 
 # 部署 WARP Connector（宿主机方式）
 # 快速设置服务器
@@ -421,7 +328,7 @@ quick_setup() {
     if [ -n "$INVENTORY_FILE" ]; then
         ansible_args+=("-i" "$INVENTORY_FILE")
     else
-        ansible_args+=("-i" "$PROJECT_ROOT/inventory/hosts.yml")
+        ansible_args+=("-i" "$PROJECT_ROOT/inventories/production/hosts.yml")
     fi
     
     if [ "$VERBOSE" = true ]; then
@@ -445,7 +352,7 @@ quick_setup() {
     echo ""
     
     cd "$PROJECT_ROOT"
-    ansible-playbook playbooks/deployment/quick-setup.yml "${ansible_args[@]}"
+    ansible-playbook playbooks/provision/quick-setup.yml "${ansible_args[@]}"
     
     if [ $? -eq 0 ]; then
         echo ""
@@ -461,101 +368,7 @@ quick_setup() {
     fi
 }
 
-deploy_warp() {
-    print_header "Deploy WARP Connector (Host Installation)"
-    
-    check_requirements
-    
-    # 加载环境变量
-    load_env "$PROJECT_ROOT/.env" || exit 1
-    
-    # 检查 WARP token
-    if [ -z "$WARP_TOKEN" ]; then
-        print_error "WARP Connector Token not provided!"
-        echo ""
-        echo "Please provide the WARP token using:"
-        echo "  -w YOUR_WARP_TOKEN"
-        echo "  or set WARP_TOKEN environment variable"
-        echo ""
-        echo "To get a WARP token:"
-        echo "  1. Visit https://one.dash.cloudflare.com/"
-        echo "  2. Go to Networks → Tunnels → WARP Connectors"
-        echo "  3. Create a new WARP Connector"
-        echo "  4. Copy the token"
-        echo ""
-        exit 1
-    fi
-    
-    # 默认值
-    local install_method="${WARP_INSTALL_METHOD:-package}"
-    local log_level="${WARP_LOG_LEVEL:-info}"
-    
-    print_step "WARP Connector Configuration"
-    echo "  Install Method: $install_method (package/docker)"
-    echo "  Log Level: $log_level"
-    echo "  Token: ${WARP_TOKEN:0:20}...${WARP_TOKEN: -10}"
-    echo ""
-    
-    local ansible_args=()
-    # 使用 ansible.cfg 中配置的默认 inventory
-    ansible_args+=("-e" "warp_token=$WARP_TOKEN")
-    ansible_args+=("-e" "warp_install_method=$install_method")
-    ansible_args+=("-e" "warp_log_level=$log_level")
-    
-    if [ -n "$INVENTORY_FILE" ]; then
-        ansible_args+=("-i" "$INVENTORY_FILE")
-    fi
-    
-    if [ "$VERBOSE" = true ]; then
-        ansible_args+=("-vv")
-    fi
-    
-    if [ -n "$TAGS" ]; then
-        ansible_args+=("--tags" "$TAGS")
-    fi
-    
-    if [ -n "$SKIP_TAGS" ]; then
-        ansible_args+=("--skip-tags" "$SKIP_TAGS")
-    fi
-    
-    if [ "$DRY_RUN" = true ]; then
-        ansible_args+=("--check")
-        print_warning "Running in DRY-RUN mode"
-    fi
-    
-    print_step "Running Ansible playbook..."
-    echo ""
-    
-    cd "$PROJECT_ROOT"
-    
-    ansible-playbook playbooks/deployment/deploy_warp_host.yml "${ansible_args[@]}"
-    
-    if [ $? -eq 0 ]; then
-        echo ""
-        print_success "WARP Connector deployed successfully!"
-        echo ""
-        echo "═══════════════════════════════════════════════════════════"
-        echo "✅ WARP Connector 部署完成"
-        echo ""
-        echo "📋 常用命令:"
-        echo "  • 查看状态: warp-cli status"
-        echo "  • 查看日志: journalctl -u warp-svc -f"
-        echo "  • 重启服务: systemctl restart warp-svc"
-        echo ""
-        echo "🌐 下一步:"
-        echo "  1. 在 Cloudflare Zero Trust Dashboard 配置访问策略"
-        echo "     https://one.dash.cloudflare.com/"
-        echo "  2. 测试服务器间的连通性"
-        echo "  3. 配置应用程序使用 WARP 网络"
-        echo ""
-        echo "📚 文档: roles/warp_connector/README.md"
-        echo "═══════════════════════════════════════════════════════════"
-        echo ""
-    else
-        print_error "Deployment failed"
-        exit 1
-    fi
-}
+# 部署 K8s 控制面板 (Dashboard + 反向代理 + SSL)
 
 # 部署 K8s 控制面板 (Dashboard + 反向代理 + SSL)
 deploy_k8s_control_panel() {
@@ -604,7 +417,7 @@ deploy_k8s_control_panel() {
     echo ""
     
     local ansible_args=()
-    ansible_args+=("-i" "$PROJECT_ROOT/inventory/hosts.yml")
+    ansible_args+=("-i" "$PROJECT_ROOT/inventories/production/hosts.yml")
     
     if [ "$VERBOSE" = true ]; then
         ansible_args+=("-vv")
@@ -651,7 +464,7 @@ deploy_k8s_control_panel() {
         echo "   URL: https://${K8S_DASHBOARD_DOMAIN:-k8s-dashboard.anixops.com}"
         echo ""
         echo "🔑 Get Access Token:"
-        echo "   ssh root@\$(grep pl-1 inventory/hosts.yml | grep ansible_host | awk '{print \$2}' | cut -d= -f2) 'cat /root/k8s-dashboard-token.txt'"
+        echo "   ssh root@\$(grep pl-1 inventories/production/hosts.yml | grep ansible_host | awk '{print \$2}' | cut -d= -f2) 'cat /root/k8s-dashboard-token.txt'"
         echo ""
         echo "📋 Or view token directly on server:"
         echo "   /root/k8s-dashboard-token.txt"
@@ -671,29 +484,17 @@ deploy_k8s_control_panel() {
 # 部署到生产
 deploy_production() {
     print_header "Deploy to Production (K3s)"
-    
+
     check_requirements
-    
+
     local ansible_args=()
-    ansible_args+=("-i" "$PROJECT_ROOT/inventories/production/hosts.ini")
-    
+    ansible_args+=("-i" "$PROJECT_ROOT/inventories/production/hosts.yml")
+
     if [ -n "$VAULT_PASSWORD_FILE" ]; then
         ansible_args+=("--vault-password-file" "$VAULT_PASSWORD_FILE")
     elif [ "$ASK_VAULT_PASS" = true ]; then
         ansible_args+=("--ask-vault-pass")
     fi
-    
-    if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-        ansible_args+=("--extra-vars" "cloudflare_tunnel_token=${CLOUDFLARE_TUNNEL_TOKEN}")
-    elif [ -f "$PROJECT_ROOT/vars/secrets.yml" ]; then
-        ansible_args+=("--extra-vars" "@$PROJECT_ROOT/vars/secrets.yml")
-    else
-        print_error "No credentials provided!"
-        echo ""
-        echo "Please use one of:"
-        echo "  1. -t TOKEN or set CLOUDFLARE_TUNNEL_TOKEN"
-        echo "  2. Create vars/secrets.yml with ansible-vault"
-        exit 1
     fi
     
     if [ "$VERBOSE" = true ]; then
@@ -725,7 +526,7 @@ deploy_production() {
     echo ""
     
     cd "$PROJECT_ROOT"
-    ansible-playbook playbooks/deployment/production.yml "${ansible_args[@]}"
+    ansible-playbook playbooks/platform/k3s.yml "${ansible_args[@]}"
     
     if [ $? -eq 0 ]; then
         echo ""
@@ -740,7 +541,7 @@ deploy_production() {
 cleanup_local() {
     print_header "Cleanup Local Environment"
     
-    local cluster_name="${1:-cloudflared-dev}"
+    local cluster_name="${1:-anixops-dev}"
     
     if ! command -v kind &> /dev/null; then
         print_error "Kind is not installed"
@@ -792,7 +593,7 @@ cleanup_production() {
     
     if [ -f "playbooks/maintenance/cleanup-production.yml" ]; then
         ansible-playbook playbooks/maintenance/cleanup-production.yml \
-            -i inventories/production/hosts.ini
+            -i inventories/production/hosts.yml
     else
         print_warning "Cleanup playbook not found"
         echo ""
@@ -828,8 +629,8 @@ status_local() {
     kubectl cluster-info 2>/dev/null || echo "  Cluster not accessible"
     
     echo ""
-    print_step "Cloudflared pods:"
-    kubectl get pods -n cloudflared 2>/dev/null || echo "  Namespace not found"
+    print_step "All pods:"
+    kubectl get pods --all-namespaces 2>/dev/null || echo "  Cannot list pods"
     
     echo ""
     print_step "All namespaces:"
@@ -852,7 +653,7 @@ status_production() {
     fi
     
     ansible-playbook playbooks/maintenance/health-check.yml \
-        -i inventories/production/hosts.ini
+        -i inventories/production/hosts.yml
 }
 
 # 运行测试
@@ -860,12 +661,12 @@ run_tests() {
     print_header "Running Tests"
     
     print_step "Syntax check..."
-    ansible-playbook playbooks/deployment/local.yml \
-        -i inventories/local/hosts.ini \
+    ansible-playbook playbooks/platform/kind.yml \
+        -i inventories/development/hosts.yml \
         --syntax-check
     
     print_step "Local inventory test..."
-    ansible-inventory -i inventories/local/hosts.ini --list
+    ansible-inventory -i inventories/development/hosts.yml --list
     
     print_success "Tests passed"
 }
@@ -881,46 +682,21 @@ main() {
     SKIP_TAGS=""
     TARGET_GROUP=""
     MANIFEST_DIR=""
-    WARP_TOKEN=""
-    WARP_INSTALL_METHOD="package"
-    WARP_LOG_LEVEL="info"
+    CLOUDFLARE_MESH_TOKEN=""
     INVENTORY_FILE=""
     
     # 解析参数
     COMMAND=""
     while [[ $# -gt 0 ]]; do
         case $1 in
-            quick-setup|deploy-local|deploy-remote-test|deploy-production|deploy-app|deploy-app-remote|deploy-warp|deploy-k8s-control-panel|cleanup-local|cleanup-remote-test|cleanup-production|status-local|status-remote-test|status-production|test|help)
+            quick-setup|deploy-local|deploy-remote-test|deploy-production|deploy-k8s-control-panel|cleanup-local|cleanup-remote-test|cleanup-production|status-local|status-remote-test|status-production|test|help)
                 COMMAND="$1"
                 shift
-                ;;
-            -t|--token)
-                export CLOUDFLARE_TUNNEL_TOKEN="$2"
-                shift 2
-                ;;
-            -w|--warp-token)
-                export WARP_TOKEN="$2"
-                shift 2
-                ;;
-            -g|--target-group)
-                TARGET_GROUP="$2"
-                shift 2
-                ;;
-            -m|--manifest-dir)
-                MANIFEST_DIR="$2"
-                shift 2
                 ;;
             -i|--inventory)
                 INVENTORY_FILE="$2"
                 shift 2
                 ;;
-            --warp-install-method)
-                WARP_INSTALL_METHOD="$2"
-                shift 2
-                ;;
-            --warp-log-level)
-                WARP_LOG_LEVEL="$2"
-                shift 2
                 ;;
             --vault-password)
                 VAULT_PASSWORD_FILE="$2"
@@ -965,17 +741,6 @@ main() {
             ;;
         deploy-remote-test)
             deploy_remote_test
-            ;;
-        deploy-app)
-            deploy_app
-            ;;
-        deploy-app-remote)
-            print_error "deploy-app-remote not yet implemented"
-            echo "Please use: bash anixops.sh deploy-app -g nginx_test"
-            exit 1
-            ;;
-        deploy-warp)
-            deploy_warp
             ;;
         deploy-k8s-control-panel)
             deploy_k8s_control_panel

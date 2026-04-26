@@ -1,0 +1,75 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [ main, staging, deploy ]
+  push:
+    branches: [ main, staging, deploy ]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6am
+  workflow_dispatch:
+
+jobs:
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@v3
+        with:
+          extra_args: --only-verified
+
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies and audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pip-audit
+          pip-audit --requirement requirements.txt
+
+  ssh-key-cleanup-check:
+    name: SSH Key Exposure Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for exposed private keys in repo
+        run: |
+          echo "Checking for accidentally committed private keys..."
+          FOUND=0
+          for ext in pem key id_rsa id_ed25519; do
+            if git ls-files "*.${ext}" | grep -q .; then
+              echo "FAIL: Found private key files with extension .${ext}"
+              git ls-files "*.${ext}"
+              FOUND=1
+            fi
+          done
+          # Check for .env files
+          if git ls-files ".env" | grep -q .; then
+            echo "FAIL: .env file is tracked in git"
+            FOUND=1
+          fi
+          if [ $FOUND -eq 1 ]; then
+            exit 1
+          fi
+          echo "OK: No exposed private keys or .env files found"

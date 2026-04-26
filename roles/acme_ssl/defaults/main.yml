@@ -1,0 +1,10 @@
+---
+# =============================================================================
+# ACME SSL Role - Default Variables
+# =============================================================================
+
+acme_email: ""
+acme_dns_provider: "cloudflare"
+acme_domains: []
+cloudflare_api_token: ""
+cloudflare_zone_id: ""
