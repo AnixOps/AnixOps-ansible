@@ -1,0 +1,74 @@
+---
+# =============================================================================
+# Lifecycle Management Playbook
+# =============================================================================
+# 统一的服务生命周期管理入口 | Unified service lifecycle management entry point
+#
+# Usage:
+#   # 查看状态
+#   ansible-playbook playbooks/maintenance/lifecycle.yml \
+#     -e "lifecycle_target_role=nginx" --tags status
+#
+#   # 部署（含 hooks）
+#   ansible-playbook playbooks/maintenance/lifecycle.yml \
+#     -e "lifecycle_target_role=prometheus" --tags deploy
+#
+#   # 回滚
+#   ansible-playbook playbooks/maintenance/lifecycle.yml \
+#     -e "lifecycle_target_role=nginx lifecycle_version=prev" --tags rollback
+#
+#   # 清理
+#   ansible-playbook playbooks/maintenance/lifecycle.yml \
+#     -e "lifecycle_target_role=loki cleanup_confirm=yes" --tags cleanup
+#
+# Tags: status, deploy, rollback, cleanup
+# =============================================================================
+
+- name: "Lifecycle Management | 生命周期管理"
+  hosts: "{{ lifecycle_target_hosts | default('all') }}"
+  serial: "{{ lifecycle_serial | default(1) }}"
+  max_fail_percentage: "{{ lifecycle_max_fail | default(0) }}"
+  become: yes
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Validate lifecycle parameters | 验证参数
+      ansible.builtin.fail:
+        msg: |
+          必须指定 lifecycle_target_role！
+          Must specify lifecycle_target_role!
+
+          用法 | Usage:
+            ansible-playbook lifecycle.yml -e "lifecycle_target_role=<role>" --tags <action>
+
+          支持的 roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common, cloudflare_mesh
+          支持的 actions: status, deploy, rollback, cleanup
+      when: lifecycle_target_role is not defined
+
+    - name: Display lifecycle operation info | 显示操作信息
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Lifecycle Management                                          ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "🎯 Role: {{ lifecycle_target_role }}"
+          - "🖥️ Hosts: {{ ansible_play_hosts | join(', ') }}"
+          - "⚙️ Action: {{ ansible_run_tags | join(', ') }}"
+
+  roles:
+    - role: lifecycle
+      when: lifecycle_target_role is defined
+
+  post_tasks:
+    - name: Display final result | 显示最终结果
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  ✓ Lifecycle Operation Completed                               ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "Role: {{ lifecycle_target_role }}"
+          - "Result: {{ lifecycle_result | default('completed') }}"
+          - "Hosts: {{ ansible_play_hosts | length }}"

@@ -32,3 +32,16 @@ nginx_custom_configs: []
 #     content: |
 #       add_header X-Frame-Options "SAMEORIGIN";
 #       add_header X-XSS-Protection "1; mode=block";
+
+# =============================================================================
+# Lifecycle Configuration | 生命周期配置
+# =============================================================================
+nginx_port: 80
+nginx_health_url: "http://localhost"
+nginx_backup_files:
+  - /etc/nginx/nginx.conf
+  - /etc/nginx/sites-available/default
+nginx_packages:
+  - nginx
+nginx_config_dirs:
+  - /etc/nginx

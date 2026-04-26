@@ -1,0 +1,43 @@
+---
+# =============================================================================
+# Lifecycle Role - Main Entry Point
+# =============================================================================
+# 统一的生命周期 hook 执行入口 | Unified lifecycle hook execution entry point
+
+- name: Validate lifecycle parameters | 验证生命周期参数
+  ansible.builtin.fail:
+    msg: "必须指定 lifecycle_target_role 和 lifecycle_hook_type"
+  when:
+    - lifecycle_target_role is not defined
+    - lifecycle_hook_type is not defined
+
+- name: Initialize lifecycle context | 初始化生命周期上下文
+  ansible.builtin.set_fact:
+    lifecycle_context:
+      role: "{{ lifecycle_target_role }}"
+      hook: "{{ lifecycle_hook_type }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      host: "{{ inventory_hostname }}"
+    deploy_start_time_epoch: "{{ ansible_date_time.epoch }}"
+
+- name: Ensure state directory exists | 确保状态目录存在
+  ansible.builtin.file:
+    path: "{{ state_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Execute hook based on type | 根据类型执行 hook
+  ansible.builtin.include_tasks: "hooks/{{ lifecycle_hook_type }}.yml"
+  when: hooks_enabled | default(true)
+
+- name: Display lifecycle execution summary | 显示执行摘要
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════
+      Lifecycle Hook: {{ lifecycle_hook_type }}
+      Role: {{ lifecycle_target_role }}
+      Host: {{ inventory_hostname }}
+      Status: {{ lifecycle_result | default('completed') }}
+      ═══════════════════════════════════════════════════════════

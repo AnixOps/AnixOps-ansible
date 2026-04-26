@@ -4,3 +4,13 @@ cloudflare_mesh_node_name: "{{ inventory_hostname }}"
 cloudflare_mesh_mtu: 1381
 cloudflare_mesh_service_name: warp-svc
 cloudflare_mesh_advertise_subnets: "{{ lookup('env', 'CLOUDFLARE_MESH_ADVERTISE_SUBNETS') | default('') }}"
+
+# =============================================================================
+# Lifecycle Configuration | 生命周期配置
+# =============================================================================
+cloudflare_mesh_port: 0
+cloudflare_mesh_health_url: ""
+cloudflare_mesh_backup_files: []
+cloudflare_mesh_packages:
+  - cloudflare-warp
+cloudflare_mesh_config_dirs: []

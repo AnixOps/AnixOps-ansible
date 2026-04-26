@@ -111,55 +111,42 @@ Commands:
   status-local              查看本地集群状态
   status-remote-test        查看远程测试集群状态
   status-production         查看生产集群状态
-  test                      运行测试
-  help                      显示此帮助信息
+
+Lifecycle Commands:
+  status <role>             查看服务部署状态和历史
+  rollback <role> [version] 回滚服务到指定版本（prev 或具体版本号）
+  cleanup-role <role>       清理服务（停止、删除配置、保留最近备份）
 
 Options:
-  -t, --token TOKEN         Cloudflare Tunnel Token (仅生产环境需要)
-  -i, --inventory FILE      指定 inventory 文件 (默认: inventories/production/hosts.yml)
-  --vault-password FILE     Vault 密码文件
-  --ask-vault-pass          交互式输入 Vault 密码
-  --tags TAGS               只运行指定的 tags
-  --skip-tags TAGS          跳过指定的 tags
-  -v, --verbose             详细输出
+  --target <host|group>     限定操作目标主机或主机组
+  --force                   跳过确认提示，直接执行
   --dry-run                 测试运行（不执行实际操作）
+  --keep-backups <n>        清理时保留最近 N 个备份（默认 5）
 
 Examples:
   # 快速初始化所有服务器（设置主机名、监控、防火墙）
   $0 quick-setup
 
-  # 快速初始化指定服务器
-  $0 quick-setup -i inventories/production/hosts.yml --limit jp-2,uk-1
+  # 查看 nginx 服务部署状态
+  $0 status nginx
 
-  # 创建本地 Kind 集群（不需要 token）
-  $0 deploy-local
+  # 查看指定主机的 prometheus 状态
+  $0 status prometheus --target jp-1
 
-  # 创建远程 K3s 测试集群
-  $0 deploy-remote-test
+  # 回滚 nginx 到上一版本
+  $0 rollback nginx
 
-  # 部署 K8s 控制面板（Dashboard + 反向代理 + SSL）
-  $0 deploy-k8s-control-panel
+  # 回滚 prometheus 到指定版本
+  $0 rollback nginx v20260426_120000
 
-  # 只部署 Dashboard，跳过 SSL
-  $0 deploy-k8s-control-panel --tags dashboard
+  # 回滚到指定主机
+  $0 rollback nginx --target jp-1
 
-  # 只更新 nginx 配置
-  $0 deploy-k8s-control-panel --tags config
+  # 清理 loki 服务（保留最近 10 个备份）
+  $0 cleanup-role loki --keep-backups 10
 
-  # 部署到生产（使用 Vault）
-  $0 deploy-production --vault-password ~/.vault_pass
-
-  # 清理本地环境
-  $0 cleanup-local
-
-  # 查看远程测试集群状态
-  $0 status-remote-test
-
-  # 只创建 K8s 集群，不做其他操作
-  $0 deploy-remote-test --tags k8s
-
-  # 详细输出
-  $0 deploy-remote-test -v
+  # 强制清理（跳过确认）
+  $0 cleanup-role nginx --force
 
 EOF
 }
@@ -671,6 +658,144 @@ run_tests() {
     print_success "Tests passed"
 }
 
+# =============================================================================
+# Lifecycle 命令函数
+# =============================================================================
+
+# 查看服务状态
+lifecycle_status() {
+    if [ -z "$LIFECYCLE_ROLE" ]; then
+        print_error "必须指定 role 名称"
+        echo ""
+        echo "用法: $0 status <role> [--target <host|group>]"
+        echo ""
+        echo "支持的 roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common, cloudflare_mesh"
+        exit 1
+    fi
+
+    print_header "Service Status: ${LIFECYCLE_ROLE}"
+
+    cd "$PROJECT_ROOT"
+
+    local ansible_args=()
+    ansible_args+=("-e" "lifecycle_target_role=${LIFECYCLE_ROLE}")
+    ansible_args+=("--tags" "status")
+
+    if [ -n "$LIFECYCLE_TARGET" ]; then
+        ansible_args+=("--limit" "${LIFECYCLE_TARGET}")
+    fi
+
+    ansible_args+=("-i" "${INVENTORY_FILE:-inventories/production/hosts.yml}")
+
+    if [ "$DRY_RUN" = true ]; then
+        print_warning "Dry-run mode - only showing what would be executed"
+        echo "ansible-playbook playbooks/maintenance/lifecycle.yml ${ansible_args[*]}"
+    else
+        ansible-playbook playbooks/maintenance/lifecycle.yml "${ansible_args[@]}"
+    fi
+}
+
+# 回滚服务
+lifecycle_rollback() {
+    if [ -z "$LIFECYCLE_ROLE" ]; then
+        print_error "必须指定 role 名称"
+        echo ""
+        echo "用法: $0 rollback <role> [version] [--target <host|group>] [--force]"
+        echo ""
+        echo "支持的 roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common"
+        echo "version: prev (上一版本) 或 vYYYYMMDD_HHMMSS (具体版本)"
+        exit 1
+    fi
+
+    print_header "Rollback Service: ${LIFECYCLE_ROLE}"
+
+    # 用户确认
+    if [ "$LIFECYCLE_FORCE" != true ]; then
+        print_warning "即将回滚 ${LIFECYCLE_ROLE} 到 ${LIFECYCLE_VERSION:-prev}"
+        echo ""
+        read -p "确认执行回滚? (yes/no): " confirm
+        if [ "$confirm" != "yes" ]; then
+            print_warning "已取消"
+            exit 0
+        fi
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    local ansible_args=()
+    ansible_args+=("-e" "lifecycle_target_role=${LIFECYCLE_ROLE}")
+    ansible_args+=("-e" "lifecycle_hook_type=post_rollback")
+    ansible_args+=("--tags" "rollback")
+
+    if [ -n "$LIFECYCLE_VERSION" ]; then
+        ansible_args+=("-e" "lifecycle_version=${LIFECYCLE_VERSION}")
+    fi
+
+    if [ -n "$LIFECYCLE_TARGET" ]; then
+        ansible_args+=("--limit" "${LIFECYCLE_TARGET}")
+    fi
+
+    ansible_args+=("-i" "${INVENTORY_FILE:-inventories/production/hosts.yml}")
+
+    if [ "$DRY_RUN" = true ]; then
+        print_warning "Dry-run mode - only showing what would be executed"
+        echo "ansible-playbook playbooks/maintenance/lifecycle.yml ${ansible_args[*]}"
+    else
+        ansible-playbook playbooks/maintenance/lifecycle.yml "${ansible_args[@]}"
+    fi
+}
+
+# 清理服务
+lifecycle_cleanup_role() {
+    if [ -z "$LIFECYCLE_ROLE" ]; then
+        print_error "必须指定 role 名称"
+        echo ""
+        echo "用法: $0 cleanup-role <role> [--target <host|group>] [--force] [--keep-backups <n>]"
+        echo ""
+        echo "支持的 roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common, cloudflare_mesh"
+        exit 1
+    fi
+
+    print_header "Cleanup Service: ${LIFECYCLE_ROLE}"
+
+    print_warning "⚠️ 这将:"
+    echo "  - 停止并禁用服务"
+    echo "  - 删除配置文件（数据将归档）"
+    echo "  - 删除旧备份（保留最近 ${LIFECYCLE_KEEP_BACKUPS} 个）"
+    echo ""
+
+    # 用户确认
+    if [ "$LIFECYCLE_FORCE" != true ]; then
+        print_error "这是一个破坏性操作!"
+        read -p "输入 'yes' 确认清理 ${LIFECYCLE_ROLE}: " confirm
+        if [ "$confirm" != "yes" ]; then
+            print_warning "已取消"
+            exit 0
+        fi
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    local ansible_args=()
+    ansible_args+=("-e" "lifecycle_target_role=${LIFECYCLE_ROLE}")
+    ansible_args+=("-e" "cleanup_confirm=yes")
+    ansible_args+=("-e" "cleanup_keep_backups=${LIFECYCLE_KEEP_BACKUPS}")
+    ansible_args+=("--tags" "cleanup")
+
+    if [ -n "$LIFECYCLE_TARGET" ]; then
+        ansible_args+=("--limit" "${LIFECYCLE_TARGET}")
+    fi
+
+    ansible_args+=("-i" "${INVENTORY_FILE:-inventories/production/hosts.yml}")
+
+    if [ "$DRY_RUN" = true ]; then
+        print_warning "Dry-run mode - only showing what would be executed"
+        echo "ansible-playbook playbooks/maintenance/lifecycle.yml ${ansible_args[*]}"
+    else
+        ansible-playbook playbooks/maintenance/lifecycle.yml "${ansible_args[@]}"
+    fi
+}
+
 # 主函数
 main() {
     # 默认值
@@ -684,14 +809,43 @@ main() {
     MANIFEST_DIR=""
     CLOUDFLARE_MESH_TOKEN=""
     INVENTORY_FILE=""
-    
+
+    # Lifecycle 命令参数
+    LIFECYCLE_ROLE=""
+    LIFECYCLE_VERSION=""
+    LIFECYCLE_TARGET=""
+    LIFECYCLE_FORCE=false
+    LIFECYCLE_KEEP_BACKUPS=5
+
     # 解析参数
     COMMAND=""
     while [[ $# -gt 0 ]]; do
         case $1 in
-            quick-setup|deploy-local|deploy-remote-test|deploy-production|deploy-k8s-control-panel|cleanup-local|cleanup-remote-test|cleanup-production|status-local|status-remote-test|status-production|test|help)
+            quick-setup|deploy-local|deploy-remote-test|deploy-production|deploy-k8s-control-panel|cleanup-local|cleanup-remote-test|cleanup-production|status-local|status-remote-test|status-production|test|help|status|rollback|cleanup-role)
                 COMMAND="$1"
                 shift
+                ;;
+            # Lifecycle role 参数（位置参数）
+            nginx|prometheus|grafana|loki|promtail|node_exporter|common|cloudflare_mesh|acme_ssl|firewall)
+                if [ "$COMMAND" == "status" ] || [ "$COMMAND" == "rollback" ] || [ "$COMMAND" == "cleanup-role" ]; then
+                    LIFECYCLE_ROLE="$1"
+                    shift
+                else
+                    print_error "Unknown option: $1"
+                    show_usage
+                    exit 1
+                fi
+                ;;
+            # Lifecycle version 参数
+            prev|v[0-9]*)
+                if [ "$COMMAND" == "rollback" ]; then
+                    LIFECYCLE_VERSION="$1"
+                    shift
+                else
+                    print_error "Unknown option: $1"
+                    show_usage
+                    exit 1
+                fi
                 ;;
             -i|--inventory)
                 INVENTORY_FILE="$2"
@@ -721,6 +875,18 @@ main() {
             --dry-run)
                 DRY_RUN=true
                 shift
+                ;;
+            --target)
+                LIFECYCLE_TARGET="$2"
+                shift 2
+                ;;
+            --force)
+                LIFECYCLE_FORCE=true
+                shift
+                ;;
+            --keep-backups)
+                LIFECYCLE_KEEP_BACKUPS="$2"
+                shift 2
                 ;;
             *)
                 print_error "Unknown option: $1"
@@ -776,6 +942,15 @@ main() {
             ;;
         status-production)
             status_production
+            ;;
+        status)
+            lifecycle_status
+            ;;
+        rollback)
+            lifecycle_rollback
+            ;;
+        cleanup-role)
+            lifecycle_cleanup_role
             ;;
         test)
             run_tests

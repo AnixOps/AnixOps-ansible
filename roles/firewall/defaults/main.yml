@@ -18,3 +18,16 @@ firewall_restricted_ports:
 
 monitoring_whitelist: []
 proxy_additional_ports: []
+
+# =============================================================================
+# Lifecycle Configuration | 生命周期配置
+# =============================================================================
+firewall_port: 0
+firewall_health_url: ""
+firewall_backup_files:
+  - /etc/ufw/ufw.conf
+  - /etc/default/ufw
+firewall_packages:
+  - ufw
+firewall_config_dirs:
+  - /etc/ufw

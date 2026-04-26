@@ -2,3 +2,16 @@
 # Loki Server Default Variables
 
 loki_version: "2.9.0"
+
+# =============================================================================
+# Lifecycle Configuration | 生命周期配置
+# =============================================================================
+loki_port: 3100
+loki_health_url: "http://localhost:3100/ready"
+loki_backup_files:
+  - /etc/loki/loki-config.yml
+  - /etc/systemd/system/loki.service
+loki_packages: []
+loki_config_dirs:
+  - /etc/loki
+  - /var/lib/loki

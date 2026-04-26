@@ -61,3 +61,27 @@ security:
 # 管理员用户 | Admin Users (empty by default)
 # -----------------------------------------------------------------------------
 admin_users: []
+
+# =============================================================================
+# Lifecycle Configuration | 生命周期配置
+# =============================================================================
+common_port: 22
+common_health_url: ""
+common_backup_files:
+  - /etc/ssh/sshd_config
+  - /etc/chrony/chrony.conf
+  - /etc/fail2ban/jail.local
+common_packages:
+  - vim
+  - curl
+  - wget
+  - htop
+  - git
+  - unzip
+  - ufw
+  - fail2ban
+  - chrony
+common_config_dirs:
+  - /etc/ssh
+  - /etc/chrony
+  - /etc/fail2ban

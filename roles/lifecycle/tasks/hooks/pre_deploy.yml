@@ -1,0 +1,61 @@
+---
+# =============================================================================
+# Pre-Deploy Hook
+# =============================================================================
+# 部署前执行：备份关键文件、验证依赖、检查当前状态
+
+- name: Set backup timestamp | 设置备份时间戳
+  ansible.builtin.set_fact:
+    backup_timestamp: "{{ ansible_date_time.iso8601 | replace(':', '-') }}"
+
+- name: Create backup directory | 创建备份目录
+  ansible.builtin.file:
+    path: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}/{{ backup_timestamp }}"
+    state: directory
+    mode: '0755'
+  when: hooks_backup_enabled | default(true)
+
+- name: Get role backup config | 获取 role 备份配置
+  ansible.builtin.set_fact:
+    role_backup_files: "{{ lookup('vars', lifecycle_target_role + '_backup_files', default=[]) }}"
+    role_backup_dirs: "{{ lookup('vars', lifecycle_target_role + '_backup_dirs', default=[]) }}"
+
+- name: Backup configuration files | 备份配置文件
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}/{{ backup_timestamp }}/{{ item | basename }}"
+    remote_src: yes
+    mode: 'preserve'
+  loop: "{{ role_backup_files }}"
+  when:
+    - hooks_backup_enabled | default(true)
+    - role_backup_files | length > 0
+  ignore_errors: yes
+
+- name: Check current service status | 检查当前服务状态
+  ansible.builtin.systemd:
+    name: "{{ lifecycle_target_role }}"
+  register: pre_deploy_service_status
+  ignore_errors: yes
+
+- name: Record pre-deploy state | 记录部署前状态
+  ansible.builtin.set_fact:
+    pre_deploy_state:
+      service: "{{ pre_deploy_service_status.status.ActiveState | default('unknown') }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+
+- name: Create pre-deploy state record | 创建部署前状态记录
+  ansible.builtin.copy:
+    content: |
+      # Pre-Deploy State
+      role: {{ lifecycle_target_role }}
+      host: {{ inventory_hostname }}
+      timestamp: {{ ansible_date_time.iso8601 }}
+      service_state: {{ pre_deploy_state.service }}
+      backup_location: {{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}/{{ backup_timestamp }}
+    dest: "{{ state_dir }}/{{ lifecycle_target_role }}_pre_deploy.log"
+    mode: '0644'
+
+- name: Set lifecycle result | 设置生命周期结果
+  ansible.builtin.set_fact:
+    lifecycle_result: pre_deploy_completed

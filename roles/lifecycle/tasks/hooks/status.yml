@@ -1,0 +1,79 @@
+---
+# =============================================================================
+# Status Hook
+# =============================================================================
+# 查询服务状态：显示部署历史和当前状态
+
+- name: Check state file exists | 检查状态文件是否存在
+  ansible.builtin.stat:
+    path: "{{ state_file }}"
+  register: state_file_stat
+
+- name: Read current state | 读取当前状态
+  ansible.builtin.slurp:
+    src: "{{ state_file }}"
+  register: current_state_raw
+  when: state_file_stat.stat.exists
+
+- name: Parse current state | 解析当前状态
+  ansible.builtin.set_fact:
+    current_state: "{{ current_state_raw.content | b64decode | from_json }}"
+  when: state_file_stat.stat.exists
+
+- name: Read history file | 读取历史文件
+  ansible.builtin.slurp:
+    src: "{{ history_file }}"
+  register: history_raw
+  when: state_file_stat.stat.exists
+  ignore_errors: yes
+
+- name: Parse history | 解析历史
+  ansible.builtin.set_fact:
+    history_data: "{{ history_raw.content | default('[]') | b64decode | from_json | default([]) }}"
+  when: history_raw.content is defined
+
+- name: Get current service status | 获取当前服务状态
+  ansible.builtin.systemd:
+    name: "{{ lifecycle_target_role }}"
+  register: service_status
+  ignore_errors: yes
+
+- name: List backup files | 列出备份文件
+  ansible.builtin.find:
+    paths: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}"
+    patterns: "*"
+    file_type: directory
+  register: backup_dirs
+  ignore_errors: yes
+
+- name: Display status summary | 显示状态摘要
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════════════════
+      Service Status: {{ lifecycle_target_role }}
+      Host: {{ inventory_hostname }}
+      ═══════════════════════════════════════════════════════════════════════
+
+      {% if state_file_stat.stat.exists %}
+      Current Deployment:
+        Version: {{ current_state.current_version | default('unknown') }}
+        Deployed: {{ current_state.timestamp | default('unknown') }}
+        Status: {{ current_state.status | default('unknown') }}
+        Service: {{ service_status.status.ActiveState | default('unknown') }}
+        Rollback: {{ current_state.rollback_available | default(false) }}
+
+      Deployment History ({{ history_data | length }} records):
+      {% for record in history_data[-5:] | reverse %}
+        {{ record.version }} | {{ record.timestamp }} | {{ record.status }}
+      {% endfor %}
+
+      Available Backups: {{ backup_dirs.files | length }}
+      {% else %}
+      ⚠ No deployment state found for {{ lifecycle_target_role }}
+      {% endif %}
+      ═══════════════════════════════════════════════════════════════════════
+  when: hooks_enabled | default(true)
+
+- name: Set lifecycle result | 设置生命周期结果
+  ansible.builtin.set_fact:
+    lifecycle_result: status_displayed

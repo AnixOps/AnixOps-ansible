@@ -1,0 +1,59 @@
+---
+# =============================================================================
+# Pre-Rollback Hook
+# =============================================================================
+# 回滚前执行：记录当前状态、停止服务
+
+- name: Set rollback timestamp | 设置回滚时间戳
+  ansible.builtin.set_fact:
+    rollback_timestamp: "{{ ansible_date_time.iso8601 | replace(':', '-') }}"
+
+- name: Read current state file | 读取当前状态文件
+  ansible.builtin.slurp:
+    src: "{{ state_file }}"
+  register: current_state_raw
+  failed_when: false
+  ignore_errors: yes
+
+- name: Parse current state | 解析当前状态
+  ansible.builtin.set_fact:
+    current_state: "{{ current_state_raw.content | default('{}') | b64decode | from_json | default({}) }}"
+  when: current_state_raw.content is defined
+
+- name: Get current service status | 获取当前服务状态
+  ansible.builtin.systemd:
+    name: "{{ lifecycle_target_role }}"
+  register: pre_rollback_service_status
+  ignore_errors: yes
+
+- name: Record pre-rollback state | 记录回滚前状态
+  ansible.builtin.set_fact:
+    pre_rollback_state:
+      service: "{{ pre_rollback_service_status.status.ActiveState | default('unknown') }}"
+      version: "{{ current_state.current_version | default('unknown') }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+
+- name: Create rollback state record | 创建回滚状态记录
+  ansible.builtin.copy:
+    content: |
+      # Pre-Rollback State
+      role: {{ lifecycle_target_role }}
+      host: {{ inventory_hostname }}
+      timestamp: {{ rollback_timestamp }}
+      from_version: {{ pre_rollback_state.version }}
+      service_state: {{ pre_rollback_state.service }}
+    dest: "{{ state_dir }}/{{ lifecycle_target_role }}_pre_rollback.log"
+    mode: '0644'
+
+- name: Stop service gracefully | 优雅停止服务
+  ansible.builtin.systemd:
+    name: "{{ lifecycle_target_role }}"
+    state: stopped
+  when:
+    - hooks_graceful_stop | default(false)
+    - pre_rollback_service_status.status.ActiveState == 'active'
+  ignore_errors: yes
+
+- name: Set lifecycle result | 设置生命周期结果
+  ansible.builtin.set_fact:
+    lifecycle_result: pre_rollback_completed

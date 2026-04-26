@@ -1,0 +1,111 @@
+---
+# =============================================================================
+# Post-Deploy Hook
+# =============================================================================
+# 部署后执行：验证服务健康、写入状态文件、发送通知
+
+- name: Wait for service to be ready | 等待服务就绪
+  ansible.builtin.wait_for:
+    port: "{{ lookup('vars', lifecycle_target_role + '_port', default(0) }}"
+    host: localhost
+    timeout: "{{ hooks_verify_timeout }}"
+    state: started
+  when: lookup('vars', lifecycle_target_role + '_port', default=0) | int > 0
+  ignore_errors: yes
+
+- name: Get service status after deploy | 获取部署后服务状态
+  ansible.builtin.systemd:
+    name: "{{ lifecycle_target_role }}"
+  register: post_deploy_service_status
+  ignore_errors: yes
+
+- name: Perform health check | 执行健康检查
+  ansible.builtin.uri:
+    url: "{{ lookup('vars', lifecycle_target_role + '_health_url', default('http://localhost') }}"
+    status_code: 200
+    method: GET
+    timeout: "{{ hooks_verify_timeout }}"
+  register: health_check_result
+  retries: "{{ hooks_verify_retries }}"
+  delay: "{{ hooks_verify_delay }}"
+  until: health_check_result.status == 200
+  when: hooks_verify_enabled | default(true)
+  ignore_errors: yes
+
+- name: Calculate deployment duration | 计算部署时长
+  ansible.builtin.set_fact:
+    deploy_duration: "{{ ansible_date_time.epoch | int - deploy_start_time_epoch | int }}"
+
+- name: Read existing history | 读取现有历史
+  ansible.builtin.slurp:
+    src: "{{ history_file }}"
+  register: existing_history
+  failed_when: false
+  ignore_errors: yes
+
+- name: Parse existing history | 解析现有历史
+  ansible.builtin.set_fact:
+    history_data: "{{ existing_history.content | default('[]') | b64decode | from_json | default([]) }}"
+  when: existing_history.content is defined
+
+- name: Generate deployment record | 生成部署记录
+  ansible.builtin.set_fact:
+    deployment_record:
+      version: "v{{ ansible_date_time.iso8601_basic_short }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      status: "{{ 'success' if post_deploy_service_status.status.ActiveState == 'active' else 'failed' }}"
+      service_state: "{{ post_deploy_service_status.status.ActiveState | default('unknown') }}"
+      health_check: "{{ health_check_result.status | default(0) }}"
+      duration_seconds: "{{ deploy_duration }}"
+      backup_location: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}/{{ backup_timestamp }}"
+      triggered_by: "{{ ansible_user }}"
+
+- name: Update history data | 更新历史数据
+  ansible.builtin.set_fact:
+    updated_history: "{{ history_data + [deployment_record] }}"
+  when: history_data is defined
+
+- name: Write state file | 写入状态文件
+  ansible.builtin.copy:
+    content: |
+      {
+        "role": "{{ lifecycle_target_role }}",
+        "host": "{{ inventory_hostname }}",
+        "current_version": "{{ deployment_record.version }}",
+        "timestamp": "{{ deployment_record.timestamp }}",
+        "status": "{{ deployment_record.status }}",
+        "service_state": "{{ deployment_record.service_state }}",
+        "health_check": "{{ deployment_record.health_check }}",
+        "backup_location": "{{ deployment_record.backup_location }}",
+        "rollback_available": true
+      }
+    dest: "{{ state_file }}"
+    mode: '0644'
+
+- name: Write history file | 写入历史文件
+  ansible.builtin.copy:
+    content: "{{ updated_history | to_nice_json }}"
+    dest: "{{ history_file }}"
+    mode: '0644'
+  when: updated_history is defined
+
+- name: Send success notification | 发送成功通知
+  ansible.builtin.uri:
+    url: "{{ notification_webhook_url }}"
+    method: POST
+    body_format: json
+    body:
+      role: "{{ lifecycle_target_role }}"
+      host: "{{ inventory_hostname }}"
+      event: deploy
+      status: success
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      duration: "{{ deploy_duration }}"
+    status_code: 200
+  when: notification_webhook_url | default('') | length > 0
+  ignore_errors: yes
+  no_log: true
+
+- name: Set lifecycle result | 设置生命周期结果
+  ansible.builtin.set_fact:
+    lifecycle_result: post_deploy_completed

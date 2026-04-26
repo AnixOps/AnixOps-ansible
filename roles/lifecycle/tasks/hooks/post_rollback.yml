@@ -1,0 +1,104 @@
+---
+# =============================================================================
+# Post-Rollback Hook
+# =============================================================================
+# 回滚后执行：恢复服务、验证、更新状态文件
+
+- name: Get rollback version | 获取回滚版本
+  ansible.builtin.set_fact:
+    rollback_version: "{{ lifecycle_version | default('prev') }}"
+
+- name: Read history for rollback target | 读取历史查找回滚目标
+  ansible.builtin.slurp:
+    src: "{{ history_file }}"
+  register: history_raw
+  failed_when: false
+  ignore_errors: yes
+
+- name: Determine rollback target version | 确定回滚目标版本
+  ansible.builtin.set_fact:
+    rollback_target: "{{ history_data[-2] if rollback_version == 'prev' else (history_data | selectattr('version', 'eq', rollback_version) | first) }}"
+  vars:
+    history_data: "{{ history_raw.content | default('[]') | b64decode | from_json | default([]) }}"
+  when: history_raw.content is defined
+
+- name: Find backup files for rollback | 查找回滚备份文件
+  ansible.builtin.find:
+    paths: "{{ rollback_target.backup_location | default(hooks_backup_base_dir + '/' + lifecycle_target_role) }}"
+    patterns: "*"
+  register: rollback_backup_files
+  when: rollback_target is defined
+
+- name: Restore configuration files | 恢复配置文件
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "/etc/{{ lifecycle_target_role }}/{{ item.path | basename | regex_replace('\\.backup.*$', '') }}"
+    remote_src: yes
+    mode: 'preserve'
+  loop: "{{ rollback_backup_files.files }}"
+  when: rollback_backup_files.files | length > 0
+  ignore_errors: yes
+
+- name: Start service after rollback | 回滚后启动服务
+  ansible.builtin.systemd:
+    name: "{{ lifecycle_target_role }}"
+    state: started
+    enabled: yes
+  ignore_errors: yes
+
+- name: Wait for service to be ready | 等待服务就绪
+  ansible.builtin.wait_for:
+    port: "{{ lookup('vars', lifecycle_target_role + '_port', default(0) }}"
+    host: localhost
+    timeout: "{{ hooks_verify_timeout }}"
+    state: started
+  when: lookup('vars', lifecycle_target_role + '_port', default(0) | int > 0
+  ignore_errors: yes
+
+- name: Verify rollback success | 验证回滚成功
+  ansible.builtin.uri:
+    url: "{{ lookup('vars', lifecycle_target_role + '_health_url', default('http://localhost') }}"
+    status_code: 200
+  register: rollback_health_check
+  retries: "{{ hooks_verify_retries }}"
+  delay: "{{ hooks_verify_delay }}"
+  until: rollback_health_check.status == 200
+  when: hooks_verify_enabled | default(true)
+  ignore_errors: yes
+
+- name: Update state file with rollback | 更新状态文件标记回滚
+  ansible.builtin.copy:
+    content: |
+      {
+        "role": "{{ lifecycle_target_role }}",
+        "host": "{{ inventory_hostname }}",
+        "current_version": "{{ rollback_target.version | default('unknown') }}",
+        "timestamp": "{{ ansible_date_time.iso8601 }}",
+        "status": "rolled_back",
+        "previous_version": "{{ pre_rollback_state.version }}",
+        "rollback_available": true
+      }
+    dest: "{{ state_file }}"
+    mode: '0644'
+
+- name: Send rollback notification | 发送回滚通知
+  ansible.builtin.uri:
+    url: "{{ notification_webhook_url }}"
+    method: POST
+    body_format: json
+    body:
+      role: "{{ lifecycle_target_role }}"
+      host: "{{ inventory_hostname }}"
+      event: rollback
+      status: success
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      from_version: "{{ pre_rollback_state.version }}"
+      to_version: "{{ rollback_target.version | default('unknown') }}"
+    status_code: 200
+  when: notification_webhook_url | default('') | length > 0
+  ignore_errors: yes
+  no_log: true
+
+- name: Set lifecycle result | 设置生命周期结果
+  ansible.builtin.set_fact:
+    lifecycle_result: post_rollback_completed

@@ -12,3 +12,18 @@ observability_ssl_enabled: false
 # NOTE: grafana_admin_password has no default -- it must be provided via
 # group_vars, inventory vars, or environment variable. The role will fail
 # explicitly if it is not set.
+
+# =============================================================================
+# Lifecycle Configuration | 生命周期配置
+# =============================================================================
+grafana_port: 3000
+grafana_health_url: "http://localhost:3000/api/health"
+grafana_backup_files:
+  - /etc/grafana/grafana.ini
+  - /etc/grafana/provisioning/datasources/datasource-prometheus.yml
+  - /etc/grafana/provisioning/datasources/datasource-loki.yml
+grafana_packages:
+  - grafana
+grafana_config_dirs:
+  - /etc/grafana
+  - /var/lib/grafana

@@ -1,0 +1,48 @@
+---
+# =============================================================================
+# Lifecycle Role - Default Variables
+# =============================================================================
+# 生命周期管理默认配置 | Lifecycle management default configuration
+
+# 状态文件配置 | State file configuration
+state_dir: /var/lib/anixops/state
+state_file: "{{ state_dir }}/{{ lifecycle_target_role }}_state.json"
+history_file: "{{ state_dir }}/{{ lifecycle_target_role }}_history.json"
+backup_registry: "{{ state_dir }}/backup_registry.json"
+
+# Hook 执行控制 | Hook execution control
+hooks_enabled: true
+hooks_dry_run: false
+lifecycle_use_builtin: true
+
+# 备份配置 | Backup configuration
+hooks_backup_enabled: true
+hooks_backup_base_dir: /var/backups
+hooks_backup_retention_days: 30
+hooks_backup_compress: false
+
+# 验证配置 | Verification configuration
+hooks_verify_enabled: true
+hooks_verify_retries: 3
+hooks_verify_delay: 5
+hooks_verify_timeout: 30
+
+# 通知配置 | Notification configuration
+hooks_notify_enabled: true
+notification_webhook_url: "{{ lookup('env', 'NOTIFICATION_WEBHOOK_URL') | default('') }}"
+notification_slack_url: "{{ lookup('env', 'SLACK_WEBHOOK_URL') | default('') }}"
+
+# 回滚配置 | Rollback configuration
+hooks_graceful_stop: false
+hooks_drain_timeout: 30
+
+# 清理配置 | Cleanup configuration
+cleanup_strategy: conservative
+cleanup_keep_data: true
+cleanup_keep_package: false
+cleanup_archive_path: /var/lib/anixops/archive
+cleanup_keep_backups: 5
+
+# 生命周期执行配置 | Lifecycle execution configuration
+lifecycle_serial: 1
+lifecycle_max_fail: 0
