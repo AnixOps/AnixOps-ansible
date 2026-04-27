@@ -1,0 +1,33 @@
+---
+# =============================================================================
+# V2bX Installation Tasks | V2bX 安装任务
+# =============================================================================
+- name: Create V2bX directories | 创建 V2bX 目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ v2bx_install_dir }}"
+    - "{{ v2bx_config_dir }}"
+
+- name: Download V2bX binary | 下载 V2bX 二进制文件
+  ansible.builtin.get_url:
+    url: "https://github.com/{{ v2bx_repo_owner }}/{{ v2bx_repo_name }}/releases/download/latest/{{ v2bx_bin_name }}-linux-{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
+    dest: "{{ v2bx_install_dir }}/{{ v2bx_bin_name }}"
+    mode: '0755'
+    timeout: 60
+
+- name: Download geoip.dat | 下载 geoip 数据文件
+  ansible.builtin.get_url:
+    url: "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
+    dest: "{{ v2bx_install_dir }}/geoip.dat"
+    mode: '0644'
+    timeout: 60
+
+- name: Download geosite.dat | 下载 geosite 数据文件
+  ansible.builtin.get_url:
+    url: "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
+    dest: "{{ v2bx_install_dir }}/geosite.dat"
+    mode: '0644'
+    timeout: 60

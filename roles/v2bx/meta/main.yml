@@ -1,0 +1,27 @@
+---
+galaxy_info:
+  author: AnixOps
+  description: Deploy V2bX proxy node for v2board panel integration
+  company: AnixOps
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+    - name: EL
+      versions:
+        - 8
+        - 9
+  galaxy_tags:
+    - v2bx
+    - proxy
+    - v2board
+    - sing
+    - xray
+    - hysteria2
+dependencies:
+  - role: cloudflare_mesh

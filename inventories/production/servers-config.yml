@@ -54,9 +54,12 @@ production_servers:
     location: "United Kingdom"
     groups:
       - web_servers
+      - v2bx_servers
+      - mesh_nodes
     roles:
       - web
-    server_environment: test
+      - v2bx
+    server_environment: production
 
   us-w-1:
     env_var: US_W_1_V4_SSH
@@ -65,8 +68,11 @@ production_servers:
     location: "United States"
     groups:
       - web_servers
+      - v2board_servers
+      - mesh_nodes
     roles:
       - web
+      - v2board
     server_environment: production
 
   # ---------------------------------------------------------------------------
@@ -118,9 +124,12 @@ production_servers:
     location: "United Kingdom"
     groups:
       - proxy_servers
+      - v2bx_servers
+      - mesh_nodes
     roles:
       - proxy
       - plg_stack
+      - v2bx
     server_environment: production
 
   # ---------------------------------------------------------------------------
@@ -154,13 +163,14 @@ production_servers:
     location: "Poland"
     groups:
       - observability
+      - v2board_servers
       - mesh_nodes
     roles:
       - observability
       - prometheus
       - grafana
       - loki
-      - mesh_node
+      - v2board
     server_environment: production
 
 # =============================================================================
@@ -194,6 +204,16 @@ group_definitions:
     description: "Cloudflare Mesh 节点 | Cloudflare Mesh Network Nodes"
     vars:
       server_role: mesh_node
+
+  v2bx_servers:
+    description: "V2bX 代理节点 | V2bX Proxy Nodes"
+    vars:
+      server_role: v2bx_node
+
+  v2board_servers:
+    description: "V2board 控制面板 | V2board Control Panels"
+    vars:
+      server_role: v2board_panel
 
   # 环境分组 | Environment Groups
   dev:

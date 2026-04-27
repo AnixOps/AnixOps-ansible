@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  author: AnixOps
+  description: Deploy v2board control panel with Docker
+  company: AnixOps
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+    - name: EL
+      versions:
+        - 8
+        - 9
+  galaxy_tags:
+    - v2board
+    - panel
+    - proxy-management
+    - docker
+dependencies:
+  - role: cloudflare_mesh

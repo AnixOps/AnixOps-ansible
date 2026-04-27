@@ -1,0 +1,51 @@
+---
+# =============================================================================
+# V2board Verification Tasks | V2board 验证任务
+# =============================================================================
+- name: Wait for v2board containers to start | 等待 v2board 容器启动
+  ansible.builtin.pause:
+    seconds: 15
+
+- name: Check v2board container status | 检查 v2board 容器状态
+  community.docker.docker_container_info:
+    name: "{{ v2board_container_name }}"
+  register: v2board_container_info
+  failed_when: "not v2board_container_info.container.State.Running"
+
+- name: Check v2board API health | 检查 v2board API 健康状态
+  ansible.builtin.uri:
+    url: "http://localhost:{{ v2board_api_port }}{{ v2board_health_url }}"
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: v2board_health_check
+  retries: 3
+  delay: 5
+  until: "v2board_health_check.status == 200"
+  ignore_errors: yes
+
+- name: Display v2board deployment summary | 显示 v2board 部署摘要
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════
+      ✓ V2board 控制面板部署成功 | V2board Panel Deployed
+      ═══════════════════════════════════════════════════════════
+      主机 | Host: {{ inventory_hostname }}
+
+      端口 | Ports:
+      - Frontend: {{ v2board_frontend_port }}
+      - API: {{ v2board_api_port }}
+      - gRPC: {{ v2board_grpc_port }}
+      - NodeX: {{ v2board_nodex_port }}
+
+      数据库 | Database: {{ v2board_db_type }}
+      Mesh IP: {{ v2board_mesh_ip }}
+
+      容器状态 | Container Status: {{ v2board_container_info.container.State.Status }}
+      API Health: {{ v2board_health_check.status | default('N/A') }}
+
+      下一步 | Next Steps:
+      1. 访问面板 | Access panel: http://{{ inventory_hostname }}:{{ v2board_frontend_port }}
+      2. 配置节点 | Configure nodes in admin panel
+      3. 验证 Mesh 通信 | Verify Mesh communication from V2bX nodes
+      ═══════════════════════════════════════════════════════════

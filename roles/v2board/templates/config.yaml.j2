@@ -1,0 +1,42 @@
+# V2board Configuration | V2board 配置文件
+app:
+  port: {{ v2board_api_port }}
+  frontend_port: {{ v2board_frontend_port }}
+  grpc_port: {{ v2board_grpc_port }}
+  nodex_port: {{ v2board_nodex_port }}
+
+database:
+  type: {{ v2board_db_type }}
+{% if v2board_db_type == 'postgres' %}
+  host: postgres
+  port: {{ v2board_pg_port }}
+  user: {{ v2board_pg_user }}
+  password: {{ v2board_pg_password }}
+  database: {{ v2board_pg_database }}
+{% else %}
+  path: ./data/v2board.db
+{% endif %}
+
+redis:
+{% if v2board_db_type == 'postgres' %}
+  host: redis
+{% else %}
+  host: localhost
+{% endif %}
+  port: {{ v2board_redis_port }}
+{% if v2board_redis_password != '' %}
+  password: {{ v2board_redis_password }}
+{% endif %}
+
+jwt:
+  secret: {{ v2board_jwt_secret }}
+
+api:
+  key: {{ v2board_api_key }}
+
+admin:
+  email: {{ v2board_admin_email }}
+  password: {{ v2board_admin_password }}
+
+# Mesh IP for internal communication | Mesh 内网通信地址
+mesh_ip: {{ v2board_mesh_ip }}

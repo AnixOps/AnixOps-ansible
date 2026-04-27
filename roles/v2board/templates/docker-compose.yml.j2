@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  v2board:
+    image: ghcr.io/{{ v2board_repo_owner | default('AnixOps') }}/v2board_AnixOps:latest
+    container_name: {{ v2board_container_name }}
+    restart: unless-stopped
+    ports:
+      - "{{ v2board_frontend_port }}:3000"
+      - "{{ v2board_api_port }}:8080"
+      - "{{ v2board_grpc_port }}:50051"
+      - "{{ v2board_nodex_port }}:18081"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    environment:
+      - TZ={{ ansible_date_time.tz | default('UTC') }}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:{{ v2board_api_port }}{{ v2board_health_url }}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+{% if v2board_db_type == 'postgres' %}
+  postgres:
+    image: postgres:15-alpine
+    container_name: v2board-postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER={{ v2board_pg_user }}
+      - POSTGRES_PASSWORD={{ v2board_pg_password }}
+      - POSTGRES_DB={{ v2board_pg_database }}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ v2board_pg_user }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: v2board-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+{% if v2board_redis_password != '' %}
+    command: redis-server --requirepass {{ v2board_redis_password }}
+{% endif %}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+{% endif %}

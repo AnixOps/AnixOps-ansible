@@ -1,0 +1,65 @@
+---
+# =============================================================================
+# V2board Docker Deployment Tasks | V2board Docker 部署任务
+# =============================================================================
+- name: Create v2board directory | 创建 v2board 目录
+  ansible.builtin.file:
+    path: "{{ v2board_docker_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Create data directory | 创建数据目录
+  ansible.builtin.file:
+    path: "{{ v2board_docker_dir }}/data"
+    state: directory
+    mode: '0755'
+
+- name: Install Docker prerequisites | 安装 Docker 依赖
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Add Docker GPG key | 添加 Docker GPG key
+  ansible.builtin.shell: |
+    curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg | \
+    gpg --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/docker-archive-keyring.gpg
+  when: ansible_os_family == 'Debian'
+
+- name: Add Docker apt repository | 添加 Docker apt repo
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Install Docker and Docker Compose | 安装 Docker 和 Docker Compose
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Ensure Docker service is running | 确保 Docker 服务运行
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Generate docker-compose.yml | 生成 docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ v2board_docker_dir }}/docker-compose.yml"
+    mode: '0644'
+  notify: Restart v2board containers | 重启 v2board 容器

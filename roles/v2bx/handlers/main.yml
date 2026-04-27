@@ -1,0 +1,10 @@
+---
+# =============================================================================
+# V2bX Handlers | V2bX 处理器
+# =============================================================================
+- name: Restart V2bX service | 重启 V2bX 服务
+  ansible.builtin.systemd:
+    name: "{{ v2bx_service_name }}"
+    state: restarted
+    daemon_reload: yes
+    enabled: yes

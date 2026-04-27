@@ -1,0 +1,23 @@
+---
+# =============================================================================
+# Speedtest Configuration | Speedtest 配置
+# =============================================================================
+
+# Installation
+speedtest_repo_owner: "AnixOps"
+speedtest_repo_name: "AnixOps-speedtest"
+speedtest_repo_branch: "main"
+speedtest_install_dir: "/usr/local/bin"
+speedtest_bin_name: "speedtest"
+
+# Download method (curl or git)
+speedtest_install_method: "{{ lookup('env', 'SPEEDTEST_INSTALL_METHOD') | default('curl') }}"
+
+# =============================================================================
+# Lifecycle Configuration | 生命周期配置
+# =============================================================================
+speedtest_port: 0
+speedtest_health_url: ""
+speedtest_backup_files: []
+speedtest_config_dirs: []
+speedtest_service_name: ""

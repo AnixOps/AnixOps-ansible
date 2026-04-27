@@ -1,0 +1,28 @@
+---
+# =============================================================================
+# Speedtest Installation Tasks | Speedtest 安装任务
+# =============================================================================
+- name: Download speedtest binary | 下载 speedtest 二进制文件
+  ansible.builtin.get_url:
+    url: "https://github.com/{{ speedtest_repo_owner }}/{{ speedtest_repo_name }}/releases/latest/download/speedtest-linux-{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
+    dest: "{{ speedtest_install_dir }}/{{ speedtest_bin_name }}"
+    mode: '0755'
+    timeout: 60
+
+- name: Verify speedtest installation | 验证 speedtest 安装
+  ansible.builtin.command: "{{ speedtest_install_dir }}/{{ speedtest_bin_name }} --version"
+  register: speedtest_version
+  changed_when: false
+
+- name: Display speedtest installation summary | 显示 speedtest 安装摘要
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════
+      ✓ Speedtest 安装成功 | Speedtest Installed
+      ═══════════════════════════════════════════════════════════
+      主机 | Host: {{ inventory_hostname }}
+      安装路径 | Path: {{ speedtest_install_dir }}/{{ speedtest_bin_name }}
+
+      使用方法 | Usage:
+      {{ speedtest_install_dir }}/{{ speedtest_bin_name }} --help
+      ═══════════════════════════════════════════════════════════

@@ -1,0 +1,16 @@
+---
+# =============================================================================
+# V2board Configuration Tasks | V2board 配置任务
+# =============================================================================
+- name: Generate v2board config.yaml | 生成 v2board 配置文件
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ v2board_docker_dir }}/config.yaml"
+    mode: '0644'
+  notify: Restart v2board containers | 重启 v2board 容器
+
+- name: Deploy v2board with Docker Compose | 使用 Docker Compose 部署 v2board
+  community.docker.docker_compose_v2:
+    project_src: "{{ v2board_docker_dir }}"
+    state: present
+    pull: always

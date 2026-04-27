@@ -1,0 +1,47 @@
+---
+# =============================================================================
+# V2bX Configuration Tasks | V2bX 配置任务
+# =============================================================================
+- name: Generate V2bX config.json | 生成 V2bX 配置文件
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ v2bx_config_dir }}/config.json"
+    mode: '0644'
+  notify: Restart V2bX service | 重启 V2bX 服务
+
+- name: Install V2bX systemd service | 安装 V2bX systemd 服务
+  ansible.builtin.template:
+    src: V2bX.service.j2
+    dest: /etc/systemd/system/V2bX.service
+    mode: '0644'
+  notify: Restart V2bX service | 重启 V2bX 服务
+
+- name: Enable and start V2bX service | 启用并启动 V2bX 服务
+  ansible.builtin.systemd:
+    name: "{{ v2bx_service_name }}"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Verify V2bX service status | 验证 V2bX 服务状态
+  ansible.builtin.systemd:
+    name: "{{ v2bx_service_name }}"
+    state: started
+  register: v2bx_service_status
+  failed_when: "v2bx_service_status.status.ActiveState != 'active'"
+
+- name: Display V2bX deployment summary | 显示 V2bX 部署摘要
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════
+      ✓ V2bX 代理节点部署成功 | V2bX Proxy Node Deployed
+      ═══════════════════════════════════════════════════════════
+      主机 | Host: {{ inventory_hostname }}
+      Node ID: {{ v2bx_node_id }}
+      Node Type: {{ v2bx_node_type }}
+      Core: {{ v2bx_core }}
+      Listen Port: {{ v2bx_listen_port }}
+      API Host: {{ v2bx_api_host }}
+
+      状态 | Status: {{ v2bx_service_status.status.ActiveState }}
+      ═══════════════════════════════════════════════════════════

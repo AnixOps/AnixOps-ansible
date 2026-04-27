@@ -1,0 +1,23 @@
+---
+# =============================================================================
+# V2bX Main Tasks | V2bX 主任务
+# =============================================================================
+# 验证配置 -> 安装 -> 配置 -> 启动
+
+- name: Validate required variables | 验证必需变量
+  ansible.builtin.fail:
+    msg: |
+      缺少必需配置变量 | Missing required configuration:
+      - V2BX_NODE_ID (节点ID)
+      - V2BX_API_HOST (面板API地址)
+      - V2BX_API_KEY (面板API密钥)
+  when: >
+    (v2bx_node_id | default('') == '') or
+    (v2bx_api_host | default('') == '') or
+    (v2bx_api_key | default('') == '')
+
+- name: Include installation tasks | 包含安装任务
+  ansible.builtin.include_tasks: install.yml
+
+- name: Include configuration tasks | 包含配置任务
+  ansible.builtin.include_tasks: configure.yml

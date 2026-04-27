@@ -94,6 +94,48 @@
     - cloudflare_mesh
 
 # -----------------------------------------------------------------------------
+# 部署 V2board 控制面板 | Deploy V2board Control Panel
+# -----------------------------------------------------------------------------
+- name: Deploy V2board Control Panel | 部署 V2board 控制面板
+  hosts: v2board_servers
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  ignore_unreachable: yes
+  roles:
+    - v2board
+  tags:
+    - v2board
+
+# -----------------------------------------------------------------------------
+# 部署 V2bX 代理节点 | Deploy V2bX Proxy Nodes
+# -----------------------------------------------------------------------------
+- name: Deploy V2bX Proxy Nodes | 部署 V2bX 代理节点
+  hosts: v2bx_servers
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  ignore_unreachable: yes
+  roles:
+    - v2bx
+  tags:
+    - v2bx
+
+# -----------------------------------------------------------------------------
+# 部署 Speedtest | Deploy Speedtest
+# -----------------------------------------------------------------------------
+- name: Deploy Speedtest | 部署 Speedtest 测速工具
+  hosts: all
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  ignore_unreachable: yes
+  roles:
+    - speedtest
+  tags:
+    - speedtest
+
+# -----------------------------------------------------------------------------
 # 最终健康检查 | Final Health Check
 # -----------------------------------------------------------------------------
 - name: Final Health Check | 最终健康检查

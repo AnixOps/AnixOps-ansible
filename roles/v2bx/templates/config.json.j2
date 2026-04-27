@@ -1,0 +1,32 @@
+{
+  "Log": {
+    "Level": "{{ v2bx_log_level }}",
+    "Output": ""
+  },
+  "Cores": [
+    {
+      "Type": "{{ v2bx_core }}",
+      "Name": "{{ v2bx_core }}_core",
+      "Listen": ":{{ v2bx_listen_port }}",
+      "GeoIp": "{{ v2bx_install_dir }}/geoip.dat",
+      "GeoSite": "{{ v2bx_install_dir }}/geosite.dat"
+    }
+  ],
+  "Nodes": [
+    {
+      "Core": "{{ v2bx_core }}_core",
+      "ApiHost": "{{ v2bx_api_host }}",
+      "ApiKey": "{{ v2bx_api_key }}",
+      "NodeID": {{ v2bx_node_id }},
+      "NodeType": "{{ v2bx_node_type }}",
+      "Listen": ":{{ v2bx_listen_port }}",
+      "EnableTLS": true,
+      "Transport": "{{ v2bx_transport }}",
+      "CertConfig": {
+        "CertMode": "{{ v2bx_cert_mode }}",
+        "CertDomain": "{{ v2bx_cert_domain }}",
+        "Provider": "cloudflare"
+      }
+    }
+  ]
+}

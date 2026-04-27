@@ -1,0 +1,6 @@
+---
+# =============================================================================
+# Speedtest Main Tasks | Speedtest 主任务
+# =============================================================================
+- name: Include installation tasks | 包含安装任务
+  ansible.builtin.include_tasks: install.yml

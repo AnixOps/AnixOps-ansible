@@ -1,0 +1,16 @@
+[Unit]
+Description=V2bX Proxy Node
+Documentation=https://github.com/{{ v2bx_repo_owner }}/{{ v2bx_repo_name }}
+After=network.target warp-svc.service
+Requires=warp-svc.service
+
+[Service]
+Type=simple
+User=root
+ExecStart={{ v2bx_install_dir }}/{{ v2bx_bin_name }} -c {{ v2bx_config_dir }}/config.json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
