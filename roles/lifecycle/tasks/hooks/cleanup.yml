@@ -50,7 +50,7 @@
 
 - name: Get role config directories | 获取 role 配置目录
   ansible.builtin.set_fact:
-    role_config_dirs: "{{ lookup('vars', lifecycle_target_role + '_config_dirs', default(['/etc/' + lifecycle_target_role]) }}"
+    role_config_dirs: "{{ lookup('vars', lifecycle_target_role + '_config_dirs', default=['/etc/' + lifecycle_target_role]) }}"
 
 - name: Archive data before cleanup | 清理前归档数据
   ansible.builtin.archive:

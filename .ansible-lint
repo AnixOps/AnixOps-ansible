@@ -20,6 +20,7 @@ warn_list:
   # Experimental rules
   - experimental
   # Pre-existing style issues — flagged for gradual improvement
+  - name[casing]
   - name[template]
   - var-naming
   - risky-shell-pipe

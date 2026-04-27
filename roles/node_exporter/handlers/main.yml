@@ -5,11 +5,11 @@
 # Define handlers for Node Exporter service
 # =============================================================================
 
-- name: reload systemd
+- name: Reload systemd
   systemd:
     daemon_reload: yes
 
-- name: restart node_exporter
+- name: Restart node_exporter
   service:
     name: node_exporter
     state: restarted

@@ -34,7 +34,7 @@
         dest: "/etc/ssh/sshd_config.backup.{{ ansible_date_time.epoch }}"
         remote_src: yes
         mode: '0600'
-      when: ansible_check_mode == false
+      when: not ansible_check_mode
 
     # -------------------------------------------------------------------------
     # 显示当前配置 | Display Current Configuration
@@ -122,7 +122,7 @@
       pause:
         seconds: 3
         prompt: "Restarting SSH in 3 seconds... Press Ctrl+C to abort."
-      when: ansible_check_mode == false
+      when: not ansible_check_mode
 
     - name: Restart SSH service | 重启 SSH 服务
       service:

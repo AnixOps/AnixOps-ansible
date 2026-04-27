@@ -1,7 +1,7 @@
 ---
 # Grafana Server Handlers
 
-- name: restart grafana
+- name: Restart grafana
   systemd:
     name: grafana-server
     state: restarted

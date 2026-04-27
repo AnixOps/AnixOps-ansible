@@ -1,7 +1,7 @@
 ---
 # Prometheus Server Handlers
 
-- name: restart prometheus
+- name: Restart prometheus
   systemd:
     name: prometheus
     state: restarted

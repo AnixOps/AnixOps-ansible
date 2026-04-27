@@ -6,7 +6,7 @@
 
 - name: Wait for service to be ready | 等待服务就绪
   ansible.builtin.wait_for:
-    port: "{{ lookup('vars', lifecycle_target_role + '_port', default(0) }}"
+    port: "{{ lookup('vars', lifecycle_target_role + '_port', default=0) }}"
     host: localhost
     timeout: "{{ hooks_verify_timeout }}"
     state: started
@@ -21,7 +21,7 @@
 
 - name: Perform health check | 执行健康检查
   ansible.builtin.uri:
-    url: "{{ lookup('vars', lifecycle_target_role + '_health_url', default('http://localhost') }}"
+    url: "{{ lookup('vars', lifecycle_target_role + '_health_url', default='http://localhost') }}"
     status_code: 200
     method: GET
     timeout: "{{ hooks_verify_timeout }}"

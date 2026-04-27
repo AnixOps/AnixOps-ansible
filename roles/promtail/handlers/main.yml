@@ -1,11 +1,11 @@
 ---
 # Promtail handlers
 
-- name: reload systemd
+- name: Reload systemd
   systemd:
     daemon_reload: yes
 
-- name: restart promtail
+- name: Restart promtail
   service:
     name: promtail
     state: restarted

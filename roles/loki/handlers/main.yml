@@ -1,7 +1,7 @@
 ---
 # Loki Server Handlers
 
-- name: restart loki
+- name: Restart loki
   systemd:
     name: loki
     state: restarted
