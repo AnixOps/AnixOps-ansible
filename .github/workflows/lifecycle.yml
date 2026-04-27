@@ -94,6 +94,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          ansible-galaxy install -r requirements.yml
 
       - name: Setup SSH Key
         run: |
@@ -212,6 +213,60 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             ansible $TARGET -i inventories/production/hosts.yml \
               -m shell -a "warp-cli status" -v || true
+            exit 0
+          fi
+
+          # V2board deploy special handling
+          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "v2board" ]; then
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🎯 Deploying V2board Control Panel..."
+            echo "═══════════════════════════════════════════════════════════════"
+            CMD="ansible-playbook playbooks/provision/site.yml"
+            CMD="$CMD -i inventories/production/hosts.yml"
+            CMD="$CMD --limit $TARGET"
+            CMD="$CMD --tags v2board"
+            CMD="$CMD -v"
+            eval $CMD
+
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🏥 Verifying V2board health..."
+            echo "═══════════════════════════════════════════════════════════════"
+            ansible $TARGET -i inventories/production/hosts.yml \
+              -m shell -a "docker ps | grep v2board" -v || true
+            exit 0
+          fi
+
+          # V2bX deploy special handling
+          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "v2bx" ]; then
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🎯 Deploying V2bX Proxy Nodes..."
+            echo "═══════════════════════════════════════════════════════════════"
+            CMD="ansible-playbook playbooks/provision/site.yml"
+            CMD="$CMD -i inventories/production/hosts.yml"
+            CMD="$CMD --limit $TARGET"
+            CMD="$CMD --tags v2bx"
+            CMD="$CMD -v"
+            eval $CMD
+
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🏥 Verifying V2bX service..."
+            echo "═══════════════════════════════════════════════════════════════"
+            ansible $TARGET -i inventories/production/hosts.yml \
+              -m shell -a "systemctl status V2bX" -v || true
+            exit 0
+          fi
+
+          # Speedtest deploy special handling
+          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "speedtest" ]; then
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🎯 Deploying Speedtest..."
+            echo "═══════════════════════════════════════════════════════════════"
+            CMD="ansible-playbook playbooks/provision/site.yml"
+            CMD="$CMD -i inventories/production/hosts.yml"
+            CMD="$CMD --limit $TARGET"
+            CMD="$CMD --tags speedtest"
+            CMD="$CMD -v"
+            eval $CMD
             exit 0
           fi
 
