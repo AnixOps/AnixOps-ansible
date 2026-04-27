@@ -154,11 +154,13 @@ production_servers:
     location: "Poland"
     groups:
       - observability
+      - mesh_nodes
     roles:
       - observability
       - prometheus
       - grafana
       - loki
+      - mesh_node
     server_environment: production
 
 # =============================================================================
@@ -187,7 +189,12 @@ group_definitions:
     description: "监控系统服务器 (Prometheus + Loki + Grafana) | Monitoring System Servers (PLG)"
     vars:
       server_role: observability
-  
+
+  mesh_nodes:
+    description: "Cloudflare Mesh 节点 | Cloudflare Mesh Network Nodes"
+    vars:
+      server_role: mesh_node
+
   # 环境分组 | Environment Groups
   dev:
     description: "开发环境 | Development Environment"
