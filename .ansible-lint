@@ -33,6 +33,8 @@ warn_list:
   - command-instead-of-shell
   - no-jinja-when
   - deprecated-local-action
+  # Galaxy metadata schema (EL platform versions not validated correctly)
+  - schema[meta]
 
 # Custom rules configuration
 rules: {}
