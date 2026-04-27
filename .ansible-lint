@@ -21,9 +21,4 @@ warn_list:
   - experimental
 
 # Custom rules configuration
-rules:
-  # Ensure idempotency checks are enforced
-  yaml:
-    line-length:
-      max: 200
-      level: warning
+rules: {}
