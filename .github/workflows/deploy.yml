@@ -1,16 +1,14 @@
 name: Deploy to Production
 
 on:
-  push:
-    branches: [deploy]
-  pull_request:
-    branches: [deploy, main]
   workflow_dispatch:
     inputs:
       target:
         description: "Target hosts (all, web_servers, observability)"
         required: true
         default: "all"
+  pull_request:
+    branches: [main]
 
 jobs:
   lint:
