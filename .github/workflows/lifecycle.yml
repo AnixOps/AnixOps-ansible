@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - status
+          - deploy
           - rollback
           - cleanup
         default: 'status'
@@ -156,12 +157,41 @@ jobs:
           FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
+          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
         run: |
           ACTION="${{ github.event.inputs.action }}"
           ROLE="${{ github.event.inputs.role }}"
           TARGET="${{ github.event.inputs.target_group }}"
 
-          # Build ansible command
+          # Mesh deploy special handling
+          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "cloudflare_mesh" ]; then
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🧹 Stopping old network services..."
+            echo "═══════════════════════════════════════════════════════════════"
+            ansible-playbook playbooks/maintenance/emergency-cleanup.yml \
+              -i inventories/production/hosts.yml \
+              --limit $TARGET -v || true
+
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🎯 Deploying Cloudflare Mesh..."
+            echo "═══════════════════════════════════════════════════════════════"
+            CMD="ansible-playbook playbooks/provision/site.yml"
+            CMD="$CMD -i inventories/production/hosts.yml"
+            CMD="$CMD --limit $TARGET"
+            CMD="$CMD --tags cloudflare_mesh"
+            CMD="$CMD -v"
+            eval $CMD
+
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🏥 Verifying Mesh connectivity..."
+            echo "═══════════════════════════════════════════════════════════════"
+            ansible $TARGET -i inventories/production/hosts.yml \
+              -m shell -a "warp-cli status" -v || true
+            exit 0
+          fi
+
+          # Standard lifecycle action
           CMD="ansible-playbook playbooks/maintenance/lifecycle.yml"
           CMD="$CMD -i inventories/production/hosts.yml"
           CMD="$CMD -e lifecycle_target_role=$ROLE"
