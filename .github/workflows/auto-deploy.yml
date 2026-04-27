@@ -1,0 +1,183 @@
+name: Auto Deploy on Push
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'roles/**'
+      - 'playbooks/**'
+      - 'inventories/**'
+
+jobs:
+  detect-changes:
+    name: Detect Changed Roles
+    runs-on: ubuntu-latest
+    outputs:
+      roles: ${{ steps.detect.outputs.roles }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # 需要获取上一个 commit 来比较
+
+      - name: Detect changed roles
+        id: detect
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "🔍 Detecting changed roles..."
+          echo "═══════════════════════════════════════════════════════════════"
+
+          # 获取变更的文件
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # 检测涉及的 roles
+          ROLES=""
+
+          # 检查每个 role 目录
+          for ROLE in nginx prometheus grafana loki promtail node_exporter common cloudflare_mesh firewall acme_ssl v2bx v2board speedtest; do
+            if echo "$CHANGED_FILES" | grep -q "roles/$ROLE/"; then
+              if [ -z "$ROLES" ]; then
+                ROLES="$ROLE"
+              else
+                ROLES="$ROLES,$ROLE"
+              fi
+              echo "✓ Detected: $ROLE"
+            fi
+          done
+
+          # 检查 inventory 变更（需要重新部署所有相关 role）
+          if echo "$CHANGED_FILES" | grep -q "inventories/"; then
+            echo "✓ Inventory changed - will deploy to affected hosts"
+          fi
+
+          # 检查 playbook 变更
+          if echo "$CHANGED_FILES" | grep -q "playbooks/"; then
+            echo "✓ Playbooks changed"
+          fi
+
+          echo "roles=$ROLES" >> $GITHUB_OUTPUT
+          if [ -n "$ROLES" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    name: Deploy Changed Roles
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Ansible and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          ansible-galaxy install -r requirements.yml
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create inventory from config
+        run: |
+          python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
+
+      - name: Deploy roles
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_FORCE_COLOR: 'True'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
+          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
+          V2BX_CORE: ${{ secrets.V2BX_CORE }}
+          V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
+          V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
+          V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
+          V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
+          V2BX_CERT_DOMAIN: ${{ secrets.V2BX_CERT_DOMAIN }}
+          V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}
+          V2BOARD_DB_TYPE: ${{ secrets.V2BOARD_DB_TYPE }}
+          V2BOARD_PG_PASSWORD: ${{ secrets.V2BOARD_PG_PASSWORD }}
+          V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
+          V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
+          V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
+          V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
+          V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
+          V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
+        run: |
+          ROLES="${{ needs.detect-changes.outputs.roles }}"
+
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "🚀 Auto Deploy Triggered"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "Commit: ${{ github.sha }}"
+          echo "Message: ${{ github.event.head_commit.message }}"
+          echo "Author: ${{ github.event.head_commit.author.name }}"
+          echo "Roles to deploy: $ROLES"
+          echo "═══════════════════════════════════════════════════════════════"
+
+          # 部署每个变更的 role
+          for ROLE in $(echo $ROLES | tr ',' ' '); do
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🎯 Deploying: $ROLE"
+            echo "═══════════════════════════════════════════════════════════════"
+
+            # 确定目标主机
+            TARGET="all"
+            case $ROLE in
+              nginx) TARGET="web_servers" ;;
+              v2board) TARGET="v2board_servers" ;;
+              v2bx) TARGET="v2bx_servers" ;;
+              cloudflare_mesh) TARGET="mesh_nodes" ;;
+            esac
+
+            ansible-playbook playbooks/provision/site.yml \
+              -i inventories/production/hosts.yml \
+              --limit $TARGET \
+              --tags $ROLE \
+              -v
+          done
+
+      - name: Cleanup SSH keys
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
+
+      - name: Deploy Summary
+        if: always()
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "✅ Auto Deploy Completed"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "Roles deployed: ${{ needs.detect-changes.outputs.roles }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "═══════════════════════════════════════════════════════════════"
