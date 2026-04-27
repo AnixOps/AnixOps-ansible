@@ -25,7 +25,7 @@
 
 - name: Wait for V2bX auto-registration | 等待 V2bX 自动注册完成
   ansible.builtin.pause:
-    seconds: 10
+    seconds: 15
 
 - name: Check V2bX credential file | 检查 V2bX 凭证文件
   ansible.builtin.stat:
@@ -51,18 +51,23 @@
       主机 | Host: {{ inventory_hostname }}
       节点名称 | Node Name: {{ v2bx_node_name }}
       Core: {{ v2bx_core }}
-      Node Type: {{ v2bx_node_type }}
-      Listen Port: {{ v2bx_listen_port }}
-      API Host: {{ v2bx_api_host }}
 
-      自动注册 | Auto-Registration:
-      - AuthKey 已使用 | AuthKey used
-      - 凭证文件 | Credential: {{ credential_stat.stat.exists | default(false) | ternary('已生成', '未找到') }}
+      支持协议 | Protocols:
+      {% for protocol in v2bx_protocols %}
+      - {{ protocol }} (端口由面板配置)
+      {% endfor %}
+
+      面板连接 | Panel Connection:
+      - API Host: {{ v2bx_api_host }}
+      - 自动注册: {{ v2bx_auto_register }}
+      - 凭证文件: {{ credential_stat.stat.exists | default(false) | ternary('已生成', '未找到') }}
 
       状态 | Status: {{ v2bx_service_status.status.ActiveState }}
 
       下一步 | Next Steps:
-      1. 在面板验证节点在线 | Verify node online in panel
-      2. 配置用户和流量 | Configure users and traffic rules
+      1. 在面板配置节点协议 | Configure protocols in panel:
+         - 节点管理 > 选择节点 > 添加协议
+         - 设置端口、TLS、传输层等
+      2. 验证节点在线 | Verify node online in panel
       3. 测试代理连接 | Test proxy connection
       ═══════════════════════════════════════════════════════════

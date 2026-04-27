@@ -10,15 +10,21 @@
       缺少必需配置变量 | Missing required configuration:
       - V2BX_AUTH_KEY (一次性注册令牌，从面板生成)
       - V2BX_API_HOST (面板API地址，使用Mesh IP)
+      - V2BX_PROTOCOLS (支持的协议列表，如 ["vmess", "vless", "shadowsocks"])
 
       如何获取 AuthKey | How to get AuthKey:
       1. 登录 v2board 管理面板
       2. 进入 节点管理 > 授权密钥
       3. 点击 "生成新密钥"
       4. 将密钥保存到 GitHub Secrets > NodeX > V2BX_AUTH_KEY
+
+      协议配置 | Protocol Config:
+      - 协议类型、端口、TLS等配置在面板 NodeProtocol 表中管理
+      - V2bX 定期从面板拉取每个协议的完整配置
   when: >
     (v2bx_auth_key | default('') == '') or
-    (v2bx_api_host | default('') == '')
+    (v2bx_api_host | default('') == '') or
+    (v2bx_protocols | default([]) | length == 0)
 
 - name: Include installation tasks | 包含安装任务
   ansible.builtin.include_tasks: install.yml

@@ -167,12 +167,10 @@ jobs:
           CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
           # V2bX Secrets (Auto-Registration Mode)
           V2BX_CORE: ${{ secrets.V2BX_CORE }}
-          V2BX_NODE_TYPE: ${{ secrets.V2BX_NODE_TYPE }}
           V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
           V2BX_AUTH_KEY: ${{ secrets.V2BX_AUTH_KEY }}
           V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
-          V2BX_LISTEN_PORT: ${{ secrets.V2BX_LISTEN_PORT }}
-          V2BX_TRANSPORT: ${{ secrets.V2BX_TRANSPORT }}
+          V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
           V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
           V2BX_CERT_DOMAIN: ${{ secrets.V2BX_CERT_DOMAIN }}
           V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}

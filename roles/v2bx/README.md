@@ -6,39 +6,63 @@
 
 - `cloudflare_mesh`: 通过 Mesh IP 与面板通信
 
-## 自动注册模式
+## 架构说明
 
-V2bX 使用 AuthKey 自动注册，无需预先在面板创建节点：
+**面板管理协议配置**：
+- 一个 Node (物理服务器) 可以有多个 NodeProtocol
+- 每个协议有独立的端口、TLS、传输层配置
+- V2bX 从面板拉取每个协议的完整配置
 
-1. 管理员在 v2board 面板生成 AuthKey
-2. Ansible 部署 V2bX 时传入 AuthKey
-3. V2bX 启动时自动注册，获取 ApiKey + Secret
-4. 凭证本地保存（可加密）
+```
+Node (uk-1)
+├── Protocol: vmess@443 (WebSocket + TLS)
+├── Protocol: vless-reality@8443
+├── Protocol: shadowsocks@8388
+└── Protocol: hysteria2@443/udp
+```
 
 ## 配置变量
 
 | 变量 | 来源 | 说明 |
 |------|------|------|
 | `V2BX_AUTH_KEY` | GitHub Secrets | 一次性注册令牌（面板生成） |
-| `V2BX_API_HOST` | GitHub Secrets | 面板 API 地址（Mesh IP，如 `http://100.96.x.x:8080`） |
-| `V2BX_NODE_NAME` | GitHub Secrets | 节点名称（如 `UK-Node-01`） |
-| `V2BX_CORE` | GitHub Secrets | 内核类型（sing/xray/hysteria2） |
-| `V2BX_NODE_TYPE` | GitHub Secrets | 节点类型（vmess/vless/trojan） |
-| `V2BX_LISTEN_PORT` | GitHub Secrets | 监听端口（默认 443） |
-| `V2BX_TRANSPORT` | GitHub Secrets |传输协议（ws/http/grpc） |
-| `V2BX_CERT_MODE` | GitHub Secrets | 证书模式（self/cloudflare） |
-| `V2BX_CERT_DOMAIN` | GitHub Secrets | 证书域名 |
+| `V2BX_API_HOST` | GitHub Secrets | 面板 API 地址（Mesh IP） |
+| `V2BX_NODE_NAME` | GitHub Secrets | 节点名称 |
+| `V2BX_CORE` | GitHub Secrets | 内核类型（sing/xray） |
+| `V2BX_PROTOCOLS` | GitHub Secrets | 支持的协议列表，JSON数组 |
 
-## 如何获取 AuthKey
+**V2BX_PROTOCOLS 示例**：
+```json
+["vmess", "vless", "shadowsocks", "hysteria2"]
+```
+
+## 部署流程
+
+1. Ansible 部署 V2bX，配置支持的协议列表
+2. V2bX 使用 AuthKey 自动注册，获取 node_id + ApiKey + Secret
+3. V2bX 定期从面板拉取每个协议的配置（端口、TLS等）
+4. 在面板中配置具体协议参数
+
+## 如何配置
+
+### 1. 面板生成 AuthKey
 
 1. 登录 v2board 管理面板
 2. 进入 **节点管理 > 授权密钥**
 3. 点击 **生成新密钥**
-4. 将密钥保存到 GitHub Secrets > NodeX > `V2BX_AUTH_KEY`
+4. 保存到 GitHub Secrets > `V2BX_AUTH_KEY`
 
-## 使用方法
+### 2. GitHub Secrets 配置
 
-### GitHub Actions
+```
+V2BX_AUTH_KEY=your-auth-key
+V2BX_API_HOST=http://100.96.0.5:8080
+V2BX_NODE_NAME=UK-Node-01
+V2BX_CORE=sing
+V2BX_PROTOCOLS=["vmess","vless","shadowsocks"]
+```
+
+### 3. 部署 V2bX
 
 ```yaml
 workflow_dispatch:
@@ -47,30 +71,17 @@ workflow_dispatch:
     target_group: v2bx_servers
 ```
 
-### 本地部署
+### 4. 面板配置协议
 
-```bash
-ansible-playbook playbooks/provision/site.yml \
-  --tags v2bx \
-  --limit v2bx_servers \
-  -e V2BX_AUTH_KEY=your-auth-key \
-  -e V2BX_API_HOST=http://100.96.x.x:8080
-```
+部署后，在面板中为节点添加协议：
 
-## 部署流程
-
-1. 验证 AuthKey 和 API Host
-2. 创建目录 `/usr/local/V2bX`, `/etc/V2bX`, `/var/lib/V2bX`
-3. 下载 V2bX 二进制和 geo 数据文件
-4. 生成 `config.json`（自动注册模式）
-5. 安装 systemd 服务
-6. 启动服务，等待自动注册完成
-7. 验证凭证文件生成
+1. 节点管理 > 选择节点
+2. 添加协议 > 选择类型（vmess/vless/ss等）
+3. 配置端口、TLS、传输层
+4. V2bX 会自动拉取配置并启动对应服务
 
 ## Mesh 通信
 
-V2bX 通过 Cloudflare Mesh IP 与 v2board 面板通信：
-
-- `V2BX_API_HOST` 使用面板的 Mesh IP（如 `http://100.96.0.5:8080`）
+- `V2BX_API_HOST` 使用面板的 Mesh IP
 - 部署顺序: Mesh → v2board → V2bX
-- 所有流量通过 Mesh 内网传输，无需公网暴露
+- 所有面板通信通过 Mesh 内网
