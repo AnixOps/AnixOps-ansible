@@ -12,18 +12,20 @@
       - V2BOARD_API_TOKEN (内部API令牌，用于Ansible自动化)
       - V2BOARD_ADMIN_EMAIL (管理员邮箱)
       - V2BOARD_ADMIN_PASSWORD (管理员密码)
-{% if v2board_db_type == 'postgres' %}
-      - V2BOARD_PG_PASSWORD (PostgreSQL密码)
-      - V2BOARD_REDIS_HOST (Redis地址)
-{% endif %}
   when: >
     (v2board_jwt_secret | default('') == '') or
-    (v2board_api_key | default('') == '') or
+    (v2board_api_token | default('') == '') or
     (v2board_admin_email | default('') == '') or
-    (v2board_admin_password | default('') == '') or
-    (v2board_api_token | default('') == '')
-{% if v2board_db_type == 'postgres' %} or
-    (v2board_pg_password | default('') == ''){% endif %}
+    (v2board_admin_password | default('') == '')
+
+- name: Validate PostgreSQL variables | 验证 PostgreSQL 变量
+  ansible.builtin.fail:
+    msg: |
+      PostgreSQL 模式缺少必需配置 | Missing required PostgreSQL configuration:
+      - V2BOARD_PG_PASSWORD (PostgreSQL密码)
+  when: >
+    (v2board_db_type == 'postgres') and
+    (v2board_pg_password | default('') == '')
 
 - name: Include Docker deployment tasks | 包含 Docker 部署任务
   ansible.builtin.include_tasks: deploy_docker.yml

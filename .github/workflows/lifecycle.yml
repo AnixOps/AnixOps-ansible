@@ -79,6 +79,7 @@ jobs:
   lifecycle:
     name: Lifecycle (${{ github.event.inputs.action }} - ${{ github.event.inputs.role }})
     runs-on: ubuntu-latest
+    environment: NodeX
 
     steps:
       - name: Checkout code
