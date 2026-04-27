@@ -20,9 +20,9 @@ v2bx_auto_register: true
 
 # Auto-generate AuthKey via panel internal API (recommended)
 # If true, Ansible will call panel API to generate AuthKey before deployment
-# Requires V2BX_PANEL_API_TOKEN (panel's API_TOKEN from config.yaml)
+# Uses the same API_TOKEN that v2board uses (V2BOARD_API_TOKEN)
 v2bx_auto_generate_authkey: "{{ lookup('env', 'V2BX_AUTO_GENERATE_AUTHKEY') | default('true') }}"
-v2bx_panel_api_token: "{{ lookup('env', 'V2BX_PANEL_API_TOKEN') | default('') }}"
+v2bx_panel_api_token: "{{ lookup('env', 'V2BOARD_API_TOKEN') | default('') }}"
 
 # Manual AuthKey (optional, used if auto_generate is false)
 v2bx_auth_key: "{{ lookup('env', 'V2BX_AUTH_KEY') | default('') }}"

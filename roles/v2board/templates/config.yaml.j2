@@ -4,6 +4,8 @@ app:
   frontend_port: {{ v2board_frontend_port }}
   grpc_port: {{ v2board_grpc_port }}
   nodex_port: {{ v2board_nodex_port }}
+  api_token: {{ v2board_api_token }}
+  subscribe_path: "s"
 
 database:
   type: {{ v2board_db_type }}
@@ -30,9 +32,6 @@ redis:
 
 jwt:
   secret: {{ v2board_jwt_secret }}
-
-api:
-  key: {{ v2board_api_key }}
 
 admin:
   email: {{ v2board_admin_email }}

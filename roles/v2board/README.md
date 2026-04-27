@@ -9,58 +9,48 @@
 
 ## 配置变量
 
-| 变量 | 来源 | 说明 |
-|------|------|------|
-| `V2BOARD_DB_TYPE` | GitHub Secrets | 数据库类型 (sqlite/postgres) |
-| `V2BOARD_PG_*` | GitHub Secrets | PostgreSQL 配置 |
-| `V2BOARD_REDIS_*` | GitHub Secrets | Redis 配置 |
-| `V2BOARD_JWT_SECRET` | GitHub Secrets | JWT 密钥 |
-| `V2BOARD_API_KEY` | GitHub Secrets | API 密钥 |
-| `V2BOARD_ADMIN_EMAIL` | GitHub Secrets | 管理员邮箱 |
-| `V2BOARD_ADMIN_PASSWORD` | GitHub Secrets | 管理员密码 |
-| `V2BOARD_MESH_IP` | GitHub Secrets | Mesh IP 地址 |
-| `V2BOARD_REPO_OWNER` | GitHub Secrets | GitHub repo owner |
+| Secret | 说明 |
+|--------|------|
+| `V2BOARD_API_TOKEN` | **内部 API 令牌**（用于 Ansible 自动化、V2bX 注册） |
+| `V2BOARD_JWT_SECRET` | JWT 密钥（32+ 字符随机） |
+| `V2BOARD_ADMIN_EMAIL` | 管理员邮箱 |
+| `V2BOARD_ADMIN_PASSWORD` | 管理员密码 |
+| `V2BOARD_MESH_IP` | 面板 Mesh IP |
+| `V2BOARD_DB_TYPE` | 数据库类型（sqlite/postgres） |
+
+## API_TOKEN 用途
+
+同一个 `V2BOARD_API_TOKEN` 用于：
+
+1. **写入面板 config.yaml** → 面板启动后验证内部 API
+2. **Ansible 调用面板 API** → 自动生成 AuthKey
+3. **V2bX 部署时** → 调用面板 `/api/v2/internal/auth-keys`
 
 ## 端口
 
-| 端口 |用途 |
+| 端口 | 用途 |
 |------|------|
-| 3000 |前端界面 |
+| 3000 | 前端界面 |
 | 8080 | API 端口 |
 | 50051 | gRPC 端口 |
 | 18081 | NodeX 端口 |
 
-## 使用方法
-
-### GitHub Actions
-
-```yaml
-workflow_dispatch:
-  inputs:
-    role: v2board
-    target_group: v2board_servers
-```
-
-### 本地部署
-
-```bash
-ansible-playbook playbooks/provision/site.yml \
-  --tags v2board \
-  --limit v2board_servers
-```
-
 ## 部署流程
 
-1. 验证必需变量
-2. 安装 Docker 和 Docker Compose
-3. 创建 `/opt/v2board` 目录
-4. 生成 `config.yaml` 和 `docker-compose.yml`
-5. 启动 Docker 容器
-6. 验证健康检查
+```
+部署 v2board (API_TOKEN 写入 config.yaml)
+↓
+部署 V2bX (用 API_TOKEN 调用面板生成 AuthKey)
+↓
+V2bX 注册 (获取 node_id + ApiKey + Secret)
+```
 
-## Mesh 通信
+## GitHub Secrets 配置
 
-V2board 向 V2bX 提供 Mesh IP 访问:
-
-- `V2BOARD_MESH_IP` 用于配置文件中标识
-- V2bX 通过 Mesh IP `100.96.x.x:8080` 访问 API
+```
+V2BOARD_API_TOKEN=your-random-token-here
+V2BOARD_JWT_SECRET=your-jwt-secret-32chars
+V2BOARD_ADMIN_EMAIL=admin@example.com
+V2BOARD_ADMIN_PASSWORD=your-password
+V2BOARD_MESH_IP=100.96.0.5
+```

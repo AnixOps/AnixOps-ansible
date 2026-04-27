@@ -31,6 +31,7 @@ v2board_redis_password: "{{ lookup('env', 'V2BOARD_REDIS_PASSWORD') | default(''
 # Secrets (from GitHub)
 v2board_jwt_secret: "{{ lookup('env', 'V2BOARD_JWT_SECRET') | default('') }}"
 v2board_api_key: "{{ lookup('env', 'V2BOARD_API_KEY') | default('') }}"
+v2board_api_token: "{{ lookup('env', 'V2BOARD_API_TOKEN') | default('') }}"
 v2board_admin_email: "{{ lookup('env', 'V2BOARD_ADMIN_EMAIL') | default('') }}"
 v2board_admin_password: "{{ lookup('env', 'V2BOARD_ADMIN_PASSWORD') | default('') }}"
 

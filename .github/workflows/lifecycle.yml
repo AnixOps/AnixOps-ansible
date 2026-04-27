@@ -166,10 +166,9 @@ jobs:
           CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
           CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
           # V2bX Secrets (Auto-Registration Mode)
+          # Uses V2BOARD_API_TOKEN for panel API calls (same as v2board config)
           V2BX_CORE: ${{ secrets.V2BX_CORE }}
           V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
-          V2BX_PANEL_API_TOKEN: ${{ secrets.V2BX_PANEL_API_TOKEN }}
-          V2BX_AUTO_GENERATE_AUTHKEY: ${{ secrets.V2BX_AUTO_GENERATE_AUTHKEY }}
           V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
           V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
           V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
@@ -186,7 +185,7 @@ jobs:
           V2BOARD_REDIS_PORT: ${{ secrets.V2BOARD_REDIS_PORT }}
           V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
           V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
-          V2BOARD_API_KEY: ${{ secrets.V2BOARD_API_KEY }}
+          V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
           V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
           V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
           V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
