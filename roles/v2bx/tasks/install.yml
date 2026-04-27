@@ -10,6 +10,7 @@
   loop:
     - "{{ v2bx_install_dir }}"
     - "{{ v2bx_config_dir }}"
+    - "{{ v2bx_data_dir }}"
 
 - name: Download V2bX binary | 下载 V2bX 二进制文件
   ansible.builtin.get_url:

@@ -9,25 +9,38 @@ v2bx_repo_name: "V2bX_AnixOps"
 v2bx_repo_branch: "dev_new"
 v2bx_install_dir: "/usr/local/V2bX"
 v2bx_config_dir: "/etc/V2bX"
+v2bx_data_dir: "/var/lib/V2bX"
 v2bx_bin_name: "V2bX"
 
 # Core configuration (from secrets)
 v2bx_core: "{{ lookup('env', 'V2BX_CORE') | default('sing') }}"
-v2bx_node_id: "{{ lookup('env', 'V2BX_NODE_ID') | default('') }}"
 v2bx_node_type: "{{ lookup('env', 'V2BX_NODE_TYPE') | default('vmess') }}"
 v2bx_listen_port: "{{ lookup('env', 'V2BX_LISTEN_PORT') | default('443') }}"
 v2bx_transport: "{{ lookup('env', 'V2BX_TRANSPORT') | default('http') }}"
 
+# Auto-registration mode (recommended)
+# Admin generates AuthKey in panel, V2bX auto-registers and gets ApiKey+Secret
+v2bx_auto_register: true
+v2bx_auth_key: "{{ lookup('env', 'V2BX_AUTH_KEY') | default('') }}"
+v2bx_node_name: "{{ lookup('env', 'V2BX_NODE_NAME') | default(inventory_hostname) }}"
+v2bx_credential_file: "{{ v2bx_data_dir }}/credential.json"
+
 # Panel connection via Mesh IP
 v2bx_api_host: "{{ lookup('env', 'V2BX_API_HOST') | default('') }}"
-v2bx_api_key: "{{ lookup('env', 'V2BX_API_KEY') | default('') }}"
 
 # Cert configuration
 v2bx_cert_mode: "{{ lookup('env', 'V2BX_CERT_MODE') | default('self') }}"
 v2bx_cert_domain: "{{ lookup('env', 'V2BX_CERT_DOMAIN') | default('') }}"
 
+# Security options
+v2bx_enable_sign: true
+v2bx_encrypt_credential: true
+
 # Logging
 v2bx_log_level: "{{ lookup('env', 'V2BX_LOG_LEVEL') | default('info') }}"
+
+# Heartbeat interval (seconds)
+v2bx_heartbeat_interval: 60
 
 # =============================================================================
 # Lifecycle Configuration | 生命周期配置
@@ -36,6 +49,8 @@ v2bx_port: "{{ v2bx_listen_port }}"
 v2bx_health_url: ""
 v2bx_backup_files:
   - "{{ v2bx_config_dir }}/config.json"
+  - "{{ v2bx_credential_file }}"
 v2bx_config_dirs:
   - "{{ v2bx_config_dir }}"
+  - "{{ v2bx_data_dir }}"
 v2bx_service_name: "V2bX"

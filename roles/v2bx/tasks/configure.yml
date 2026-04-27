@@ -23,6 +23,18 @@
     enabled: yes
     daemon_reload: yes
 
+- name: Wait for V2bX auto-registration | 等待 V2bX 自动注册完成
+  ansible.builtin.pause:
+    seconds: 10
+
+- name: Check V2bX credential file | 检查 V2bX 凭证文件
+  ansible.builtin.stat:
+    path: "{{ v2bx_credential_file }}"
+  register: credential_stat
+  retries: 3
+  delay: 5
+  until: "credential_stat.stat.exists"
+
 - name: Verify V2bX service status | 验证 V2bX 服务状态
   ansible.builtin.systemd:
     name: "{{ v2bx_service_name }}"
@@ -37,11 +49,20 @@
       ✓ V2bX 代理节点部署成功 | V2bX Proxy Node Deployed
       ═══════════════════════════════════════════════════════════
       主机 | Host: {{ inventory_hostname }}
-      Node ID: {{ v2bx_node_id }}
-      Node Type: {{ v2bx_node_type }}
+      节点名称 | Node Name: {{ v2bx_node_name }}
       Core: {{ v2bx_core }}
+      Node Type: {{ v2bx_node_type }}
       Listen Port: {{ v2bx_listen_port }}
       API Host: {{ v2bx_api_host }}
 
+      自动注册 | Auto-Registration:
+      - AuthKey 已使用 | AuthKey used
+      - 凭证文件 | Credential: {{ credential_stat.stat.exists | default(false) | ternary('已生成', '未找到') }}
+
       状态 | Status: {{ v2bx_service_status.status.ActiveState }}
+
+      下一步 | Next Steps:
+      1. 在面板验证节点在线 | Verify node online in panel
+      2. 配置用户和流量 | Configure users and traffic rules
+      3. 测试代理连接 | Test proxy connection
       ═══════════════════════════════════════════════════════════

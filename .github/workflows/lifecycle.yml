@@ -165,12 +165,12 @@ jobs:
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
           CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
           CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
-          # V2bX Secrets (NodeX Environment)
+          # V2bX Secrets (Auto-Registration Mode)
           V2BX_CORE: ${{ secrets.V2BX_CORE }}
-          V2BX_NODE_ID: ${{ secrets.V2BX_NODE_ID }}
           V2BX_NODE_TYPE: ${{ secrets.V2BX_NODE_TYPE }}
           V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
-          V2BX_API_KEY: ${{ secrets.V2BX_API_KEY }}
+          V2BX_AUTH_KEY: ${{ secrets.V2BX_AUTH_KEY }}
+          V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
           V2BX_LISTEN_PORT: ${{ secrets.V2BX_LISTEN_PORT }}
           V2BX_TRANSPORT: ${{ secrets.V2BX_TRANSPORT }}
           V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}

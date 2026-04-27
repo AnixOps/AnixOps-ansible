@@ -8,13 +8,17 @@
   ansible.builtin.fail:
     msg: |
       缺少必需配置变量 | Missing required configuration:
-      - V2BX_NODE_ID (节点ID)
-      - V2BX_API_HOST (面板API地址)
-      - V2BX_API_KEY (面板API密钥)
+      - V2BX_AUTH_KEY (一次性注册令牌，从面板生成)
+      - V2BX_API_HOST (面板API地址，使用Mesh IP)
+
+      如何获取 AuthKey | How to get AuthKey:
+      1. 登录 v2board 管理面板
+      2. 进入 节点管理 > 授权密钥
+      3. 点击 "生成新密钥"
+      4. 将密钥保存到 GitHub Secrets > NodeX > V2BX_AUTH_KEY
   when: >
-    (v2bx_node_id | default('') == '') or
-    (v2bx_api_host | default('') == '') or
-    (v2bx_api_key | default('') == '')
+    (v2bx_auth_key | default('') == '') or
+    (v2bx_api_host | default('') == '')
 
 - name: Include installation tasks | 包含安装任务
   ansible.builtin.include_tasks: install.yml
