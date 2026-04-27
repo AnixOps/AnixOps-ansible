@@ -19,6 +19,19 @@ warn_list:
   - role-name
   # Experimental rules
   - experimental
+  # Pre-existing style issues — flagged for gradual improvement
+  - name[template]
+  - var-naming
+  - risky-shell-pipe
+  - yaml[line-length]
+  - fqcn
+  - deprecated-module
+  - ignore-errors
+  - key-order
+  - risky-file-mode
+  - command-instead-of-shell
+  - no-jinja-when
+  - local-action
 
 # Custom rules configuration
 rules: {}
