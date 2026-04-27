@@ -40,7 +40,7 @@ jobs:
 
       - name: Run ansible-lint
         run: |
-          ansible-lint --force-color playbooks/*.yml roles/*/tasks/*.yml
+          ansible-lint --force-color playbooks/**/*.yml roles/*/tasks/*.yml
 
       - name: Validate Ansible syntax
         run: |
