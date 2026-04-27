@@ -168,7 +168,8 @@ jobs:
           # V2bX Secrets (Auto-Registration Mode)
           V2BX_CORE: ${{ secrets.V2BX_CORE }}
           V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
-          V2BX_AUTH_KEY: ${{ secrets.V2BX_AUTH_KEY }}
+          V2BX_PANEL_API_TOKEN: ${{ secrets.V2BX_PANEL_API_TOKEN }}
+          V2BX_AUTO_GENERATE_AUTHKEY: ${{ secrets.V2BX_AUTO_GENERATE_AUTHKEY }}
           V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
           V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
           V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}

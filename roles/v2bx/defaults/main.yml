@@ -17,7 +17,17 @@ v2bx_core: "{{ lookup('env', 'V2BX_CORE') | default('sing') }}"
 
 # Auto-registration mode
 v2bx_auto_register: true
+
+# Auto-generate AuthKey via panel internal API (recommended)
+# If true, Ansible will call panel API to generate AuthKey before deployment
+# Requires V2BX_PANEL_API_TOKEN (panel's API_TOKEN from config.yaml)
+v2bx_auto_generate_authkey: "{{ lookup('env', 'V2BX_AUTO_GENERATE_AUTHKEY') | default('true') }}"
+v2bx_panel_api_token: "{{ lookup('env', 'V2BX_PANEL_API_TOKEN') | default('') }}"
+
+# Manual AuthKey (optional, used if auto_generate is false)
 v2bx_auth_key: "{{ lookup('env', 'V2BX_AUTH_KEY') | default('') }}"
+v2bx_authkey_expire_days: "{{ lookup('env', 'V2BX_AUTHKEY_EXPIRE_DAYS') | default(1) }}"
+
 v2bx_node_name: "{{ lookup('env', 'V2BX_NODE_NAME') | default(inventory_hostname) }}"
 v2bx_credential_file: "{{ v2bx_data_dir }}/credential.json"
 

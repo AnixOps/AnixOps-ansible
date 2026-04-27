@@ -2,27 +2,59 @@
 # =============================================================================
 # V2bX Main Tasks | V2bX 主任务
 # =============================================================================
-# 验证配置 -> 安装 -> 配置 -> 启动
+# 自动生成AuthKey -> 安装 -> 配置 -> 启动
+
+- name: Generate AuthKey via panel internal API | 通过面板内部API生成AuthKey
+  block:
+    - name: Check if AuthKey is provided | 检查是否提供了AuthKey
+      ansible.builtin.set_fact:
+        v2bx_use_existing_key: "{{ v2bx_auth_key != '' }}"
+      when: v2bx_auth_key is defined and v2bx_auth_key != ''
+
+    - name: Generate new AuthKey from panel | 从面板生成新的AuthKey
+      ansible.builtin.uri:
+        url: "{{ v2bx_api_host }}/api/v2/internal/auth-keys"
+        method: POST
+        headers:
+          X-API-Key: "{{ v2bx_panel_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: "{{ v2bx_node_name }}"
+          node_name: "{{ v2bx_node_name }}"
+          expire_days: "{{ v2bx_authkey_expire_days | default(1) }}"
+        status_code: 200
+        timeout: 30
+      register: authkey_response
+      delegate_to: localhost
+      run_once: true
+      when: not v2bx_use_existing_key | default(false)
+
+    - name: Set generated AuthKey | 设置生成的AuthKey
+      ansible.builtin.set_fact:
+        v2bx_auth_key: "{{ authkey_response.json.data.key }}"
+      when: not v2bx_use_existing_key | default(false) and authkey_response.json.data.key is defined
+
+    - name: Display generated AuthKey info | 显示生成的AuthKey信息
+      ansible.builtin.debug:
+        msg: |
+          AuthKey已生成 | AuthKey Generated:
+          ID: {{ authkey_response.json.data.id }}
+          Name: {{ authkey_response.json.data.name }}
+          Key: {{ authkey_response.json.data.key }}
+          请保存此密钥以便后续使用 | Save this key for future use
+      when: not v2bx_use_existing_key | default(false)
+  when: v2bx_auto_generate_authkey | default(true)
 
 - name: Validate required variables | 验证必需变量
   ansible.builtin.fail:
     msg: |
       缺少必需配置变量 | Missing required configuration:
-      - V2BX_AUTH_KEY (一次性注册令牌，从面板生成)
       - V2BX_API_HOST (面板API地址，使用Mesh IP)
       - V2BX_PROTOCOLS (支持的协议列表，如 ["vmess", "vless", "shadowsocks"])
 
-      如何获取 AuthKey | How to get AuthKey:
-      1. 登录 v2board 管理面板
-      2. 进入 节点管理 > 授权密钥
-      3. 点击 "生成新密钥"
-      4. 将密钥保存到 GitHub Secrets > NodeX > V2BX_AUTH_KEY
-
-      协议配置 | Protocol Config:
-      - 协议类型、端口、TLS等配置在面板 NodeProtocol 表中管理
-      - V2bX 定期从面板拉取每个协议的完整配置
+      AuthKey已自动生成或需要手动配置 | AuthKey auto-generated or needs manual config
   when: >
-    (v2bx_auth_key | default('') == '') or
     (v2bx_api_host | default('') == '') or
     (v2bx_protocols | default([]) | length == 0)
 
