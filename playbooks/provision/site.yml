@@ -11,12 +11,90 @@
 # Post-check: Yes (final health check play included)
 #
 # 部署内容 | Deployment Content:
-#   - 通用配置（安全、时区、用户）| Common configuration (security, timezone, users)
-#   - Node Exporter（监控）| Node Exporter (monitoring)
-#   - Promtail（日志收集）| Promtail (log collection)
+#   - Docker 配置修复（官方标准）
+#   - 通用配置（安全、时区、用户）| Common configuration
+#   - Node Exporter（监控）| Node Exporter
+#   - Promtail（日志收集）| Promtail
 #   - 防火墙配置 | Firewall configuration
-#   - Nginx（Web 服务器）| Nginx (Web servers)
+#   - Nginx（Web 服务器）| Nginx
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# 修复 Docker apt 配置（官方标准） | Fix Docker apt configuration
+# -----------------------------------------------------------------------------
+- name: Fix Docker apt configuration | 修复 Docker apt 配置
+  hosts: all
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  gather_facts: yes
+  ignore_unreachable: yes
+  tasks:
+    - name: Check if apt has Docker conflict | 检查 apt 是否有 Docker 配置冲突
+      ansible.builtin.shell: apt update 2>&1 | grep -q "Conflicting" && echo "conflict" || echo "ok"
+      register: apt_check
+      changed_when: false
+      failed_when: false
+
+    - name: Fix Docker apt configuration | 修复 Docker apt 配置
+      block:
+        - name: Remove old/conflicting Docker GPG keys | 移除旧/冲突的 Docker GPG keys
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /usr/share/keyrings/docker-archive-keyring.gpg
+            - /etc/apt/keyrings/docker.gpg
+
+        - name: Remove old Docker apt source files | 移除旧的 Docker apt source 文件
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/apt/sources.list.d/docker.list
+            - /etc/apt/sources.list.d/docker-ce.list
+
+        - name: Create keyrings directory | 创建 keyrings 目录
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: '0755'
+
+        - name: Download Docker GPG key (official) |下载 Docker GPG key (官方)
+          ansible.builtin.shell: |
+            curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg \
+              -o /etc/apt/keyrings/docker.asc
+            chmod a+r /etc/apt/keyrings/docker.asc
+          args:
+            creates: /etc/apt/keyrings/docker.asc
+
+        - name: Add Docker apt source (official DEB822 format) | 添加 Docker apt source (官方格式)
+          ansible.builtin.copy:
+            dest: /etc/apt/sources.list.d/docker.sources
+            content: |
+              Types: deb
+              URIs: https://download.docker.com/linux/{{ ansible_distribution | lower }}
+              Suites: {{ ansible_distribution_release }}
+              Components: stable
+              Signed-By: /etc/apt/keyrings/docker.asc
+            mode: '0644'
+
+        - name: Update apt cache | 更新 apt 缓存
+          ansible.builtin.apt:
+            update_cache: yes
+
+        - name: Display fix result | 显示修复结果
+          ansible.builtin.debug:
+            msg: |
+              ═══════════════════════════════════════════════════════════
+              ✓ Docker apt 配置已修复 | Docker apt config fixed
+              官方配置 | Official Config:
+              - GPG key: /etc/apt/keyrings/docker.asc
+              - Source: /etc/apt/sources.list.d/docker.sources
+              ═══════════════════════════════════════════════════════════
+      when:
+        - ansible_os_family == 'Debian'
+        - apt_check.stdout == "conflict"
 
 # -----------------------------------------------------------------------------
 # 部署通用配置 | Deploy Common Configuration

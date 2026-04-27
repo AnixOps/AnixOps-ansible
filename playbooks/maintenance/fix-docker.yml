@@ -1,0 +1,94 @@
+---
+# =============================================================================
+# Docker Configuration Fix | Docker 配置修复
+# =============================================================================
+# 按照 Docker 官方文档清理冲突配置，重新配置标准安装
+# https://docs.docker.com/engine/install/debian/
+#
+# 解决问题：E:Conflicting values set for option Signed-By
+# =============================================================================
+
+- name: Fix Docker apt configuration | 修复 Docker apt 配置
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Check if Docker is installed | 检查 Docker 是否已安装
+      ansible.builtin.shell: docker --version 2>/dev/null || echo "not installed"
+      register: docker_installed
+      changed_when: false
+
+    - name: Fix Docker apt configuration (Debian) | 修复 Docker apt 配置
+      block:
+        - name: Remove old/conflicting Docker GPG keys | 移除旧/冲突的 Docker GPG keys
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /usr/share/keyrings/docker-archive-keyring.gpg
+            - /etc/apt/keyrings/docker.gpg
+          when: ansible_os_family == 'Debian'
+
+        - name: Remove old Docker apt source files | 移除旧的 Docker apt source 文件
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/apt/sources.list.d/docker.list
+            - /etc/apt/sources.list.d/docker-ce.list
+          when: ansible_os_family == 'Debian'
+
+        - name: Create keyrings directory | 创建 keyrings 目录
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: '0755'
+          when: ansible_os_family == 'Debian'
+
+        - name: Download Docker GPG key (official) |下载 Docker GPG key (官方)
+          ansible.builtin.shell: |
+            curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg \
+              -o /etc/apt/keyrings/docker.asc
+            chmod a+r /etc/apt/keyrings/docker.asc
+          args:
+            creates: /etc/apt/keyrings/docker.asc
+          when: ansible_os_family == 'Debian'
+
+        - name: Add Docker apt source (official DEB822 format) | 添加 Docker apt source (官方格式)
+          ansible.builtin.copy:
+            dest: /etc/apt/sources.list.d/docker.sources
+            content: |
+              Types: deb
+              URIs: https://download.docker.com/linux/{{ ansible_distribution | lower }}
+              Suites: {{ ansible_distribution_release }}
+              Components: stable
+              Signed-By: /etc/apt/keyrings/docker.asc
+            mode: '0644'
+          when: ansible_os_family == 'Debian'
+
+        - name: Update apt cache | 更新 apt 缓存
+          ansible.builtin.apt:
+            update_cache: yes
+          when: ansible_os_family == 'Debian'
+
+        - name: Verify Docker installation | 验证 Docker 安装
+          ansible.builtin.shell: docker --version
+          register: docker_version
+          changed_when: false
+          when: docker_installed.stdout != "not installed"
+
+        - name: Display fix result | 显示修复结果
+          ansible.builtin.debug:
+            msg: |
+              ═══════════════════════════════════════════════════════════
+              ✓ Docker apt 配置已修复 | Docker apt config fixed
+              ═══════════════════════════════════════════════════════════
+              主机 | Host: {{ inventory_hostname }}
+              Docker: {{ docker_version.stdout | default('N/A') }}
+
+              官方配置 | Official Config:
+              - GPG key: /etc/apt/keyrings/docker.asc
+              - Source: /etc/apt/sources.list.d/docker.sources
+              ═══════════════════════════════════════════════════════════
+      when: ansible_os_family == 'Debian'
