@@ -28,10 +28,10 @@ warn_list:
   - deprecated-module
   - ignore-errors
   - key-order
-  - risky-file-mode
+  - risky-file-permissions
   - command-instead-of-shell
   - no-jinja-when
-  - local-action
+  - deprecated-local-action
 
 # Custom rules configuration
 rules: {}
