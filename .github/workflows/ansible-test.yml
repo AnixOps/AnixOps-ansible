@@ -24,8 +24,9 @@ on:
           - web_servers
           - proxy_servers
           - observability
-  push:
-    branches: [main]
+          - v2board_servers
+          - v2bx_servers
+          - mesh_nodes
   pull_request:
     branches: [main]
   schedule:

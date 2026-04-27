@@ -3,8 +3,6 @@ name: Security Scan
 on:
   pull_request:
     branches: [main, staging]
-  push:
-    branches: [main, staging]
   schedule:
     - cron: '0 6 * * 1'  # Weekly on Monday at 6am
   workflow_dispatch:
