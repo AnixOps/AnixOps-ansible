@@ -19,13 +19,15 @@ v2board_container_name: "v2board"
 
 # Database configuration (from secrets)
 v2board_db_type: "{{ lookup('env', 'V2BOARD_DB_TYPE') | default('sqlite') }}"
-v2board_pg_host: "{{ lookup('env', 'V2BOARD_PG_HOST') | default('') }}"
-v2board_pg_port: "{{ lookup('env', 'V2BOARD_PG_PORT') | default('5432') }}"
-v2board_pg_user: "{{ lookup('env', 'V2BOARD_PG_USER') | default('v2board') }}"
+# PostgreSQL (auto-configured in Docker compose, only password needed)
+v2board_pg_host: "postgres"
+v2board_pg_port: "5432"
+v2board_pg_user: "v2board"
 v2board_pg_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') | default('') }}"
-v2board_pg_database: "{{ lookup('env', 'V2BOARD_PG_DATABASE') | default('v2board') }}"
-v2board_redis_host: "{{ lookup('env', 'V2BOARD_REDIS_HOST') | default('') }}"
-v2board_redis_port: "{{ lookup('env', 'V2BOARD_REDIS_PORT') | default('6379') }}"
+v2board_pg_database: "v2board"
+# Redis (auto-configured in Docker compose)
+v2board_redis_host: "redis"
+v2board_redis_port: "6379"
 v2board_redis_password: "{{ lookup('env', 'V2BOARD_REDIS_PASSWORD') | default('') }}"
 
 # Secrets (from GitHub)

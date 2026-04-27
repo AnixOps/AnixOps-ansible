@@ -176,20 +176,13 @@ jobs:
           V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}
           # V2board Secrets (NodeX Environment)
           V2BOARD_DB_TYPE: ${{ secrets.V2BOARD_DB_TYPE }}
-          V2BOARD_PG_HOST: ${{ secrets.V2BOARD_PG_HOST }}
-          V2BOARD_PG_PORT: ${{ secrets.V2BOARD_PG_PORT }}
-          V2BOARD_PG_USER: ${{ secrets.V2BOARD_PG_USER }}
           V2BOARD_PG_PASSWORD: ${{ secrets.V2BOARD_PG_PASSWORD }}
-          V2BOARD_PG_DATABASE: ${{ secrets.V2BOARD_PG_DATABASE }}
-          V2BOARD_REDIS_HOST: ${{ secrets.V2BOARD_REDIS_HOST }}
-          V2BOARD_REDIS_PORT: ${{ secrets.V2BOARD_REDIS_PORT }}
           V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
           V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
           V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
           V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
           V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
           V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
-          V2BOARD_REPO_OWNER: ${{ secrets.V2BOARD_REPO_OWNER }}
         run: |
           ACTION="${{ github.event.inputs.action }}"
           ROLE="${{ github.event.inputs.role }}"
