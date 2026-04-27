@@ -29,8 +29,8 @@
   when: "warp_status.stdout | default('') is search('Registration: Missing')"
 
 - name: Connect to Mesh network | 连接到 Mesh 网络
-  ansible.builtin.command: warp-cli connect
-  when: "warp_status.stdout | default('') is search('Status: Disconnected')"
+  ansible.builtin.command: warp-cli --accept-tos connect
+  when: "warp_status.stdout | default('') is search('Disconnected')"
 
 - name: Verify Mesh connection status | 验证 Mesh 连接状态
   ansible.builtin.command: warp-cli --accept-tos status
@@ -38,7 +38,7 @@
   changed_when: false
   retries: 3
   delay: 5
-  until: "mesh_connection_status.stdout is search('Status: Connected')"
+  until: "mesh_connection_status.stdout is search('Connected')"
 
 - name: Display Mesh deployment summary | 显示 Mesh 部署摘要
   ansible.builtin.debug:
