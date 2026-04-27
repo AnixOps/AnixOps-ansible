@@ -17,8 +17,7 @@
   failed_when: false
 
 - name: Register Mesh node with enrollment token | 使用 enrollment token 注册 Mesh 节点
-  ansible.builtin.shell: |
-    warp-cli --accept-tos connector new {{ cloudflare_mesh_token }}
+  ansible.builtin.command: warp-cli connector new {{ cloudflare_mesh_token }}
   args:
     creates: /var/lib/cloudflare-warp/reg.json
   when: >-
