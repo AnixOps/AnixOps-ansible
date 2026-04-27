@@ -1,46 +1,52 @@
-name: Ansible Deploy
+name: Cloudflare Mesh Deployment
 
 on:
   workflow_dispatch:
     inputs:
-      playbook:
-        description: 'Select playbook'
+      action:
+        description: 'Mesh action'
         required: true
         type: choice
         options:
-          - provision/site.yml
-          - provision/quick-setup.yml
-          - provision/web-servers.yml
-          - maintenance/health-check.yml
-          - maintenance/firewall-setup.yml
-          - maintenance/lifecycle.yml
-          - maintenance/emergency-cleanup.yml
-        default: 'provision/quick-setup.yml'
-      
+          - deploy
+          - status
+          - cleanup
+        default: 'deploy'
+
       target_group:
         description: 'Target servers'
         required: true
         type: choice
         options:
-          - all
-          - web_servers
-          - proxy_servers
-          - observability
-          - dev_servers
           - mesh_nodes
-        default: 'all'
-      
-      dry_run:
-        description: 'Test only (no changes)'
+          - all
+          - jp-1
+          - uk-1
+          - us-w-1
+          - sg-1
+          - jp-2
+          - hk-1
+          - uk-2
+          - pl-1
+        default: 'mesh_nodes'
+
+      cleanup_old_services:
+        description: 'Stop old cloudflared/warp/headscale services before deploy'
         required: false
         type: boolean
         default: true
 
+      dry_run:
+        description: 'Test only (no changes)'
+        required: false
+        type: boolean
+        default: false
+
 jobs:
-  deploy:
-    name: Deploy (${{ github.event.inputs.target_group }})
+  mesh:
+    name: Cloudflare Mesh (${{ github.event.inputs.action }})
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,54 +67,30 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          
-          # Add SSH fingerprints to known_hosts (optional)
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Create inventory from config
         run: |
           echo "Generating inventory from servers-config.yml..."
           python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
-          
-          echo "✓ Inventory generated successfully"
-          echo ""
-          echo "Generated inventory:"
-          cat inventories/production/hosts.yml
+          echo "✓ Inventory generated"
 
-      - name: Display Deployment Configuration
+      - name: Display Mesh Configuration
         run: |
           echo "═══════════════════════════════════════════════════════════════"
-          echo "🚀 DEPLOYMENT CONFIGURATION"
+          echo "🌐 CLOUDFLARE MESH MANAGEMENT"
           echo "═══════════════════════════════════════════════════════════════"
-          echo "Playbook:        ${{ github.event.inputs.playbook }}"
-          echo "Target Group:    ${{ github.event.inputs.target_group }}"
+          echo "Action:          ${{ github.event.inputs.action }}"
+          echo "Target:          ${{ github.event.inputs.target_group }}"
+          echo "Cleanup Old:     ${{ github.event.inputs.cleanup_old_services }}"
           echo "Dry Run:         ${{ github.event.inputs.dry_run }}"
           echo "───────────────────────────────────────────────────────────────"
           echo "Triggered by:    ${{ github.actor }}"
           echo "Branch:          ${{ github.ref_name }}"
           echo "═══════════════════════════════════════════════════════════════"
 
-      - name: Verify Connectivity
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
-          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
-          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
-          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
-          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
-          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
-          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-        run: |
-          echo "🔍 Verifying connectivity to target servers..."
-          ansible ${{ github.event.inputs.target_group }} \
-            -i inventories/production/hosts.yml \
-            -m ping -v
-
-      - name: Run Ansible Playbook
+      - name: Stop Old Network Services
+        if: github.event.inputs.action == 'deploy' && github.event.inputs.cleanup_old_services == 'true' && github.event.inputs.dry_run != 'true'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           ANSIBLE_FORCE_COLOR: 'True'
@@ -123,43 +105,110 @@ jobs:
           FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          # Observability Configuration
-          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
-          LOKI_URL: ${{ secrets.LOKI_URL }}
-          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
-          OBSERVABILITY_SSL_ENABLED: ${{ secrets.OBSERVABILITY_SSL_ENABLED }}
-          OBSERVABILITY_SSL_METHOD: ${{ secrets.OBSERVABILITY_SSL_METHOD }}
-          GRAFANA_DOMAIN: ${{ secrets.GRAFANA_DOMAIN }}
-          PROMETHEUS_DOMAIN: ${{ secrets.PROMETHEUS_DOMAIN }}
-          LOKI_DOMAIN: ${{ secrets.LOKI_DOMAIN }}
-          SSL_CERTIFICATE_PEM: ${{ secrets.SSL_CERTIFICATE_PEM }}
-          SSL_CERTIFICATE_KEY_PEM: ${{ secrets.SSL_CERTIFICATE_KEY_PEM }}
-          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
-          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
         run: |
-          # Build command
-          CMD="ansible-playbook playbooks/${{ github.event.inputs.playbook }}"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "🧹 Stopping old network services..."
+          echo "═══════════════════════════════════════════════════════════════"
+
+          ansible-playbook playbooks/maintenance/emergency-cleanup.yml \
+            -i inventories/production/hosts.yml \
+            --limit ${{ github.event.inputs.target_group }} \
+            -v
+
+      - name: Deploy Cloudflare Mesh
+        if: github.event.inputs.action == 'deploy'
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_FORCE_COLOR: 'True'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
+          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
+        run: |
+          CMD="ansible-playbook playbooks/provision/site.yml"
           CMD="$CMD -i inventories/production/hosts.yml"
           CMD="$CMD --limit ${{ github.event.inputs.target_group }}"
+          CMD="$CMD --tags cloudflare_mesh"
           CMD="$CMD -v"
-          
-          # Add dry-run flag if enabled
+
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             CMD="$CMD --check --diff"
-            echo "⚠️  Running in DRY RUN mode (no changes will be made)"
+            echo "⚠️  Running in DRY RUN mode"
           fi
-          
+
           echo "═══════════════════════════════════════════════════════════════"
-          echo "🎯 Executing: $CMD"
+          echo "🎯 Deploying Cloudflare Mesh..."
           echo "═══════════════════════════════════════════════════════════════"
-          
-          # Execute
+
           eval $CMD
 
-      - name: Run Health Check
-        if: success() && github.event.inputs.dry_run != 'true'
+      - name: Check Mesh Status
+        if: github.event.inputs.action == 'status'
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_FORCE_COLOR: 'True'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "🔍 Checking Mesh status..."
+          echo "═══════════════════════════════════════════════════════════════"
+
+          ansible ${{ github.event.inputs.target_group }} \
+            -i inventories/production/hosts.yml \
+            -m shell \
+            -a "warp-cli status || echo 'warp-cli not found'" \
+            -v
+
+      - name: Cleanup Mesh
+        if: github.event.inputs.action == 'cleanup'
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_FORCE_COLOR: 'True'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "⚠️  WARNING: Cleaning up Cloudflare Mesh"
+          echo "═══════════════════════════════════════════════════════════════"
+
+          ansible-playbook playbooks/maintenance/lifecycle.yml \
+            -i inventories/production/hosts.yml \
+            -e lifecycle_target_role=cloudflare_mesh \
+            -e cleanup_confirm=yes \
+            --limit ${{ github.event.inputs.target_group }} \
+            --tags cleanup \
+            -v
+
+      - name: Verify Mesh Connectivity
+        if: success() && github.event.inputs.action == 'deploy' && github.event.inputs.dry_run != 'true'
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'False'
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
@@ -175,20 +224,21 @@ jobs:
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           echo "═══════════════════════════════════════════════════════════════"
-          echo "🏥 Running Post-Deployment Health Check"
+          echo "🏥 Post-Deployment Mesh Verification"
           echo "═══════════════════════════════════════════════════════════════"
-          
+
           ansible ${{ github.event.inputs.target_group }} \
             -i inventories/production/hosts.yml \
             -m shell \
-            -a "uptime && df -h / && free -h" || true
+            -a "warp-cli status && warp-cli settings" \
+            -v || true
 
       - name: Cleanup SSH keys
         if: always()
         run: |
           rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
 
-      - name: Deployment Summary
+      - name: Mesh Summary
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
@@ -198,21 +248,12 @@ jobs:
             STATUS_EMOJI="❌"
             STATUS_TEXT="FAILED"
           fi
-          
+
           echo "═══════════════════════════════════════════════════════════════"
-          echo "$STATUS_EMOJI DEPLOYMENT $STATUS_TEXT"
+          echo "$STATUS_EMOJI CLOUDFLARE MESH $STATUS_TEXT"
           echo "═══════════════════════════════════════════════════════════════"
-          echo "Playbook:        ${{ github.event.inputs.playbook }}"
+          echo "Action:          ${{ github.event.inputs.action }}"
           echo "Target:          ${{ github.event.inputs.target_group }}"
-          echo "Dry Run:         ${{ github.event.inputs.dry_run }}"
           echo "───────────────────────────────────────────────────────────────"
           echo "Completed at:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo "═══════════════════════════════════════════════════════════════"
-
-      - name: Notify on Failure
-        if: failure()
-        run: |
-          echo "❌ Deployment failed!"
-          echo "Playbook: ${{ github.event.inputs.playbook }}"
-          echo "Target: ${{ github.event.inputs.target_group }}"
-          echo "Check the logs above for details."
