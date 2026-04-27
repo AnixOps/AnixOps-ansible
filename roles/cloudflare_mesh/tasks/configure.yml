@@ -10,6 +10,10 @@
     state: started
     enabled: yes
 
+- name: Accept WARP Terms of Service | 接受 WARP 服务条款
+  ansible.builtin.command: warp-cli --accept-tos
+  changed_when: true
+
 - name: Check existing registration status | 检查现有注册状态
   ansible.builtin.command: warp-cli status
   register: warp_status
