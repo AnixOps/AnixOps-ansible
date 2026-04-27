@@ -31,7 +31,7 @@
   max_fail_percentage: 25
   become: yes
   gather_facts: yes
-  
+
   pre_tasks:
     - name: Display firewall configuration | 显示防火墙配置
       debug:
@@ -41,13 +41,13 @@
           ═══════════════════════════════════════════════════════════
           目标主机 | Target Host: {{ inventory_hostname }}
           操作系统 | OS Family: {{ ansible_os_family }}
-          
+
           公开端口（无白名单）| Public Ports (No whitelist):
             {{ firewall_public_ports | join(', ') }}
-          
+
           受限端口（仅白名单）| Restricted Ports (Whitelist only):
             {{ firewall_restricted_ports | join(', ') }}
-          
+
           监控白名单 IP | Monitoring Whitelist IPs:
             {{ monitoring_whitelist | join('\n  ') if monitoring_whitelist | length > 0 else 'None configured' }}
           ═══════════════════════════════════════════════════════════
@@ -57,11 +57,11 @@
         msg: |
           错误：监控白名单为空！
           Error: Monitoring whitelist is empty!
-          
+
           请在以下位置配置 monitoring_allowed_ips：
           Please configure monitoring_allowed_ips in:
           inventories/production/group_vars/all/main.yml
-          
+
           或设置环境变量（或 | or set environment variables:
           DE_1_V4_SSH, PL_1_V4_SSH, etc.)
       when: monitoring_whitelist | length == 0
@@ -80,7 +80,7 @@
     - name: Display UFW status | 显示 UFW 状态
       debug:
         msg: "{{ ufw_status.stdout_lines }}"
-      when: 
+      when:
         - ansible_os_family == "Debian"
         - ufw_status.stdout_lines is defined
 
@@ -94,7 +94,7 @@
     - name: Display firewalld status | 显示 firewalld 状态
       debug:
         msg: "{{ firewalld_status.stdout_lines }}"
-      when: 
+      when:
         - ansible_os_family == "RedHat"
         - firewalld_status.stdout_lines is defined
 
@@ -105,7 +105,7 @@
           ✓ 防火墙设置成功完成 | Firewall Setup Completed Successfully
           ═══════════════════════════════════════════════════════════
           主机 | Host: {{ inventory_hostname }}
-          
+
           已应用配置 | Configuration Applied:
           ✓ 公开服务（SSH, HTTP, HTTPS）可从任何地方访问
             Public services (SSH, HTTP, HTTPS) are accessible from anywhere
@@ -113,9 +113,9 @@
             Monitoring services restricted to {{ monitoring_whitelist | length }} whitelisted IPs
           ✓ 受限端口应用默认拒绝策略
             Default deny policy applied for restricted ports
-          
+
           下一步 | Next Steps:
-          1. 测试公开服务访问 | Test public service access: 
+          1. 测试公开服务访问 | Test public service access:
              curl http://{{ ansible_host }}
           2. 从白名单服务器测试监控 | Test monitoring from whitelisted server:
              curl http://{{ ansible_host }}:9100/metrics

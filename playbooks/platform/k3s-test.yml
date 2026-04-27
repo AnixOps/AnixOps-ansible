@@ -32,7 +32,7 @@
   hosts: k8s_test
   gather_facts: yes
   become: yes
-  
+
   tasks:
     - name: Display deployment information
       ansible.builtin.debug:
@@ -57,7 +57,7 @@
   hosts: k8s_test
   gather_facts: no
   become: yes
-  
+
   tasks:
     - name: Display kubeconfig download information
       ansible.builtin.debug:
@@ -96,7 +96,7 @@
 - name: "Display Deployment Summary"
   hosts: k8s_test
   gather_facts: no
-  
+
   tasks:
     - name: Display final summary
       ansible.builtin.debug:

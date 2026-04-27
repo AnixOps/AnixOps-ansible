@@ -24,7 +24,7 @@
   become: yes
   gather_facts: yes
   ignore_unreachable: yes
-  
+
   roles:
     - common
     - node_exporter

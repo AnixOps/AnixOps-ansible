@@ -18,7 +18,7 @@
 - name: Fail if Docker is not installed (Kind only)
   ansible.builtin.fail:
     msg: "Docker is required but not installed. Please install Docker first."
-  when: 
+  when:
     - k8s_provider == 'kind'
     - docker_check.rc != 0
 

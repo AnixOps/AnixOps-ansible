@@ -100,7 +100,7 @@
           主机名 | Hostname: {{ ansible_hostname }}
           IP 地址 | IP Address: {{ ansible_default_ipv4.address | default('N/A') }}
           操作系统 | OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
-          
+
           已部署服务 | Deployed Services:
           ✓ 通用配置（安全、时区、用户）| Common configuration (security, timezone, users)
           ✓ Node Exporter（端口 {{ prometheus.node_exporter.port }}）| Node Exporter (port {{ prometheus.node_exporter.port }})
@@ -109,7 +109,7 @@
           {% if inventory_hostname in groups['web_servers'] %}
           ✓ Nginx（HTTP/HTTPS）| Nginx (HTTP/HTTPS)
           {% endif %}
-          
+
           下一步 | Next Steps:
           1. 在 Grafana 中验证 | Verify in Grafana: {{ grafana.url }}
           2. 检查 Prometheus 指标 | Check Prometheus metrics: {{ prometheus.server_url }}

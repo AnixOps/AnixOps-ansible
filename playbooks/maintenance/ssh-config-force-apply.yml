@@ -23,7 +23,7 @@
   gather_facts: yes
   serial: 1  # 一次只处理一台服务器 | Process one server at a time
   max_fail_percentage: 0  # SSH 配置零容忍失败 | Zero tolerance for SSH config failure
-  
+
   tasks:
     # -------------------------------------------------------------------------
     # 备份当前配置 | Backup Current Configuration
@@ -98,7 +98,7 @@
 
     - name: Show new configuration | 显示新配置
       debug:
-        msg: 
+        msg:
           - "=== New SSH Configuration Applied ==="
           - "{{ new_ssh_config.stdout_lines }}"
 

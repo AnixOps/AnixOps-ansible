@@ -1,6 +1,11 @@
 ---
 extends: default
 
+ignore:
+  - venv/
+  - .venv/
+  - node_modules/
+
 rules:
   line-length:
     max: 120
@@ -13,3 +18,6 @@ rules:
   document-start: disable
   truthy:
     allowed-values: ['true', 'false', 'yes', 'no']
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1

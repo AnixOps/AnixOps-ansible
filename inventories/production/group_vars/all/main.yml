@@ -125,7 +125,7 @@ security:
   fail2ban_enabled: true
   fail2ban_max_retry: 5
   fail2ban_ban_time: 3600  # 秒 | seconds
-  
+
   # 系统限制 | System limits
   limits:
     - domain: '*'
@@ -162,7 +162,7 @@ prometheus:
     version: "1.7.0"
     port: 9100
     download_url: "https://github.com/prometheus/node_exporter/releases/download"
-  
+
   # Prometheus 服务器地址 (从环境变量读取)
   # Prometheus server URL (read from environment variables)
   server_url: "{{ lookup('env', 'PROMETHEUS_URL') | default('http://localhost:9090') }}"
@@ -177,7 +177,7 @@ loki:
     version: "2.9.3"
     port: 9080
     download_url: "https://github.com/grafana/loki/releases/download"
-  
+
   # Loki 服务器地址 (从环境变量读取)
   # Loki server URL (read from environment variables)
   server_url: "{{ lookup('env', 'LOKI_URL') | default('http://localhost:3100') }}"

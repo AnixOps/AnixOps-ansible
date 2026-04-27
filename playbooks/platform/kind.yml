@@ -31,7 +31,7 @@
 - name: "Provision Local Kubernetes Cluster (Kind)"
   hosts: k8s_local
   gather_facts: no
-  
+
   tasks:
     - name: Display stage information
       ansible.builtin.debug:
@@ -54,7 +54,7 @@
 - name: "Display Deployment Summary"
   hosts: k8s_local
   gather_facts: no
-  
+
   tasks:
     - name: Display final summary
       ansible.builtin.debug:

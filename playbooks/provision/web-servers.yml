@@ -18,7 +18,7 @@
   become: yes
   gather_facts: yes
   ignore_unreachable: yes
-  
+
   roles:
     - nginx
 
@@ -28,7 +28,7 @@
         url: "http://{{ ansible_default_ipv4.address }}"
         status_code: 200
       register: web_check
-      
+
     - name: Display web server info | 显示 Web 服务器信息
       debug:
         msg: |
