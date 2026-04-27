@@ -26,11 +26,11 @@
 
 - name: Set Mesh node name | 设置 Mesh 节点名称
   ansible.builtin.command: warp-cli device name {{ cloudflare_mesh_node_name }}
-  when: warp_status.stdout | default('') is search('Registration: Missing')
+  when: "warp_status.stdout | default('') is search('Registration: Missing')"
 
 - name: Connect to Mesh network | 连接到 Mesh 网络
   ansible.builtin.command: warp-cli connect
-  when: warp_status.stdout | default('') is search('Status: Disconnected')
+  when: "warp_status.stdout | default('') is search('Status: Disconnected')"
 
 - name: Verify Mesh connection status | 验证 Mesh 连接状态
   ansible.builtin.command: warp-cli status
@@ -38,7 +38,7 @@
   changed_when: false
   retries: 3
   delay: 5
-  until: mesh_connection_status.stdout is search('Status: Connected')
+  until: "mesh_connection_status.stdout is search('Status: Connected')"
 
 - name: Display Mesh deployment summary | 显示 Mesh 部署摘要
   ansible.builtin.debug:
