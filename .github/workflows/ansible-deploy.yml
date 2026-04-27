@@ -16,7 +16,7 @@ on:
           - maintenance/lifecycle.yml
           - maintenance/emergency-cleanup.yml
         default: 'provision/quick-setup.yml'
-      
+
       target_group:
         description: 'Target servers'
         required: true
@@ -29,7 +29,7 @@ on:
           - dev_servers
           - mesh_nodes
         default: 'all'
-      
+
       dry_run:
         description: 'Test only (no changes)'
         required: false
@@ -40,7 +40,7 @@ jobs:
   deploy:
     name: Deploy (${{ github.event.inputs.target_group }})
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          
+
           # Add SSH fingerprints to known_hosts (optional)
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
@@ -69,7 +69,7 @@ jobs:
         run: |
           echo "Generating inventory from servers-config.yml..."
           python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
-          
+
           echo "✓ Inventory generated successfully"
           echo ""
           echo "Generated inventory:"
@@ -144,17 +144,17 @@ jobs:
           CMD="$CMD -i inventories/production/hosts.yml"
           CMD="$CMD --limit ${{ github.event.inputs.target_group }}"
           CMD="$CMD -v"
-          
+
           # Add dry-run flag if enabled
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             CMD="$CMD --check --diff"
             echo "⚠️  Running in DRY RUN mode (no changes will be made)"
           fi
-          
+
           echo "═══════════════════════════════════════════════════════════════"
           echo "🎯 Executing: $CMD"
           echo "═══════════════════════════════════════════════════════════════"
-          
+
           # Execute
           eval $CMD
 
@@ -177,7 +177,7 @@ jobs:
           echo "═══════════════════════════════════════════════════════════════"
           echo "🏥 Running Post-Deployment Health Check"
           echo "═══════════════════════════════════════════════════════════════"
-          
+
           ansible ${{ github.event.inputs.target_group }} \
             -i inventories/production/hosts.yml \
             -m shell \
@@ -198,7 +198,7 @@ jobs:
             STATUS_EMOJI="❌"
             STATUS_TEXT="FAILED"
           fi
-          
+
           echo "═══════════════════════════════════════════════════════════════"
           echo "$STATUS_EMOJI DEPLOYMENT $STATUS_TEXT"
           echo "═══════════════════════════════════════════════════════════════"

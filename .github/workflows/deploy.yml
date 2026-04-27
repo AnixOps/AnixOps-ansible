@@ -2,15 +2,15 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [ deploy ]
+    branches: [deploy]
   pull_request:
-    branches: [ deploy, main ]
+    branches: [deploy, main]
   workflow_dispatch:
     inputs:
       target:
-        description: 'Target hosts (all, web_servers, observability)'
+        description: "Target hosts (all, web_servers, observability)"
         required: true
-        default: 'all'
+        default: "all"
 
 jobs:
   lint:
@@ -21,80 +21,77 @@ jobs:
     name: Ansible Connection Test
     runs-on: ubuntu-latest
     needs: lint
-    if: github.event_name != 'pull_request'
+    if: github.event_name != "pull_request"
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Install Ansible
-      run: |
-        python -m pip install --upgrade pip
-        pip install ansible
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
 
-    - name: Setup SSH Key
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
-    - name: Create test inventory from secrets
-      run: |
-        echo "Creating test inventory from GitHub Secrets..."
-        cat > inventories/production/hosts.yml << 'EOF'
-        ---
-        all:
-          children:
-            web_servers:
-              hosts:
-                pl-test-1:
-                  ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-              vars:
-                server_role: web
+      - name: Create test inventory from secrets
+        run: |
+          echo "Creating test inventory from GitHub Secrets..."
+          cat > inventories/production/hosts.yml << 'INVENTORY'
+          ---
+          all:
+            children:
+              web_servers:
+                hosts:
+                  pl-test-1:
+                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
+                vars:
+                  server_role: web
+              observability:
+                hosts:
+                  pl-test-1:
+                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
+                vars:
+                  server_role: observability
+            vars:
+              ansible_user: "${{ secrets.ANSIBLE_USER }}"
+              ansible_port: "${{ secrets.ANSIBLE_PORT }}"
+              ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+              ansible_python_interpreter: /usr/bin/python3
+              ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+          INVENTORY
+          echo "Generated test inventory:"
+          cat inventories/production/hosts.yml
 
-            observability:
-              hosts:
-                pl-test-1:
-                  ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-              vars:
-                server_role: observability
+      - name: Test Ansible Ping
+        continue-on-error: true
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          echo "========================================"
+          echo "Testing Ansible connectivity with ping..."
+          echo "========================================"
+          ansible all -i inventories/production/hosts.yml -m ping -v
 
-          vars:
-            ansible_user: "${{ secrets.ANSIBLE_USER }}"
-            ansible_port: "${{ secrets.ANSIBLE_PORT }}"
-            ansible_ssh_private_key_file: "~/.ssh/id_rsa"
-            ansible_python_interpreter: /usr/bin/python3
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-        EOF
-
-        echo "Generated test inventory:"
-        cat inventories/production/hosts.yml
-
-    - name: Test Ansible Ping
-      continue-on-error: true
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: 'False'
-      run: |
-        echo "========================================"
-        echo "Testing Ansible connectivity with ping..."
-        echo "========================================"
-        ansible all -i inventories/production/hosts.yml -m ping -v
-
-    - name: Test Summary
-      if: always()
-      run: |
-        echo "========================================"
-        echo "Connection Test Completed"
-        echo "========================================"
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "========================================"
+          echo "Connection Test Completed"
+          echo "========================================"
 
   deploy:
     needs: test
-    if: github.event_name != 'pull_request'
+    if: github.event_name != "pull_request"
     runs-on: ubuntu-latest
     name: Deploy Ansible Configuration
 
@@ -105,7 +102,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install Ansible
         run: |
@@ -121,7 +118,7 @@ jobs:
       - name: Create dynamic inventory from secrets
         run: |
           echo "Creating dynamic inventory from GitHub Secrets..."
-          cat > inventories/production/hosts.yml << 'EOF'
+          cat > inventories/production/hosts.yml << 'INVENTORY'
           ---
           all:
             children:
@@ -131,29 +128,25 @@ jobs:
                     ansible_host: "${{ secrets.PL_1_V4_SSH }}"
                 vars:
                   server_role: web
-
               observability:
                 hosts:
                   pl-test-1:
                     ansible_host: "${{ secrets.PL_1_V4_SSH }}"
                 vars:
                   server_role: observability
-
             vars:
               ansible_user: "${{ secrets.ANSIBLE_USER }}"
               ansible_port: "${{ secrets.ANSIBLE_PORT }}"
               ansible_ssh_private_key_file: "~/.ssh/id_rsa"
               ansible_python_interpreter: /usr/bin/python3
               ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-          EOF
-
+          INVENTORY
           echo "Generated inventory:"
           cat inventories/production/hosts.yml
 
       - name: Run Ansible Playbook
         env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          # Server IP Configuration
+          ANSIBLE_HOST_KEY_CHECKING: "False"
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
           US_W_1_V4: ${{ secrets.US_W_1_V4 }}
           US_W_1_V6: ${{ secrets.US_W_1_V6 }}
@@ -167,15 +160,9 @@ jobs:
           JP_1_SSH_IP: ${{ secrets.JP_1_SSH_IP }}
           EU_1_V4: ${{ secrets.EU_1_V4 }}
           EU_1_V6: ${{ secrets.EU_1_V6 }}
-          # Ansible Connection Configuration
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
           SSH_KEY_PATH: ~/.ssh/id_rsa
-          # Observability Configuration
-          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
-          LOKI_URL: ${{ secrets.LOKI_URL }}
-          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
-          # SSL/TLS Configuration
           OBSERVABILITY_SSL_ENABLED: ${{ secrets.OBSERVABILITY_SSL_ENABLED }}
           OBSERVABILITY_SSL_METHOD: ${{ secrets.OBSERVABILITY_SSL_METHOD }}
           GRAFANA_DOMAIN: ${{ secrets.GRAFANA_DOMAIN }}
@@ -185,16 +172,13 @@ jobs:
           SSL_CERTIFICATE_KEY_PEM: ${{ secrets.SSL_CERTIFICATE_KEY_PEM }}
           ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
           ACME_CA_SERVER: ${{ secrets.ACME_CA_SERVER }}
-          # Cloudflare Configuration
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
           CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_BASE_DOMAIN: ${{ secrets.CLOUDFLARE_BASE_DOMAIN }}
-          # Grafana Authentication
           GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          # Firewall Whitelist Configuration
           FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
         run: |
           ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml \

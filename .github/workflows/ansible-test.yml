@@ -25,9 +25,9 @@ on:
           - proxy_servers
           - observability
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
     - cron: '0 0 * * *'
 
@@ -35,7 +35,7 @@ jobs:
   ping-test:
     name: Ansible Test & Deploy
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
         run: |
           echo "Generating inventory from servers-config.yml..."
           python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
-          
+
           echo "✓ Inventory generated"
 
       - name: Display Workflow Parameters
@@ -144,17 +144,17 @@ jobs:
         run: |
           TARGET="${{ github.event.inputs.target_group }}"
           PLAYBOOK="${{ github.event.inputs.playbook }}"
-          
+
           echo "════════════════════════════════════════════════════════════"
           echo "Running Ansible Playbook"
           echo "════════════════════════════════════════════════════════════"
           echo "Playbook: playbooks/${PLAYBOOK}"
           echo "Target: ${TARGET}"
           echo "════════════════════════════════════════════════════════════"
-          
+
           # Build and execute command
           CMD="ansible-playbook playbooks/${PLAYBOOK} -i inventories/production/hosts.yml --limit ${TARGET} -v"
-          
+
           echo "Executing: $CMD"
           eval $CMD
 

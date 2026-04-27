@@ -46,7 +46,7 @@ production_servers:
     roles:
       - web
     server_environment: test
-    
+
   uk-1:
     env_var: UK_1_V4_SSH
     alias: "英国-1 | UK-1"
@@ -57,7 +57,7 @@ production_servers:
     roles:
       - web
     server_environment: test
-    
+
   us-w-1:
     env_var: US_W_1_V4_SSH
     alias: "美国西-1 | US-West-1"
@@ -68,13 +68,13 @@ production_servers:
     roles:
       - web
     server_environment: production
-  
+
   # ---------------------------------------------------------------------------
   # Proxy 服务器组 (PLG Stack) | Proxy Server Group (PLG Stack)
   # ---------------------------------------------------------------------------
   # 部署 Prometheus、Loki、Grafana 栈的代理服务器
   # Proxy servers deploying Prometheus, Loki, and Grafana stack
-  
+
   sg-1:
     env_var: SG_1_V4_SSH
     alias: "新加坡-1 | Singapore-1"
@@ -86,7 +86,7 @@ production_servers:
       - proxy
       - plg_stack
     server_environment: production
-    
+
   jp-2:
     env_var: JP_2_V4_SSH
     alias: "日本-2 | Japan-2"
@@ -98,7 +98,7 @@ production_servers:
       - proxy
       - plg_stack
     server_environment: production
-    
+
   hk-1:
     env_var: HK_1_V4_SSH
     alias: "香港-1 | Hong Kong-1"
@@ -110,7 +110,7 @@ production_servers:
       - proxy
       - plg_stack
     server_environment: production
-    
+
   uk-2:
     env_var: UK_2_V4_SSH
     alias: "英国-2 | UK-2"
@@ -122,13 +122,13 @@ production_servers:
       - proxy
       - plg_stack
     server_environment: production
-  
+
   # ---------------------------------------------------------------------------
   # 开发服务器组 | Development Server Group
   # ---------------------------------------------------------------------------
   # 用于开发和测试的服务器环境
   # Server environments for development and testing
-  
+
   fr-1:
     env_var: FR_1_V4_SSH
     alias: "法国-1 | France-1"
@@ -140,13 +140,13 @@ production_servers:
     roles:
       - development
     server_environment: development
-  
+
   # ---------------------------------------------------------------------------
   # 可观测性服务器组 | Observability Server Group
   # ---------------------------------------------------------------------------
   # 部署监控和日志系统的中心服务器
   # Central servers for monitoring and logging systems
-  
+
   pl-1:
     env_var: PL_1_V4_SSH
     alias: "波兰-1 | Poland-1"
@@ -169,22 +169,22 @@ production_servers:
 # 定义服务器组和相关变量
 # Define server groups and their associated variables
 group_definitions:
-  
+
   web_servers:
     description: "Web 应用服务器 | Web Application Servers"
     vars:
       server_role: web
-      
+
   proxy_servers:
     description: "代理服务器 (PLG Stack) | Proxy Servers (PLG Stack)"
     vars:
       server_role: proxy
-      
+
   dev_servers:
     description: "开发测试服务器 | Development Test Servers"
     vars:
       server_role: development
-      
+
   observability:
     description: "监控系统服务器 (Prometheus + Loki + Grafana) | Monitoring System Servers (PLG)"
     vars:
@@ -200,7 +200,7 @@ group_definitions:
     description: "开发环境 | Development Environment"
     vars:
       server_environment: development
-      
+
   prod:
     description: "生产环境 | Production Environment"
     vars:

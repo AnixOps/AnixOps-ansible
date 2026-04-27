@@ -2,9 +2,9 @@ name: Security Scan
 
 on:
   pull_request:
-    branches: [ main, staging, deploy ]
+    branches: [main, staging, deploy]
   push:
-    branches: [ main, staging, deploy ]
+    branches: [main, staging, deploy]
   schedule:
     - cron: '0 6 * * 1'  # Weekly on Monday at 6am
   workflow_dispatch:
@@ -69,7 +69,7 @@ jobs:
             echo "FAIL: .env file is tracked in git"
             FOUND=1
           fi
-          if [ $FOUND -eq 1 ]; then
+          if [$FOUND -eq 1]; then
             exit 1
           fi
           echo "OK: No exposed private keys or .env files found"
