@@ -23,5 +23,4 @@ galaxy_info:
     - sing
     - xray
     - hysteria2
-dependencies:
-  - role: cloudflare_mesh
+dependencies: []

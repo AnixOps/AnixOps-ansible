@@ -21,5 +21,4 @@ galaxy_info:
     - panel
     - proxy-management
     - docker
-dependencies:
-  - role: cloudflare_mesh
+dependencies: []
