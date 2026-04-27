@@ -80,6 +80,20 @@
     - nginx
 
 # -----------------------------------------------------------------------------
+# 部署 Cloudflare Mesh | Deploy Cloudflare Mesh
+# -----------------------------------------------------------------------------
+- name: Deploy Cloudflare Mesh | 部署 Cloudflare Mesh 网络
+  hosts: mesh_nodes
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  ignore_unreachable: yes
+  roles:
+    - cloudflare_mesh
+  tags:
+    - cloudflare_mesh
+
+# -----------------------------------------------------------------------------
 # 最终健康检查 | Final Health Check
 # -----------------------------------------------------------------------------
 - name: Final Health Check | 最终健康检查
