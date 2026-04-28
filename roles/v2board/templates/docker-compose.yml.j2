@@ -1,8 +1,6 @@
-version: "3.8"
-
 services:
   v2board:
-    image: ghcr.io/{{ v2board_repo_owner | default('AnixOps') }}/v2board_AnixOps:latest
+    image: ghcr.io/{{ (v2board_repo_owner | default('anixops')) | lower }}/{{ (v2board_repo_name | default('v2board_anixops')) | lower }}:latest
     container_name: {{ v2board_container_name }}
     restart: unless-stopped
     ports:
