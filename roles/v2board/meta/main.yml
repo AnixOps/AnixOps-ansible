@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: AnixOps
-  description: Deploy v2board control panel with Docker
+  description: Deploy v2board control panel (binary deployment)
   company: AnixOps
   license: MIT
   min_ansible_version: "2.14"
@@ -20,5 +20,5 @@ galaxy_info:
     - v2board
     - panel
     - proxy-management
-    - docker
+    - binary
 dependencies: []

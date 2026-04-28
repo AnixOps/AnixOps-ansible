@@ -2,7 +2,9 @@
 # =============================================================================
 # V2board Handlers | V2board 处理器
 # =============================================================================
-- name: Restart v2board containers | 重启 v2board 容器
-  community.docker.docker_compose_v2:
-    project_src: "{{ v2board_docker_dir }}"
+- name: Restart v2board service | 重启 v2board 服务
+  ansible.builtin.systemd:
+    name: "{{ v2board_service_name }}"
     state: restarted
+    daemon_reload: yes
+    enabled: yes

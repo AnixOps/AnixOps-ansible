@@ -1,0 +1,36 @@
+---
+# =============================================================================
+# V2board Binary Installation Tasks | V2board 二进制安装任务
+# =============================================================================
+- name: Create v2board directories | 创建 v2board 目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ v2board_install_dir }}"
+    - "{{ v2board_config_dir }}"
+    - "{{ v2board_data_dir }}"
+    - "{{ v2board_data_dir }}/data"
+
+- name: Download v2board binary from URL | 从 URL下载二进制
+  ansible.builtin.get_url:
+    url: "{{ v2board_binary_url }}"
+    dest: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+    mode: '0755'
+    timeout: 120
+  when: v2board_binary_url != ''
+
+- name: Download v2board binary from GitHub Releases | 从 GitHub Releases下载
+  ansible.builtin.get_url:
+    url: "https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/download/{{ v2board_binary_version }}/v2board-linux-{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
+    dest: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+    mode: '0755'
+    timeout: 120
+  when: v2board_binary_url == ''
+
+- name: Verify binary exists | 验证二进制文件存在
+  ansible.builtin.stat:
+    path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+  register: binary_stat
+  failed_when: not binary_stat.stat.exists

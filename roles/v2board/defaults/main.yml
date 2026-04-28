@@ -3,9 +3,19 @@
 # V2board Configuration | V2board 配置
 # =============================================================================
 
-# Repository
+# Binary deployment (no Docker)
 v2board_repo_owner: "{{ lookup('env', 'V2BOARD_REPO_OWNER') | default('anixops') }}"
 v2board_repo_name: "v2board_anixops"
+v2board_install_dir: "/usr/local/v2board"
+v2board_config_dir: "/etc/v2board"
+v2board_data_dir: "/var/lib/v2board"
+v2board_bin_name: "v2board"
+
+# Binary source:
+# Option 1: Download from GitHub Releases (if available)
+# Option 2: Use pre-built binary URL
+v2board_binary_url: "{{ lookup('env', 'V2BOARD_BINARY_URL') | default('') }}"
+v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') | default('latest') }}"
 
 # Ports
 v2board_frontend_port: 3000
@@ -13,26 +23,20 @@ v2board_api_port: 8080
 v2board_grpc_port: 50051
 v2board_nodex_port: 18081
 
-# Docker configuration
-v2board_docker_dir: "/opt/v2board"
-v2board_container_name: "v2board"
-
 # Database configuration (from secrets)
+# For binary deployment, use external database hosts (not Docker containers)
 v2board_db_type: "{{ lookup('env', 'V2BOARD_DB_TYPE') | default('sqlite') }}"
-# PostgreSQL (auto-configured in Docker compose, only password needed)
-v2board_pg_host: "postgres"
+v2board_pg_host: "{{ lookup('env', 'V2BOARD_PG_HOST') | default('localhost') }}"
 v2board_pg_port: "5432"
 v2board_pg_user: "v2board"
 v2board_pg_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') | default('') }}"
 v2board_pg_database: "v2board"
-# Redis (auto-configured in Docker compose)
-v2board_redis_host: "redis"
+v2board_redis_host: "{{ lookup('env', 'V2BOARD_REDIS_HOST') | default('localhost') }}"
 v2board_redis_port: "6379"
 v2board_redis_password: "{{ lookup('env', 'V2BOARD_REDIS_PASSWORD') | default('') }}"
 
 # Secrets (from GitHub)
 v2board_jwt_secret: "{{ lookup('env', 'V2BOARD_JWT_SECRET') | default('') }}"
-v2board_api_key: "{{ lookup('env', 'V2BOARD_API_KEY') | default('') }}"
 v2board_api_token: "{{ lookup('env', 'V2BOARD_API_TOKEN') | default('') }}"
 v2board_admin_email: "{{ lookup('env', 'V2BOARD_ADMIN_EMAIL') | default('') }}"
 v2board_admin_password: "{{ lookup('env', 'V2BOARD_ADMIN_PASSWORD') | default('') }}"
@@ -44,10 +48,10 @@ v2board_mesh_ip: "{{ lookup('env', 'V2BOARD_MESH_IP') | default('') }}"
 # Lifecycle Configuration | 生命周期配置
 # =============================================================================
 v2board_port: "{{ v2board_api_port }}"
-v2board_health_url: "/api/health"
+v2board_health_url: "/health"
 v2board_backup_files:
-  - "{{ v2board_docker_dir }}/config.yaml"
-  - "{{ v2board_docker_dir }}/docker-compose.yml"
+  - "{{ v2board_config_dir }}/config.yaml"
 v2board_config_dirs:
-  - "{{ v2board_docker_dir }}"
+  - "{{ v2board_config_dir }}"
+  - "{{ v2board_data_dir }}"
 v2board_service_name: "v2board"

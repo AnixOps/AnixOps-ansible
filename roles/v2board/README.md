@@ -1,11 +1,13 @@
 # V2board Control Panel Role
 
-部署 v2board 控制面板，用于管理 V2bX 代理节点。
+部署 v2board 控制面板（二进制部署），用于管理 V2bX 代理节点。
 
-## 依赖
+## 部署方式
 
-- `cloudflare_mesh`: 为 V2bX 节点提供 Mesh IP 访问
-- Docker: 自动安装
+**二进制部署**（Binary Deployment）：
+- 从 GitHub Releases 或指定 URL 下载二进制文件
+- systemd 服务管理
+- 不依赖 Docker
 
 ## 配置变量
 
@@ -17,6 +19,11 @@
 | `V2BOARD_ADMIN_PASSWORD` | 管理员密码 |
 | `V2BOARD_MESH_IP` | 面板 Mesh IP |
 | `V2BOARD_DB_TYPE` | 数据库类型（sqlite/postgres） |
+| `V2BOARD_BINARY_URL` | 二进制下载 URL（可选，默认从 GitHub Releases） |
+| `V2BOARD_PG_HOST` | PostgreSQL 地址（postgres 模式） |
+| `V2BOARD_PG_PASSWORD` | PostgreSQL 密码 |
+| `V2BOARD_REDIS_HOST` | Redis 地址 |
+| `V2BOARD_REDIS_PASSWORD` | Redis 密码（可选） |
 
 ## API_TOKEN 用途
 

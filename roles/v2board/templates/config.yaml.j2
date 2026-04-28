@@ -10,21 +10,17 @@ app:
 database:
   type: {{ v2board_db_type }}
 {% if v2board_db_type == 'postgres' %}
-  host: postgres
+  host: {{ v2board_pg_host }}
   port: {{ v2board_pg_port }}
   user: {{ v2board_pg_user }}
   password: {{ v2board_pg_password }}
   database: {{ v2board_pg_database }}
 {% else %}
-  path: ./data/v2board.db
+  path: {{ v2board_data_dir }}/data/v2board.db
 {% endif %}
 
 redis:
-{% if v2board_db_type == 'postgres' %}
-  host: redis
-{% else %}
-  host: localhost
-{% endif %}
+  host: {{ v2board_redis_host }}
   port: {{ v2board_redis_port }}
 {% if v2board_redis_password != '' %}
   password: {{ v2board_redis_password }}

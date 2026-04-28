@@ -1,0 +1,16 @@
+[Unit]
+Description=V2board Control Panel
+Documentation=https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory={{ v2board_data_dir }}
+ExecStart={{ v2board_install_dir }}/{{ v2board_bin_name }} -config {{ v2board_config_dir }}/config.yaml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

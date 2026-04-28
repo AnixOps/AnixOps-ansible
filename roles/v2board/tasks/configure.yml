@@ -5,12 +5,59 @@
 - name: Generate v2board config.yaml | 生成 v2board 配置文件
   ansible.builtin.template:
     src: config.yaml.j2
-    dest: "{{ v2board_docker_dir }}/config.yaml"
-    mode: '0644'
-  notify: Restart v2board containers | 重启 v2board 容器
+    dest: "{{ v2board_config_dir }}/config.yaml"
+    mode: '0640'
+  notify: Restart v2board service | 重启 v2board 服务
 
-- name: Deploy v2board with Docker Compose | 使用 Docker Compose 部署 v2board
-  community.docker.docker_compose_v2:
-    project_src: "{{ v2board_docker_dir }}"
-    state: present
-    pull: always
+- name: Install v2board systemd service | 安装 v2board systemd 服务
+  ansible.builtin.template:
+    src: v2board.service.j2
+    dest: /etc/systemd/system/v2board.service
+    mode: '0644'
+  notify: Restart v2board service | 重启 v2board 服务
+
+- name: Enable and start v2board service | 启用并启动 v2board 服务
+  ansible.builtin.systemd:
+    name: "{{ v2board_service_name }}"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Wait for v2board to start | 等待 v2board 启动
+  ansible.builtin.pause:
+    seconds: 10
+
+- name: Verify v2board service status | 验证 v2board 服务状态
+  ansible.builtin.systemd:
+    name: "{{ v2board_service_name }}"
+    state: started
+  register: v2board_service_status
+  failed_when: "v2board_service_status.status.ActiveState != 'active'"
+
+- name: Display v2board deployment summary | 显示 v2board 部署摘要
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════
+      ✓ V2board 控制面板部署成功 | V2board Panel Deployed
+      ═══════════════════════════════════════════════════════════
+      主机 | Host: {{ inventory_hostname }}
+
+      端口 | Ports:
+      - API: {{ v2board_api_port }}
+      - gRPC: {{ v2board_grpc_port }}
+      - NodeX: {{ v2board_nodex_port }}
+
+      数据库 | Database: {{ v2board_db_type }}
+      Mesh IP: {{ v2board_mesh_ip }}
+
+      部署方式 | Deployment: Binary
+      - Binary: {{ v2board_install_dir }}/{{ v2board_bin_name }}
+      - Config: {{ v2board_config_dir }}/config.yaml
+
+      状态 | Status: {{ v2board_service_status.status.ActiveState }}
+
+      下一步 | Next Steps:
+      1. 访问面板 | Access panel: http://{{ inventory_hostname }}:{{ v2board_api_port }}
+      2. 配置节点 | Configure nodes in admin panel
+      3. 验证 Mesh 通信 | Verify Mesh communication from V2bX nodes
+      ═══════════════════════════════════════════════════════════
