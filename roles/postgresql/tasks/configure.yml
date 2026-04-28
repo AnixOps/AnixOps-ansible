@@ -22,27 +22,26 @@
 - name: Wait for PostgreSQL to restart | 等待 PostgreSQL 重启
   ansible.builtin.pause:
     seconds: 5
-  listen: Restart postgresql | 重启 PostgreSQL
 
 - name: Create PostgreSQL user | 创建 PostgreSQL 用户
   ansible.builtin.shell: |
-    sudo -u postgres psql -c "SELECT 1 FROM pg_roles WHERE rolname='{{ postgresql_user }}'" | grep -q 1 || \
+    sudo -u postgres psql -t -A -c "SELECT 1 FROM pg_roles WHERE rolname='{{ postgresql_user }}'" | grep -q 1 || \
     sudo -u postgres psql -c "CREATE USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}'"
-  args:
-    executable: /bin/bash
-  changed_when: false
+  register: pg_create_user
+  changed_when: "'CREATE ROLE' in (pg_create_user.stdout | default(''))"
+  failed_when: pg_create_user.rc != 0
 
 - name: Create PostgreSQL database | 创建 PostgreSQL 数据库
   ansible.builtin.shell: |
-    sudo -u postgres psql -c "SELECT 1 FROM pg_database WHERE datname='{{ postgresql_database }}'" | grep -q 1 || \
+    sudo -u postgres psql -t -A -c "SELECT 1 FROM pg_database WHERE datname='{{ postgresql_database }}'" | grep -q 1 || \
     sudo -u postgres psql -c "CREATE DATABASE {{ postgresql_database }} OWNER {{ postgresql_user }}"
-  args:
-    executable: /bin/bash
-  changed_when: false
+  register: pg_create_db
+  changed_when: "'CREATE DATABASE' in (pg_create_db.stdout | default(''))"
+  failed_when: pg_create_db.rc != 0
 
 - name: Grant privileges to user | 授予用户权限
-  ansible.builtin.shell: |
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ postgresql_database }} TO {{ postgresql_user }}"
-  args:
-    executable: /bin/bash
-  changed_when: false
+  ansible.builtin.command:
+    cmd: sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ postgresql_database }} TO {{ postgresql_user }}"
+  register: pg_grant
+  changed_when: "'GRANT' in (pg_grant.stdout | default(''))"
+  failed_when: pg_grant.rc != 0
