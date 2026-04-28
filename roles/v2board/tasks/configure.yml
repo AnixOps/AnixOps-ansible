@@ -42,6 +42,18 @@
       changed_when: false
       failed_when: false
 
+    - name: Test v2board binary startup (capture crash output) | 测试 v2board 启动捕获崩溃输出
+      ansible.builtin.shell: |
+        timeout 15 {{ v2board_install_dir }}/{{ v2board_bin_name }} -config {{ v2board_config_dir }}/config.yaml \
+          > {{ v2board_data_dir }}/logs/v2board-test.out 2>&1 || true
+        # Show last 80 lines of test output
+        tail -n 80 {{ v2board_data_dir }}/logs/v2board-test.out
+      args:
+        executable: /bin/bash
+      register: v2board_test_output
+      changed_when: false
+      failed_when: false
+
     - name: Start v2board service | 启动 v2board 服务
       ansible.builtin.systemd:
         name: "{{ v2board_service_name }}"
@@ -52,6 +64,15 @@
 - name: Wait for v2board to start | 等待 v2board 启动
   ansible.builtin.pause:
     seconds: 30
+
+- name: Display v2board test output | 显示 v2board 测试输出
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════
+      V2board Binary Test Output | v2board 二进制测试输出
+      ═══════════════════════════════════════════════════════════
+      {{ v2board_test_output.stdout | default('No output captured') }}
+      ═══════════════════════════════════════════════════════════
 
 - name: Verify v2board service status | 验证 v2board 服务状态
   block:
