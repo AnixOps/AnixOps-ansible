@@ -19,10 +19,12 @@
 - name: Enable and start v2board service | 启用并启动 v2board 服务
   block:
     - name: Kill stale v2board process | 清理残留 v2board 进程
-      ansible.builtin.shell: pkill -9 -f "{{ v2board_install_dir }}/{{ v2board_bin_name }}" 2>/dev/null || true
+      ansible.builtin.shell: |
+        pgrep -f "{{ v2board_install_dir }}/{{ v2board_bin_name }}" >/dev/null 2>&1 && pkill -9 -f "{{ v2board_install_dir }}/{{ v2board_bin_name }}" || true
       args:
         executable: /bin/bash
       changed_when: false
+      failed_when: false
 
     - name: Ensure v2board port is free | 确保 v2board 端口已释放
       ansible.builtin.shell: |
