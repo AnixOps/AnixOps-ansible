@@ -51,7 +51,7 @@
 
 - name: Wait for v2board to start | 等待 v2board 启动
   ansible.builtin.pause:
-    seconds: 10
+    seconds: 30
 
 - name: Verify v2board service status | 验证 v2board 服务状态
   block:
@@ -69,6 +69,20 @@
       changed_when: false
       failed_when: false
 
+    - name: Capture v2board error log | 捕获 v2board 错误日志
+      ansible.builtin.shell:
+        cmd: tail -n 100 {{ v2board_data_dir }}/logs/v2board-error.log 2>/dev/null || echo "No error log file found"
+      register: v2board_error_log
+      changed_when: false
+      failed_when: false
+
+    - name: Capture v2board main log | 捕获 v2board 主日志
+      ansible.builtin.shell:
+        cmd: tail -n 100 {{ v2board_data_dir }}/logs/v2board.log 2>/dev/null || echo "No main log file found"
+      register: v2board_main_log
+      changed_when: false
+      failed_when: false
+
     - name: Display v2board error logs | 显示 v2board 错误日志
       ansible.builtin.debug:
         msg: |
@@ -83,6 +97,12 @@
 
           --- Journal Logs ---
           {{ v2board_journal.stdout | default('No journal output available') }}
+
+          --- Error Log (stderr) ---
+          {{ v2board_error_log.stdout | default('No error log available') }}
+
+          --- Main Log (stdout) ---
+          {{ v2board_main_log.stdout | default('No main log available') }}
           ═══════════════════════════════════════════════════════════
 
     - name: Fail with service error | 报告服务启动失败
