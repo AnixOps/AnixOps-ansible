@@ -187,6 +187,10 @@ jobs:
           V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
           V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
           V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
+          V2BOARD_FRONTEND_PORT: ${{ secrets.V2BOARD_FRONTEND_PORT }}
+          V2BOARD_API_PORT: ${{ secrets.V2BOARD_API_PORT }}
+          V2BOARD_GRPC_PORT: ${{ secrets.V2BOARD_GRPC_PORT }}
+          V2BOARD_NODEX_PORT: ${{ secrets.V2BOARD_NODEX_PORT }}
         run: |
           ACTION="${{ github.event.inputs.action }}"
           ROLE="${{ github.event.inputs.role }}"

@@ -25,10 +25,10 @@ v2board_binary_url: "{{ lookup('env', 'V2BOARD_BINARY_URL') or '' }}"
 v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') or 'latest' }}"
 
 # Ports
-v2board_frontend_port: 3000
-v2board_api_port: 8080
-v2board_grpc_port: 50051
-v2board_nodex_port: 18081
+v2board_frontend_port: "{{ lookup('env', 'V2BOARD_FRONTEND_PORT') or '3001' }}"
+v2board_api_port: "{{ lookup('env', 'V2BOARD_API_PORT') or '8080' }}"
+v2board_grpc_port: "{{ lookup('env', 'V2BOARD_GRPC_PORT') or '50051' }}"
+v2board_nodex_port: "{{ lookup('env', 'V2BOARD_NODEX_PORT') or '18081' }}"
 
 # Database configuration (from secrets)
 # For binary deployment, use external database hosts (not Docker containers)
