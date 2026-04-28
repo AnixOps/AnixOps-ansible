@@ -19,40 +19,6 @@
     v2board_arch_suffix: "{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
 
 # =============================================================================
-# Auto-detect latest version from GitHub API
-# =============================================================================
-- name: Get latest release version from GitHub API | 从 GitHub API 获取最新版本
-  ansible.builtin.uri:
-    url: "https://api.github.com/repos/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/latest"
-    method: GET
-    return_content: yes
-    headers:
-      Accept: "application/vnd.github.v3+json"
-    timeout: 30
-  register: github_latest_release
-  when:
-    - v2board_binary_url == ''
-    - v2board_binary_version == 'latest'
-
-- name: Set resolved version from latest release | 设置解析后的版本
-  ansible.builtin.set_fact:
-    v2board_resolved_version: "{{ github_latest_release.json.tag_name }}"
-  when:
-    - v2board_binary_url == ''
-    - v2board_binary_version == 'latest'
-
-- name: Set resolved version from specified version | 设置指定版本
-  ansible.builtin.set_fact:
-    v2board_resolved_version: "{{ v2board_binary_version }}"
-  when:
-    - v2board_binary_url == ''
-    - v2board_binary_version != 'latest'
-
-- name: Display resolved version | 显示解析后的版本
-  ansible.builtin.debug:
-    msg: "V2board version: {{ v2board_resolved_version }}"
-
-# =============================================================================
 # Download from custom URL (if provided)
 # =============================================================================
 - name: Download v2board binary from custom URL | 从自定义 URL 下载二进制
@@ -72,8 +38,42 @@
   when: v2board_binary_url != ''
 
 # =============================================================================
-# Download from GitHub Releases (default)
+# Download from GitHub Releases (default path)
 # =============================================================================
+- name: Get latest release tag from GitHub API | 从 GitHub API 获取最新版本
+  ansible.builtin.shell:
+    cmd: |
+      set -e
+      curl -sL "https://api.github.com/repos/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/latest" | \
+      grep -m1 '"tag_name"' | \
+      sed -E 's/.*"([^"]+)".*/\1/'
+  register: latest_tag_result
+  changed_when: false
+  failed_when: latest_tag_result.stdout == ''
+  when:
+    - v2board_binary_url == ''
+    - v2board_binary_version == 'latest' or v2board_binary_version == ''
+
+- name: Set version to latest tag | 使用最新版本
+  ansible.builtin.set_fact:
+    v2board_resolved_version: "{{ latest_tag_result.stdout }}"
+  when:
+    - v2board_binary_url == ''
+    - v2board_binary_version == 'latest' or v2board_binary_version == ''
+
+- name: Set version to specified value | 使用指定版本
+  ansible.builtin.set_fact:
+    v2board_resolved_version: "{{ v2board_binary_version }}"
+  when:
+    - v2board_binary_url == ''
+    - v2board_binary_version != 'latest'
+    - v2board_binary_version != ''
+
+- name: Display resolved version | 显示解析后的版本
+  ansible.builtin.debug:
+    msg: "V2board version: {{ v2board_resolved_version }}"
+  when: v2board_binary_url == ''
+
 - name: Download v2board binary from GitHub Releases | 从 GitHub Releases 下载二进制
   ansible.builtin.get_url:
     url: "https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/download/{{ v2board_resolved_version }}/v2board-linux-{{ v2board_arch_suffix }}.tar.gz"
@@ -96,12 +96,14 @@
     dest: "/tmp/v2board-frontend.tar.gz"
     mode: '0644'
     timeout: 120
+  when: v2board_binary_url == ''
 
 - name: Extract v2board frontend | 解压前端文件
   ansible.builtin.unarchive:
     src: "/tmp/v2board-frontend.tar.gz"
     dest: "{{ v2board_data_dir }}/frontend"
     remote_src: yes
+  when: v2board_binary_url == ''
 
 - name: Verify binary exists | 验证二进制文件存在
   ansible.builtin.stat:
