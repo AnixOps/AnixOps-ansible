@@ -12,25 +12,67 @@
     - "{{ v2board_config_dir }}"
     - "{{ v2board_data_dir }}"
     - "{{ v2board_data_dir }}/data"
+    - "{{ v2board_data_dir }}/frontend"
+
+- name: Set architecture suffix | 设置架构后缀
+  ansible.builtin.set_fact:
+    v2board_arch_suffix: "{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
 
 - name: Download v2board binary from URL | 从 URL下载二进制
   ansible.builtin.get_url:
     url: "{{ v2board_binary_url }}"
-    dest: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+    dest: "/tmp/v2board-binary.tar.gz"
     mode: '0755'
     timeout: 120
   when: v2board_binary_url != ''
 
+- name: Extract v2board binary from URL | 解压二进制
+  ansible.builtin.unarchive:
+    src: "/tmp/v2board-binary.tar.gz"
+    dest: "{{ v2board_install_dir }}"
+    remote_src: yes
+    extra_opts: ["--strip-components=1"]
+  when: v2board_binary_url != ''
+
 - name: Download v2board binary from GitHub Releases | 从 GitHub Releases下载
   ansible.builtin.get_url:
-    url: "https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/download/{{ v2board_binary_version }}/v2board-linux-{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
-    dest: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+    url: "https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/download/{{ v2board_binary_version }}/v2board-linux-{{ v2board_arch_suffix }}.tar.gz"
+    dest: "/tmp/v2board-binary.tar.gz"
     mode: '0755'
     timeout: 120
   when: v2board_binary_url == ''
+
+- name: Extract v2board binary from GitHub Releases | 解压二进制
+  ansible.builtin.unarchive:
+    src: "/tmp/v2board-binary.tar.gz"
+    dest: "{{ v2board_install_dir }}"
+    remote_src: yes
+    extra_opts: ["--strip-components=1"]
+  when: v2board_binary_url == ''
+
+- name: Download v2board frontend | 下载前端文件
+  ansible.builtin.get_url:
+    url: "https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/download/{{ v2board_binary_version }}/v2board-frontend.tar.gz"
+    dest: "/tmp/v2board-frontend.tar.gz"
+    mode: '0755'
+    timeout: 120
+
+- name: Extract v2board frontend | 解压前端文件
+  ansible.builtin.unarchive:
+    src: "/tmp/v2board-frontend.tar.gz"
+    dest: "{{ v2board_data_dir }}/frontend"
+    remote_src: yes
 
 - name: Verify binary exists | 验证二进制文件存在
   ansible.builtin.stat:
     path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
   register: binary_stat
   failed_when: not binary_stat.stat.exists
+
+- name: Clean up temporary files | 清理临时文件
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/v2board-binary.tar.gz"
+    - "/tmp/v2board-frontend.tar.gz"

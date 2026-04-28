@@ -15,7 +15,7 @@ v2board_bin_name: "v2board"
 # Option 1: Download from GitHub Releases (if available)
 # Option 2: Use pre-built binary URL
 v2board_binary_url: "{{ lookup('env', 'V2BOARD_BINARY_URL') | default('') }}"
-v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') | default('latest') }}"
+v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') | default('v2.0.1') }}"
 
 # Ports
 v2board_frontend_port: 3000
