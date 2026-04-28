@@ -6,7 +6,7 @@
 # Environment
 # Use 'development' for first-time deployment to trigger GORM AutoMigrate.
 # Switch to 'production' after initial setup (production mode skips AutoMigrate).
-v2board_env: "{{ lookup('env', 'V2BOARD_ENV') | default('development') }}"
+v2board_env: "{{ lookup('env', 'V2BOARD_ENV') or 'development' }}"
 
 # Binary deployment (no Docker)
 # Repository: AnixOps/v2board_AnixOps (exact GitHub repo name)
@@ -21,8 +21,8 @@ v2board_bin_name: "v2board"
 # Option 1: Use pre-built binary URL (V2BOARD_BINARY_URL env)
 # Option 2: Auto-detect latest release from GitHub API
 # Option 3: Use specific version (V2BOARD_BINARY_VERSION env, default: latest)
-v2board_binary_url: "{{ lookup('env', 'V2BOARD_BINARY_URL') | default('') }}"
-v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') | default('latest') }}"
+v2board_binary_url: "{{ lookup('env', 'V2BOARD_BINARY_URL') or '' }}"
+v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') or 'latest' }}"
 
 # Ports
 v2board_frontend_port: 3000
@@ -32,24 +32,24 @@ v2board_nodex_port: 18081
 
 # Database configuration (from secrets)
 # For binary deployment, use external database hosts (not Docker containers)
-v2board_db_type: "{{ lookup('env', 'V2BOARD_DB_TYPE') | default('postgres') }}"
-v2board_pg_host: "{{ lookup('env', 'V2BOARD_PG_HOST') | default('localhost') }}"
+v2board_db_type: "{{ lookup('env', 'V2BOARD_DB_TYPE') or 'postgres' }}"
+v2board_pg_host: "{{ lookup('env', 'V2BOARD_PG_HOST') or 'localhost' }}"
 v2board_pg_port: "5432"
 v2board_pg_user: "v2board"
-v2board_pg_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') | default('') }}"
+v2board_pg_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') or '' }}"
 v2board_pg_database: "v2board"
-v2board_redis_host: "{{ lookup('env', 'V2BOARD_REDIS_HOST') | default('localhost') }}"
+v2board_redis_host: "{{ lookup('env', 'V2BOARD_REDIS_HOST') or 'localhost' }}"
 v2board_redis_port: "6379"
-v2board_redis_password: "{{ lookup('env', 'V2BOARD_REDIS_PASSWORD') | default('') }}"
+v2board_redis_password: "{{ lookup('env', 'V2BOARD_REDIS_PASSWORD') or '' }}"
 
 # Secrets (from GitHub)
-v2board_jwt_secret: "{{ lookup('env', 'V2BOARD_JWT_SECRET') | default('') }}"
-v2board_api_token: "{{ lookup('env', 'V2BOARD_API_TOKEN') | default('') }}"
-v2board_admin_email: "{{ lookup('env', 'V2BOARD_ADMIN_EMAIL') | default('') }}"
-v2board_admin_password: "{{ lookup('env', 'V2BOARD_ADMIN_PASSWORD') | default('') }}"
+v2board_jwt_secret: "{{ lookup('env', 'V2BOARD_JWT_SECRET') or '' }}"
+v2board_api_token: "{{ lookup('env', 'V2BOARD_API_TOKEN') or '' }}"
+v2board_admin_email: "{{ lookup('env', 'V2BOARD_ADMIN_EMAIL') or '' }}"
+v2board_admin_password: "{{ lookup('env', 'V2BOARD_ADMIN_PASSWORD') or '' }}"
 
 # Mesh IP for node communication
-v2board_mesh_ip: "{{ lookup('env', 'V2BOARD_MESH_IP') | default('') }}"
+v2board_mesh_ip: "{{ lookup('env', 'V2BOARD_MESH_IP') or '' }}"
 
 # =============================================================================
 # Lifecycle Configuration | 生命周期配置
