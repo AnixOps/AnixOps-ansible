@@ -165,12 +165,14 @@ production_servers:
       - observability
       - v2board_servers
       - mesh_nodes
+      - postgres_servers
     roles:
       - observability
       - prometheus
       - grafana
       - loki
       - v2board
+      - postgresql
     server_environment: production
 
 # =============================================================================
@@ -214,6 +216,11 @@ group_definitions:
     description: "V2board 控制面板 | V2board Control Panels"
     vars:
       server_role: v2board_panel
+
+  postgres_servers:
+    description: "PostgreSQL 数据库服务器 | PostgreSQL Database Servers"
+    vars:
+      server_role: database
 
   # 环境分组 | Environment Groups
   dev:
