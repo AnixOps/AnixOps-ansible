@@ -87,7 +87,6 @@
     src: "/tmp/v2board-binary.tar.gz"
     dest: "{{ v2board_install_dir }}"
     remote_src: yes
-    extra_opts: ["--strip-components=1"]
   when: v2board_binary_url == ''
 
 - name: Download v2board frontend | 下载前端文件
@@ -105,11 +104,38 @@
     remote_src: yes
   when: v2board_binary_url == ''
 
+# =============================================================================
+# Binary verification and renaming (unified for both paths)
+# =============================================================================
+- name: Check for binary with standard name | 检查标准名称二进制
+  ansible.builtin.stat:
+    path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+  register: binary_standard
+
+- name: Check for binary with arch-specific name | 检查架构特定名称二进制
+  ansible.builtin.stat:
+    path: "{{ v2board_install_dir }}/v2board-linux-{{ v2board_arch_suffix }}"
+  register: binary_arch_specific
+
+- name: Rename arch-specific binary to standard name | 重命名架构特定二进制
+  ansible.builtin.command:
+    cmd: mv "{{ v2board_install_dir }}/v2board-linux-{{ v2board_arch_suffix }}" "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+  when:
+    - not binary_standard.stat.exists
+    - binary_arch_specific.stat.exists
+  changed_when: true
+
+- name: Ensure binary is executable | 确保二进制可执行
+  ansible.builtin.file:
+    path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+    mode: '0755'
+    state: file
+
 - name: Verify binary exists | 验证二进制文件存在
   ansible.builtin.stat:
     path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
-  register: binary_stat
-  failed_when: not binary_stat.stat.exists
+  register: final_binary
+  failed_when: not final_binary.stat.exists
 
 - name: Clean up temporary files | 清理临时文件
   ansible.builtin.file:
