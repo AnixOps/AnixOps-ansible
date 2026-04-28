@@ -4,18 +4,20 @@
 # =============================================================================
 
 # Binary deployment (no Docker)
-v2board_repo_owner: "{{ lookup('env', 'V2BOARD_REPO_OWNER') | default('anixops') }}"
-v2board_repo_name: "v2board_anixops"
+# Repository: AnixOps/v2board_AnixOps (exact GitHub repo name)
+v2board_repo_owner: "AnixOps"
+v2board_repo_name: "v2board_AnixOps"
 v2board_install_dir: "/usr/local/v2board"
 v2board_config_dir: "/etc/v2board"
 v2board_data_dir: "/var/lib/v2board"
 v2board_bin_name: "v2board"
 
 # Binary source:
-# Option 1: Download from GitHub Releases (if available)
-# Option 2: Use pre-built binary URL
+# Option 1: Use pre-built binary URL (V2BOARD_BINARY_URL env)
+# Option 2: Auto-detect latest release from GitHub API
+# Option 3: Use specific version (V2BOARD_BINARY_VERSION env, default: latest)
 v2board_binary_url: "{{ lookup('env', 'V2BOARD_BINARY_URL') | default('') }}"
-v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') | default('v2.0.1') }}"
+v2board_binary_version: "{{ lookup('env', 'V2BOARD_BINARY_VERSION') | default('latest') }}"
 
 # Ports
 v2board_frontend_port: 3000
