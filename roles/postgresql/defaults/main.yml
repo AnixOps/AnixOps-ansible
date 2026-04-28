@@ -4,7 +4,7 @@
 # =============================================================================
 
 # Version
-postgresql_version: "16"
+postgresql_version: "15"
 
 # Connection
 postgresql_port: 5432
