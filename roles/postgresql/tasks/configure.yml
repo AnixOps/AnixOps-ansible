@@ -12,7 +12,9 @@
 - name: Recreate broken or missing PostgreSQL cluster | 重建或创建 PostgreSQL 集群
   ansible.builtin.shell: |
     pg_dropcluster {{ postgresql_version }} main --stop 2>/dev/null || true
-    rm -f /var/lib/postgresql/{{ postgresql_version }}/main/PG_VERSION 2>/dev/null || true
+    rm -rf /etc/postgresql/{{ postgresql_version }}/main 2>/dev/null || true
+    rm -rf /var/lib/postgresql/{{ postgresql_version }}/main 2>/dev/null || true
+    rm -rf /var/log/postgresql/* 2>/dev/null || true
     pg_createcluster {{ postgresql_version }} main -- --data-checksums
   args:
     executable: /bin/bash
