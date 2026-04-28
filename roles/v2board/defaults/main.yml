@@ -4,7 +4,9 @@
 # =============================================================================
 
 # Environment
-v2board_env: "{{ lookup('env', 'V2BOARD_ENV') | default('production') }}"
+# Use 'development' for first-time deployment to trigger GORM AutoMigrate.
+# Switch to 'production' after initial setup (production mode skips AutoMigrate).
+v2board_env: "{{ lookup('env', 'V2BOARD_ENV') | default('development') }}"
 
 # Binary deployment (no Docker)
 # Repository: AnixOps/v2board_AnixOps (exact GitHub repo name)
