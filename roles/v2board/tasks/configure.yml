@@ -44,42 +44,44 @@
 
     - name: Test v2board binary startup (capture crash output) | 测试 v2board 启动捕获崩溃输出
       ansible.builtin.shell: |
-        set -e
-        # Run binary in background, wait a few seconds, then check
+        # Start binary in background
         {{ v2board_install_dir }}/{{ v2board_bin_name }} -config {{ v2board_config_dir }}/config.yaml \
-          > {{ v2board_data_dir }}/logs/v2board-test.out 2>&1 &
+          >> {{ v2board_data_dir }}/logs/v2board-test.out 2>&1 &
         BINARY_PID=$!
 
-        # Wait up to 20s for it to exit or check ports
-        for i in $(seq 1 20); do
-          if ! kill -0 $BINARY_PID 2>/dev/null; then
+        # Wait up to 15s for ports to start listening
+        LISTENING=no
+        for i in $(seq 1 15); do
+          if ss -tlnp | grep -qE '{{ v2board_api_port }}|{{ v2board_frontend_port }}'; then
+            LISTENING=yes
             break
           fi
+          # If binary already died, stop waiting
+          kill -0 $BINARY_PID 2>/dev/null || break
           sleep 1
         done
 
-        # Capture exit status
-        wait $BINARY_PID 2>/dev/null || true
-        EXIT_CODE=$?
-
-        echo "=== Binary Exit Code: $EXIT_CODE ==="
-        echo "=== PID: $BINARY_PID ==="
-
-        # Check what ports are listening
         echo "=== Listening Ports ==="
-        ss -tlnp | grep -E '3000|8080' || echo "No ports listening"
+        ss -tlnp | grep -E '{{ v2board_api_port }}|{{ v2board_frontend_port }}' || echo "No ports listening (LISTENING=$LISTENING)"
 
-        # Check if binary process still exists
-        echo "=== Running v2board processes ==="
-        ps aux | grep v2board | grep -v grep || echo "No v2board processes"
-
-        # Show full output (not just tail)
-        echo "=== Full stdout/stderr ==="
-        cat {{ v2board_data_dir }}/logs/v2board-test.out
-
-        # Also check the error log file
-        echo "=== Error Log File ==="
-        cat {{ v2board_data_dir }}/logs/v2board-error.log 2>/dev/null || echo "No error log"
+        # Check if binary process still alive
+        if kill -0 $BINARY_PID 2>/dev/null; then
+          echo "=== Status ==="
+          echo "Binary still running (PID $BINARY_PID), startup successful"
+          kill $BINARY_PID 2>/dev/null || true
+          sleep 2
+          kill -9 $BINARY_PID 2>/dev/null || true
+          exit 0
+        else
+          wait $BINARY_PID 2>/dev/null || true
+          EXIT_CODE=$?
+          echo "=== Binary Exit Code: $EXIT_CODE ==="
+          echo "=== Full stdout/stderr ==="
+          tail -n 200 {{ v2board_data_dir }}/logs/v2board-test.out
+          echo "=== Error Log ==="
+          tail -n 100 {{ v2board_data_dir }}/logs/v2board-error.log 2>/dev/null || echo "No error log"
+          exit $EXIT_CODE
+        fi
       args:
         executable: /bin/bash
       register: v2board_test_output
