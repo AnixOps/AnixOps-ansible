@@ -3,6 +3,33 @@
 # PostgreSQL Configuration Tasks | PostgreSQL 配置任务
 # =============================================================================
 
+- name: Check PostgreSQL cluster status | 检查 PostgreSQL 集群状态
+  ansible.builtin.shell: pg_lsclusters -h {{ postgresql_version }} main 2>&1
+  register: pg_cluster_check
+  changed_when: false
+  failed_when: false
+
+- name: Recreate broken or missing PostgreSQL cluster | 重建或创建 PostgreSQL 集群
+  ansible.builtin.shell: |
+    pg_dropcluster {{ postgresql_version }} main --stop 2>/dev/null || true
+    pg_createcluster {{ postgresql_version }} main -- --data-checksums
+  args:
+    executable: /bin/bash
+    creates: "/var/lib/postgresql/{{ postgresql_version }}/main/PG_VERSION"
+  when: >
+    pg_cluster_check.rc != 0 or
+    'down' in (pg_cluster_check.stdout | lower) or
+    'invalid' in (pg_cluster_check.stdout | lower)
+  register: pg_recreate_cluster
+  changed_when: "'Creating new cluster' in (pg_recreate_cluster.stdout | default(''))"
+  failed_when: false
+
+- name: Ensure PostgreSQL cluster is started | 确保 PostgreSQL 集群已启动
+  ansible.builtin.systemd:
+    name: "postgresql"
+    state: started
+    enabled: yes
+
 - name: Deploy postgresql.conf | 部署 postgresql.conf
   ansible.builtin.template:
     src: postgresql.conf.j2
@@ -18,6 +45,9 @@
     mode: '0640'
     backup: yes
   notify: Restart postgresql | 重启 PostgreSQL
+
+- name: Flush handlers to apply config changes | 刷新处理器以应用配置更改
+  meta: flush_handlers
 
 - name: Wait for PostgreSQL to restart | 等待 PostgreSQL 重启
   ansible.builtin.pause:

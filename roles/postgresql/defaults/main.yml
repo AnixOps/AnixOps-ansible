@@ -11,9 +11,9 @@ postgresql_port: 5432
 postgresql_listen_addresses: "127.0.0.1"
 
 # Database and user
-postgresql_user: "{{ lookup('env', 'V2BOARD_PG_USER') | default('v2board') }}"
-postgresql_database: "{{ lookup('env', 'V2BOARD_PG_DATABASE') | default('v2board') }}"
-postgresql_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') | default('') }}"
+postgresql_user: "{{ lookup('env', 'V2BOARD_PG_USER') or 'v2board' }}"
+postgresql_database: "{{ lookup('env', 'V2BOARD_PG_DATABASE') or 'v2board' }}"
+postgresql_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') or '' }}"
 
 # Performance tuning
 postgresql_max_connections: 100
