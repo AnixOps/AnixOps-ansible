@@ -3,6 +3,9 @@
 # V2board Configuration | V2board 配置
 # =============================================================================
 
+# Environment
+v2board_env: "{{ lookup('env', 'V2BOARD_ENV') | default('production') }}"
+
 # Binary deployment (no Docker)
 # Repository: AnixOps/v2board_AnixOps (exact GitHub repo name)
 v2board_repo_owner: "AnixOps"

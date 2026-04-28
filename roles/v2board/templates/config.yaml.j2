@@ -5,7 +5,7 @@
 # - runtime backend selection from forward_runtime below
 # =============================================================================
 
-env: "production"
+env: "{{ v2board_env | default('production') }}"
 
 server:
   host: "0.0.0.0"

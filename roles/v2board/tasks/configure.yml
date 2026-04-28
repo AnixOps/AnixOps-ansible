@@ -17,11 +17,29 @@
   notify: Restart v2board service | 重启 v2board 服务
 
 - name: Enable and start v2board service | 启用并启动 v2board 服务
-  ansible.builtin.systemd:
-    name: "{{ v2board_service_name }}"
-    state: started
-    enabled: yes
-    daemon_reload: yes
+  block:
+    - name: Kill stale v2board process | 清理残留 v2board 进程
+      ansible.builtin.shell: pkill -9 -f "{{ v2board_install_dir }}/{{ v2board_bin_name }}" 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Ensure v2board port is free | 确保 v2board 端口已释放
+      ansible.builtin.shell: |
+        for i in 1 2 3 4 5; do
+          fuser -k {{ v2board_api_port }}/tcp 2>/dev/null || break
+          sleep 1
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Start v2board service | 启动 v2board 服务
+      ansible.builtin.systemd:
+        name: "{{ v2board_service_name }}"
+        state: started
+        enabled: yes
+        daemon_reload: yes
 
 - name: Wait for v2board to start | 等待 v2board 启动
   ansible.builtin.pause:
