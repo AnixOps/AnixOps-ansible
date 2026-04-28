@@ -28,11 +28,40 @@
     seconds: 10
 
 - name: Verify v2board service status | 验证 v2board 服务状态
-  ansible.builtin.systemd:
-    name: "{{ v2board_service_name }}"
-    state: started
-  register: v2board_service_status
-  failed_when: "v2board_service_status.status.ActiveState != 'active'"
+  block:
+    - name: Check v2board service state | 检查 v2board 服务状态
+      ansible.builtin.systemd:
+        name: "{{ v2board_service_name }}"
+      register: v2board_service_status
+      failed_when: v2board_service_status.status.ActiveState != 'active'
+
+  rescue:
+    - name: Capture v2board journal logs | 捕获 v2board 日志
+      ansible.builtin.shell:
+        cmd: journalctl -u {{ v2board_service_name }} --no-pager -n 80 --no-hostname
+      register: v2board_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Display v2board error logs | 显示 v2board 错误日志
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+          ✗ V2board Service Failed | V2board 服务启动失败
+          ═══════════════════════════════════════════════════════════
+          State: {{ v2board_service_status.status.ActiveState | default('unknown') }}
+          SubState: {{ v2board_service_status.status.SubState | default('unknown') }}
+          Result: {{ v2board_service_status.status.Result | default('unknown') }}
+
+          ExecStart: {{ v2board_install_dir }}/{{ v2board_bin_name }} -config {{ v2board_config_dir }}/config.yaml
+
+          --- Journal Logs ---
+          {{ v2board_journal.stdout | default('No journal output available') }}
+          ═══════════════════════════════════════════════════════════
+
+    - name: Fail with service error | 报告服务启动失败
+      ansible.builtin.fail:
+        msg: "V2board service failed to start. State={{ v2board_service_status.status.ActiveState | default('unknown') }}, SubState={{ v2board_service_status.status.SubState | default('unknown') }}. See journal logs above."
 
 - name: Display v2board deployment summary | 显示 v2board 部署摘要
   ansible.builtin.debug:
