@@ -3,6 +3,7 @@
 # 由 Ansible 管理 - 请勿手动编辑
 
 # Connection Settings | 连接设置
+data_directory = '/var/lib/postgresql/{{ postgresql_version }}/main'
 listen_addresses = '{{ postgresql_listen_addresses }}'
 port = {{ postgresql_port }}
 max_connections = {{ postgresql_max_connections }}
