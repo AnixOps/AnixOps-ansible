@@ -3,6 +3,19 @@
 # PostgreSQL Installation Tasks | PostgreSQL 安装任务
 # =============================================================================
 
+- name: Fix apt source conflicts (Debian/Ubuntu) | 修复 apt 源冲突
+  ansible.builtin.shell: |
+    # Remove old/conflicting Docker GPG keys that cause apt conflicts
+    rm -f /usr/share/keyrings/docker-archive-keyring.gpg 2>/dev/null || true
+    # Remove old conflicting apt sources
+    rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
+    # Update apt cache
+    apt-get update 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  when: ansible_os_family == "Debian"
+  changed_when: false
+
 - name: Install PostgreSQL (Debian/Ubuntu) | 安装 PostgreSQL (Debian/Ubuntu)
   ansible.builtin.apt:
     name:
