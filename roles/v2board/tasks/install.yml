@@ -13,6 +13,7 @@
     - "{{ v2board_data_dir }}"
     - "{{ v2board_data_dir }}/data"
     - "{{ v2board_data_dir }}/frontend"
+    - "{{ v2board_data_dir }}/logs"
 
 - name: Set architecture suffix | 设置架构后缀
   ansible.builtin.set_fact:

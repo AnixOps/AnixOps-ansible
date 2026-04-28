@@ -50,10 +50,12 @@ v2board_mesh_ip: "{{ lookup('env', 'V2BOARD_MESH_IP') | default('') }}"
 # Lifecycle Configuration | 生命周期配置
 # =============================================================================
 v2board_port: "{{ v2board_api_port }}"
-v2board_health_url: "/health"
+v2board_health_url: "/api/v2/status"
 v2board_backup_files:
   - "{{ v2board_config_dir }}/config.yaml"
 v2board_config_dirs:
   - "{{ v2board_config_dir }}"
   - "{{ v2board_data_dir }}"
+  - "{{ v2board_data_dir }}/data"
+  - "{{ v2board_data_dir }}/logs"
 v2board_service_name: "v2board"

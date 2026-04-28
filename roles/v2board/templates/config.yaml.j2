@@ -1,37 +1,111 @@
 # V2board Configuration | V2board 配置文件
-app:
+# =============================================================================
+# Bootstrap rules:
+# - backend reads this file on startup
+# - runtime backend selection from forward_runtime below
+# =============================================================================
+
+env: "production"
+
+server:
+  host: "0.0.0.0"
   port: {{ v2board_api_port }}
-  frontend_port: {{ v2board_frontend_port }}
-  grpc_port: {{ v2board_grpc_port }}
-  nodex_port: {{ v2board_nodex_port }}
-  api_token: {{ v2board_api_token }}
-  subscribe_path: "s"
+  mode: "release"
+  read_timeout: 30
+  write_timeout: 30
+  trusted_proxies: []
+
+frontend:
+  enable: true
+  port: {{ v2board_frontend_port }}
+  path: "{{ v2board_data_dir }}/frontend"
 
 database:
-  type: {{ v2board_db_type }}
+  driver: "{{ v2board_db_type }}"
 {% if v2board_db_type == 'postgres' %}
-  host: {{ v2board_pg_host }}
+  host: "{{ v2board_pg_host }}"
   port: {{ v2board_pg_port }}
-  user: {{ v2board_pg_user }}
-  password: {{ v2board_pg_password }}
-  database: {{ v2board_pg_database }}
+  username: "{{ v2board_pg_user }}"
+  password: "{{ v2board_pg_password }}"
+  database: "{{ v2board_pg_database }}"
+  log_level: "info"
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 3600
 {% else %}
-  path: {{ v2board_data_dir }}/data/v2board.db
+  database: "{{ v2board_data_dir }}/data/v2board.db"
+  log_level: "info"
 {% endif %}
 
-redis:
-  host: {{ v2board_redis_host }}
-  port: {{ v2board_redis_port }}
+cache:
+{% if v2board_redis_host != 'localhost' or v2board_redis_password != '' %}
+  driver: "redis"
+  redis_host: "{{ v2board_redis_host }}"
+  redis_port: {{ v2board_redis_port }}
 {% if v2board_redis_password != '' %}
-  password: {{ v2board_redis_password }}
+  redis_password: "{{ v2board_redis_password }}"
 {% endif %}
+  redis_db: 0
+{% else %}
+  driver: "memory"
+{% endif %}
+
+log:
+  level: "info"
+  output: "stdout"
+  file_path: "{{ v2board_data_dir }}/logs/v2board.log"
+  max_size: 100
+  max_backups: 30
+  max_age: 7
 
 jwt:
-  secret: {{ v2board_jwt_secret }}
+  secret: "{{ v2board_jwt_secret }}"
+  expire: 86400
+
+auth:
+  login_rate_limit:
+    enabled: true
+    max_attempts: 6
+    window_seconds: 300
+    lockout_seconds: 600
+
+app:
+  name: "V2Board"
+  version: "2.0.1"
+  api_token: "{{ v2board_api_token }}"
+  traffic_log_enable: true
+  subscribe_path: "s"
 
 admin:
-  email: {{ v2board_admin_email }}
-  password: {{ v2board_admin_password }}
+  email: "{{ v2board_admin_email }}"
+  password: "{{ v2board_admin_password }}"
 
-# Mesh IP for internal communication | Mesh 内网通信地址
-mesh_ip: {{ v2board_mesh_ip }}
+tls:
+  enable: false
+  cert_file: ""
+  key_file: ""
+  domain: ""
+
+# =============================================================================
+# Forward Runtime Configuration | 转发运行时配置
+# =============================================================================
+# NodeX mode for V2bX integration
+forward_runtime:
+  backend: "gost"
+
+  nodex:
+    base_url: "http://127.0.0.1:{{ v2board_nodex_port }}"
+    token: "{{ v2board_api_token }}"
+    timeout_seconds: 15
+
+  jobs:
+    poll_interval: "5s"
+    idle_poll_interval: "30s"
+    error_log_interval: "1m"
+    batch_size: 10
+    timeout_seconds: 120
+
+  gost_stats:
+    poll_interval: "30s"
+    idle_poll_interval: "2m"
+    error_log_interval: "5m"
