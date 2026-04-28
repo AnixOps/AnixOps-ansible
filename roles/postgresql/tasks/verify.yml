@@ -1,0 +1,34 @@
+---
+# =============================================================================
+# PostgreSQL Verification Tasks | PostgreSQL 验证任务
+# =============================================================================
+
+- name: Verify PostgreSQL service status | 验证 PostgreSQL 服务状态
+  ansible.builtin.systemd:
+    name: "postgresql"
+  register: pg_service_status
+  failed_when: pg_service_status.status.ActiveState != 'active'
+
+- name: Verify database connectivity | 验证数据库连接
+  ansible.builtin.shell: |
+    PGPASSWORD='{{ postgresql_password }}' psql -h 127.0.0.1 -U {{ postgresql_user }} -d {{ postgresql_database }} -c "SELECT 1" -t
+  args:
+    executable: /bin/bash
+  register: pg_connect_test
+  changed_when: false
+  failed_when: pg_connect_test.rc != 0
+
+- name: Display PostgreSQL deployment summary | 显示 PostgreSQL 部署摘要
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════
+      ✓ PostgreSQL 部署成功 | PostgreSQL Deployed
+      ═══════════════════════════════════════════════════════════
+      主机 | Host: {{ inventory_hostname }}
+      端口 | Port: {{ postgresql_port }}
+      监听 | Listen: {{ postgresql_listen_addresses }}
+      数据库 | Database: {{ postgresql_database }}
+      用户 | User: {{ postgresql_user }}
+      版本 | Version: {{ postgresql_version }}
+      状态 | Status: {{ pg_service_status.status.ActiveState }}
+      ═══════════════════════════════════════════════════════════

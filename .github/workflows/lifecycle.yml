@@ -31,6 +31,7 @@ on:
           - acme_ssl
           - v2bx
           - v2board
+          - postgresql
           - speedtest
         default: 'nginx'
 
@@ -221,6 +222,16 @@ jobs:
           # V2board deploy special handling
           if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "v2board" ]; then
             echo "═══════════════════════════════════════════════════════════════"
+            echo "🗄️  Deploying PostgreSQL..."
+            echo "═══════════════════════════════════════════════════════════════"
+            CMD="ansible-playbook playbooks/provision/site.yml"
+            CMD="$CMD -i inventories/production/hosts.yml"
+            CMD="$CMD --limit $TARGET"
+            CMD="$CMD --tags postgresql"
+            CMD="$CMD -v"
+            eval $CMD || true
+
+            echo "═══════════════════════════════════════════════════════════════"
             echo "🎯 Deploying V2board Control Panel..."
             echo "═══════════════════════════════════════════════════════════════"
             CMD="ansible-playbook playbooks/provision/site.yml"
@@ -235,6 +246,26 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             ansible $TARGET -i inventories/production/hosts.yml \
               -m shell -a "systemctl status v2board --no-pager" -v || true
+            exit 0
+          fi
+
+          # PostgreSQL deploy special handling
+          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "postgresql" ]; then
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🗄️  Deploying PostgreSQL..."
+            echo "═══════════════════════════════════════════════════════════════"
+            CMD="ansible-playbook playbooks/provision/site.yml"
+            CMD="$CMD -i inventories/production/hosts.yml"
+            CMD="$CMD --limit $TARGET"
+            CMD="$CMD --tags postgresql"
+            CMD="$CMD -v"
+            eval $CMD
+
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🏥 Verifying PostgreSQL..."
+            echo "═══════════════════════════════════════════════════════════════"
+            ansible $TARGET -i inventories/production/hosts.yml \
+              -m shell -a "sudo -u postgres psql -c 'SELECT version()'" -v || true
             exit 0
           fi
 

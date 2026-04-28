@@ -1,0 +1,18 @@
+# PostgreSQL Client Authentication Configuration | PostgreSQL 客户端认证配置
+# Managed by Ansible - do not edit manually
+# 由 Ansible 管理 - 请勿手动编辑
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+# Local connections (Unix socket) | 本地连接 (Unix socket)
+local   all             postgres                                peer
+local   all             all                                     peer
+
+# IPv4 local connections | IPv4 本地连接
+host    all             all             127.0.0.1/32            md5
+
+# IPv6 local connections | IPv6 本地连接
+host    all             all             ::1/128                 md5
+
+# Reject all other connections | 拒绝其他所有连接
+host    all             all             0.0.0.0/0               reject

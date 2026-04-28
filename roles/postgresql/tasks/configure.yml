@@ -1,0 +1,48 @@
+---
+# =============================================================================
+# PostgreSQL Configuration Tasks | PostgreSQL 配置任务
+# =============================================================================
+
+- name: Deploy postgresql.conf | 部署 postgresql.conf
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+    mode: '0644'
+    backup: yes
+  notify: Restart postgresql | 重启 PostgreSQL
+
+- name: Deploy pg_hba.conf | 部署 pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+    mode: '0640'
+    backup: yes
+  notify: Restart postgresql | 重启 PostgreSQL
+
+- name: Wait for PostgreSQL to restart | 等待 PostgreSQL 重启
+  ansible.builtin.pause:
+    seconds: 5
+  listen: Restart postgresql | 重启 PostgreSQL
+
+- name: Create PostgreSQL user | 创建 PostgreSQL 用户
+  ansible.builtin.shell: |
+    sudo -u postgres psql -c "SELECT 1 FROM pg_roles WHERE rolname='{{ postgresql_user }}'" | grep -q 1 || \
+    sudo -u postgres psql -c "CREATE USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}'"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Create PostgreSQL database | 创建 PostgreSQL 数据库
+  ansible.builtin.shell: |
+    sudo -u postgres psql -c "SELECT 1 FROM pg_database WHERE datname='{{ postgresql_database }}'" | grep -q 1 || \
+    sudo -u postgres psql -c "CREATE DATABASE {{ postgresql_database }} OWNER {{ postgresql_user }}"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Grant privileges to user | 授予用户权限
+  ansible.builtin.shell: |
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ postgresql_database }} TO {{ postgresql_user }}"
+  args:
+    executable: /bin/bash
+  changed_when: false

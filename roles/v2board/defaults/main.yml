@@ -27,7 +27,7 @@ v2board_nodex_port: 18081
 
 # Database configuration (from secrets)
 # For binary deployment, use external database hosts (not Docker containers)
-v2board_db_type: "{{ lookup('env', 'V2BOARD_DB_TYPE') | default('sqlite') }}"
+v2board_db_type: "{{ lookup('env', 'V2BOARD_DB_TYPE') | default('postgres') }}"
 v2board_pg_host: "{{ lookup('env', 'V2BOARD_PG_HOST') | default('localhost') }}"
 v2board_pg_port: "5432"
 v2board_pg_user: "v2board"

@@ -172,6 +172,21 @@
     - cloudflare_mesh
 
 # -----------------------------------------------------------------------------
+# 部署 PostgreSQL 数据库 | Deploy PostgreSQL Database
+# -----------------------------------------------------------------------------
+- name: Deploy PostgreSQL Database | 部署 PostgreSQL 数据库
+  hosts: postgres_servers
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  gather_facts: yes
+  ignore_unreachable: yes
+  roles:
+    - postgresql
+  tags:
+    - postgresql
+
+# -----------------------------------------------------------------------------
 # 部署 V2board 控制面板 | Deploy V2board Control Panel
 # -----------------------------------------------------------------------------
 - name: Deploy V2board Control Panel | 部署 V2board 控制面板

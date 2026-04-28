@@ -80,6 +80,7 @@ firewall_restricted_ports:
   - 9090   # Prometheus Server
   - 3100   # Loki Server
   - 3000   # Grafana
+  - 5432   # PostgreSQL
 
 # 监控服务白名单 IP 列表 | Monitoring service whitelist IP list
 # 从环境变量读取服务器 IP，自动添加到白名单

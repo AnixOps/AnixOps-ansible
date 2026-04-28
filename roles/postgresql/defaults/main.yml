@@ -1,0 +1,29 @@
+---
+# =============================================================================
+# PostgreSQL Configuration | PostgreSQL 配置
+# =============================================================================
+
+# Version
+postgresql_version: "16"
+
+# Connection
+postgresql_port: 5432
+postgresql_listen_addresses: "127.0.0.1"
+
+# Database and user
+postgresql_user: "{{ lookup('env', 'V2BOARD_PG_USER') | default('v2board') }}"
+postgresql_database: "{{ lookup('env', 'V2BOARD_PG_DATABASE') | default('v2board') }}"
+postgresql_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') | default('') }}"
+
+# Performance tuning
+postgresql_max_connections: 100
+postgresql_shared_buffers: "128MB"
+
+# Lifecycle
+postgresql_backup_files:
+  - "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+  - "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+postgresql_config_dirs:
+  - "/etc/postgresql"
+postgresql_service_name: "postgresql"
+postgresql_port_for_firewall: "{{ postgresql_port }}"

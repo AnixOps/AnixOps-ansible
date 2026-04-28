@@ -1,0 +1,19 @@
+---
+# =============================================================================
+# PostgreSQL Installation Tasks | PostgreSQL 安装任务
+# =============================================================================
+
+- name: Install PostgreSQL (Debian/Ubuntu) | 安装 PostgreSQL (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgresql_version }}"
+      - "postgresql-client-{{ postgresql_version }}"
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Ensure PostgreSQL service is enabled and running | 确保 PostgreSQL 服务已启用并运行
+  ansible.builtin.systemd:
+    name: "postgresql"
+    state: started
+    enabled: yes

@@ -1,0 +1,20 @@
+---
+# =============================================================================
+# PostgreSQL Main Tasks | PostgreSQL 主任务
+# =============================================================================
+
+- name: Validate required variables | 验证必需变量
+  ansible.builtin.fail:
+    msg: |
+      缺少 PostgreSQL 密码 | Missing PostgreSQL password:
+      - V2BOARD_PG_PASSWORD (数据库密码)
+  when: postgresql_password | default('') == ''
+
+- name: Include installation tasks | 包含安装任务
+  ansible.builtin.include_tasks: install.yml
+
+- name: Include configuration tasks | 包含配置任务
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Include verification tasks | 包含验证任务
+  ansible.builtin.include_tasks: verify.yml

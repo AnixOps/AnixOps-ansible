@@ -1,0 +1,48 @@
+# PostgreSQL Configuration File | PostgreSQL 配置文件
+# Managed by Ansible - do not edit manually
+# 由 Ansible 管理 - 请勿手动编辑
+
+# Connection Settings | 连接设置
+listen_addresses = '{{ postgresql_listen_addresses }}'
+port = {{ postgresql_port }}
+max_connections = {{ postgresql_max_connections }}
+
+# Memory Settings | 内存设置
+shared_buffers = {{ postgresql_shared_buffers }}
+effective_cache_size = '512MB'
+work_mem = '4MB'
+maintenance_work_mem = '64MB'
+
+# Write Ahead Log | WAL 设置
+wal_level = replica
+min_wal_size = '80MB'
+max_wal_size = '1GB'
+
+# Logging | 日志设置
+log_timezone = 'Asia/Shanghai'
+log_destination = 'stderr'
+logging_collector = on
+log_directory = 'log'
+log_filename = 'postgresql-%Y-%m-%d.log'
+log_rotation_age = '1d'
+log_rotation_size = '10MB'
+log_line_prefix = '%m [%p] %q%u@%d '
+
+# Locale | 本地化
+lc_messages = 'en_US.UTF-8'
+lc_monetary = 'en_US.UTF-8'
+lc_numeric = 'en_US.UTF-8'
+lc_time = 'en_US.UTF-8'
+default_text_search_config = 'pg_catalog.english'
+
+# Checkpoint | 检查点
+checkpoint_timeout = '5min'
+checkpoint_completion_target = '0.9'
+
+# Statistics | 统计信息
+track_activities = on
+track_counts = on
+
+# Autovacuum | 自动清理
+autovacuum = on
+autovacuum_max_workers = 3
