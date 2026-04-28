@@ -64,7 +64,7 @@
   rescue:
     - name: Capture v2board journal logs | 捕获 v2board 日志
       ansible.builtin.shell:
-        cmd: journalctl -u {{ v2board_service_name }} --no-pager -n 80 --no-hostname
+        cmd: journalctl -u {{ v2board_service_name }} --no-pager -n 200 --no-hostname
       register: v2board_journal
       changed_when: false
       failed_when: false
