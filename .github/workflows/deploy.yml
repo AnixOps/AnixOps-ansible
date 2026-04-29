@@ -1,12 +1,47 @@
-name: Deploy to Production
+name: Deploy
 
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: "Target hosts (all, web_servers, observability)"
+      playbook:
+        description: 'Select playbook'
         required: true
-        default: "all"
+        type: choice
+        options:
+          - provision/site.yml
+          - provision/quick-setup.yml
+          - provision/web-servers.yml
+          - maintenance/health-check.yml
+          - maintenance/firewall-setup.yml
+          - maintenance/lifecycle.yml
+          - maintenance/emergency-cleanup.yml
+        default: 'provision/quick-setup.yml'
+
+      target_group:
+        description: 'Target servers'
+        required: true
+        type: choice
+        options:
+          - all
+          - web_servers
+          - proxy_servers
+          - observability
+          - dev_servers
+          - mesh_nodes
+          - v2bx_servers
+          - v2board_servers
+        default: 'all'
+
+      dry_run:
+        description: 'Test only (no changes)'
+        required: false
+        type: boolean
+        default: true
+
+  push:
+    tags:
+      - 'v*'
+
   pull_request:
     branches: [main]
 
@@ -14,12 +49,34 @@ jobs:
   lint:
     name: Code Quality Check
     uses: ./.github/workflows/reusable-lint.yml
+    if: github.event_name == 'pull_request'
 
-  test:
-    name: Ansible Connection Test
+  detect-changes:
+    name: Detect Changed Roles
     runs-on: ubuntu-latest
-    needs: lint
-    if: github.event_name != 'pull_request'
+    if: github.ref_type == 'tag'
+    outputs:
+      roles: ${{ steps.detect.outputs.roles }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed roles
+        id: detect
+        run: |
+          echo "Detecting roles to deploy for tag ${{ github.ref_name }}"
+          echo "roles=nginx,prometheus,grafana,loki,promtail,node_exporter,cloudflare_mesh,v2board,v2bx,speedtest" >> $GITHUB_OUTPUT
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+
+  deploy-manual:
+    name: Deploy (${{ github.event.inputs.target_group }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment: NodeX
 
     steps:
       - name: Checkout code
@@ -28,139 +85,98 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install Ansible
+      - name: Install Ansible and dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ansible
+          pip install -r requirements.txt
+          ansible-galaxy install -r requirements.yml
 
       - name: Setup SSH Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Create test inventory from secrets
+      - name: Create inventory from config
         run: |
-          echo "Creating test inventory from GitHub Secrets..."
-          cat > inventories/production/hosts.yml << 'INVENTORY'
-          ---
-          all:
-            children:
-              web_servers:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  server_role: web
-              observability:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  server_role: observability
-            vars:
-              ansible_user: "${{ secrets.ANSIBLE_USER }}"
-              ansible_port: "${{ secrets.ANSIBLE_PORT }}"
-              ansible_ssh_private_key_file: "~/.ssh/id_rsa"
-              ansible_python_interpreter: /usr/bin/python3
-              ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-          INVENTORY
-          echo "Generated test inventory:"
-          cat inventories/production/hosts.yml
+          echo "Generating inventory from servers-config.yml..."
+          python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
+          echo "Inventory generated"
 
-      - name: Test Ansible Ping
-        continue-on-error: true
+      - name: Display Deployment Configuration
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "DEPLOYMENT CONFIGURATION"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "Playbook:        ${{ github.event.inputs.playbook }}"
+          echo "Target Group:    ${{ github.event.inputs.target_group }}"
+          echo "Dry Run:         ${{ github.event.inputs.dry_run }}"
+          echo "Triggered by:    ${{ github.actor }}"
+          echo "Branch:          ${{ github.ref_name }}"
+          echo "═══════════════════════════════════════════════════════════════"
+
+      - name: Verify Connectivity
         env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
-          echo "========================================"
-          echo "Testing Ansible connectivity with ping..."
-          echo "========================================"
-          ansible all -i inventories/production/hosts.yml -m ping -v
-
-      - name: Test Summary
-        if: always()
-        run: |
-          echo "========================================"
-          echo "Connection Test Completed"
-          echo "========================================"
-
-  deploy:
-    needs: test
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    name: Deploy Ansible Configuration
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Ansible
-        run: |
-          python -m pip install --upgrade pip
-          pip install ansible
-
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-      - name: Create dynamic inventory from secrets
-        run: |
-          echo "Creating dynamic inventory from GitHub Secrets..."
-          cat > inventories/production/hosts.yml << 'INVENTORY'
-          ---
-          all:
-            children:
-              web_servers:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  server_role: web
-              observability:
-                hosts:
-                  pl-test-1:
-                    ansible_host: "${{ secrets.PL_1_V4_SSH }}"
-                vars:
-                  server_role: observability
-            vars:
-              ansible_user: "${{ secrets.ANSIBLE_USER }}"
-              ansible_port: "${{ secrets.ANSIBLE_PORT }}"
-              ansible_ssh_private_key_file: "~/.ssh/id_rsa"
-              ansible_python_interpreter: /usr/bin/python3
-              ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-          INVENTORY
-          echo "Generated inventory:"
-          cat inventories/production/hosts.yml
+          ansible ${{ github.event.inputs.target_group }} \
+            -i inventories/production/hosts.yml \
+            -m ping -v
 
       - name: Run Ansible Playbook
         env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_FORCE_COLOR: 'True'
           PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          US_W_1_V4: ${{ secrets.US_W_1_V4 }}
-          US_W_1_V6: ${{ secrets.US_W_1_V6 }}
-          US_W_2_V4: ${{ secrets.US_W_2_V4 }}
-          US_W_2_V6: ${{ secrets.US_W_2_V6 }}
-          US_W_2_SSH_IP: ${{ secrets.US_W_2_SSH_IP }}
-          US_E_1_V4: ${{ secrets.US_E_1_V4 }}
-          US_E_1_V6: ${{ secrets.US_E_1_V6 }}
-          JP_1_V4: ${{ secrets.JP_1_V4 }}
-          JP_1_V6: ${{ secrets.JP_1_V6 }}
-          JP_1_SSH_IP: ${{ secrets.JP_1_SSH_IP }}
-          EU_1_V4: ${{ secrets.EU_1_V4 }}
-          EU_1_V6: ${{ secrets.EU_1_V6 }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          SSH_KEY_PATH: ~/.ssh/id_rsa
+          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
+          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
+          V2BX_CORE: ${{ secrets.V2BX_CORE }}
+          V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
+          V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
+          V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
+          V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
+          V2BX_CERT_DOMAIN: ${{ secrets.V2BX_CERT_DOMAIN }}
+          V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}
+          V2BOARD_DB_TYPE: ${{ secrets.V2BOARD_DB_TYPE }}
+          V2BOARD_PG_PASSWORD: ${{ secrets.V2BOARD_PG_PASSWORD }}
+          V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
+          V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
+          V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
+          V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
+          V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
+          V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
+          V2BOARD_FRONTEND_PORT: ${{ secrets.V2BOARD_FRONTEND_PORT }}
+          V2BOARD_API_PORT: ${{ secrets.V2BOARD_API_PORT }}
+          V2BOARD_GRPC_PORT: ${{ secrets.V2BOARD_GRPC_PORT }}
+          V2BOARD_NODEX_PORT: ${{ secrets.V2BOARD_NODEX_PORT }}
+          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+          LOKI_URL: ${{ secrets.LOKI_URL }}
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
           OBSERVABILITY_SSL_ENABLED: ${{ secrets.OBSERVABILITY_SSL_ENABLED }}
           OBSERVABILITY_SSL_METHOD: ${{ secrets.OBSERVABILITY_SSL_METHOD }}
           GRAFANA_DOMAIN: ${{ secrets.GRAFANA_DOMAIN }}
@@ -169,19 +185,43 @@ jobs:
           SSL_CERTIFICATE_PEM: ${{ secrets.SSL_CERTIFICATE_PEM }}
           SSL_CERTIFICATE_KEY_PEM: ${{ secrets.SSL_CERTIFICATE_KEY_PEM }}
           ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
-          ACME_CA_SERVER: ${{ secrets.ACME_CA_SERVER }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-          CLOUDFLARE_BASE_DOMAIN: ${{ secrets.CLOUDFLARE_BASE_DOMAIN }}
           GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
         run: |
-          ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml \
-            --limit ${{ github.event.inputs.target || 'all' }} \
-            -v
+          CMD="ansible-playbook playbooks/${{ github.event.inputs.playbook }}"
+          CMD="$CMD -i inventories/production/hosts.yml"
+          CMD="$CMD --limit ${{ github.event.inputs.target_group }}"
+          CMD="$CMD -v"
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            CMD="$CMD --check --diff"
+            echo "Running in DRY RUN mode (no changes will be made)"
+          fi
+
+          echo "Executing: $CMD"
+          eval $CMD
+
+      - name: Run Health Check
+        if: success() && github.event.inputs.dry_run != 'true'
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+        run: |
+          ansible ${{ github.event.inputs.target_group }} \
+            -i inventories/production/hosts.yml \
+            -m shell \
+            -a "uptime && df -h / && free -h" || true
 
       - name: Cleanup SSH keys
         if: always()
@@ -189,18 +229,123 @@ jobs:
           rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
 
       - name: Deployment Summary
-        if: success()
+        if: always()
         run: |
-          echo "================================================================"
-          echo "Deployment completed successfully!"
-          echo "================================================================"
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref }}"
-          echo "Target: ${{ github.event.inputs.target || 'all' }}"
-          echo "================================================================"
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="SUCCESS"
+          else
+            STATUS="FAILED"
+          fi
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "DEPLOYMENT $STATUS"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "Playbook:  ${{ github.event.inputs.playbook }}"
+          echo "Target:    ${{ github.event.inputs.target_group }}"
+          echo "Dry Run:   ${{ github.event.inputs.dry_run }}"
+          echo "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "═══════════════════════════════════════════════════════════════"
 
-      - name: Notify on failure
-        if: failure()
+  deploy-tag:
+    name: Deploy Changed Roles (Tag ${{ github.ref_name }})
+    needs: detect-changes
+    if: github.ref_type == 'tag' && needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    environment: NodeX
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Ansible and dependencies
         run: |
-          echo "Deployment failed!"
-          echo "Check the logs above for details."
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          ansible-galaxy install -r requirements.yml
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create inventory from config
+        run: |
+          python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
+
+      - name: Deploy roles
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_FORCE_COLOR: 'True'
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
+          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
+          V2BX_CORE: ${{ secrets.V2BX_CORE }}
+          V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
+          V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
+          V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
+          V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
+          V2BX_CERT_DOMAIN: ${{ secrets.V2BX_CERT_DOMAIN }}
+          V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}
+          V2BOARD_DB_TYPE: ${{ secrets.V2BOARD_DB_TYPE }}
+          V2BOARD_PG_PASSWORD: ${{ secrets.V2BOARD_PG_PASSWORD }}
+          V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
+          V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
+          V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
+          V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
+          V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
+          V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
+        run: |
+          ROLES="${{ needs.detect-changes.outputs.roles }}"
+          echo "Tag release: deploying all roles"
+          echo "Roles: $ROLES"
+
+          for ROLE in $(echo $ROLES | tr ',' ' '); do
+            echo "Deploying: $ROLE"
+
+            TARGET="all"
+            case $ROLE in
+              nginx) TARGET="web_servers" ;;
+              v2board) TARGET="v2board_servers" ;;
+              v2bx) TARGET="v2bx_servers" ;;
+              cloudflare_mesh) TARGET="mesh_nodes" ;;
+            esac
+
+            ansible-playbook playbooks/provision/site.yml \
+              -i inventories/production/hosts.yml \
+              --limit $TARGET \
+              --tags $ROLE \
+              -v
+          done
+
+      - name: Cleanup SSH keys
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
+
+      - name: Deploy Summary
+        if: always()
+        run: |
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "Auto Deploy Completed"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "Tag:       ${{ github.ref_name }}"
+          echo "Roles:     ${{ needs.detect-changes.outputs.roles }}"
+          echo "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "═══════════════════════════════════════════════════════════════"
