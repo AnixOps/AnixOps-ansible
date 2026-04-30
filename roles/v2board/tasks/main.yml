@@ -2,7 +2,6 @@
 # =============================================================================
 # V2board Main Tasks | V2board 主任务
 # =============================================================================
-# 验证配置 -> 安装 -> 配置 -> 启动
 
 - name: Validate required variables | 验证必需变量
   ansible.builtin.fail:
@@ -27,11 +26,26 @@
     (v2board_db_type == 'postgres') and
     (v2board_pg_password | default('') == '')
 
-- name: Include installation tasks | 包含安装任务
-  ansible.builtin.include_tasks: install.yml
+- name: Docker Deployment | Docker 部署
+  when: v2board_deploy_method == 'docker'
+  block:
+    - name: Include Docker installation tasks | Docker 安装
+      ansible.builtin.include_tasks: install-docker.yml
 
-- name: Include configuration tasks | 包含配置任务
-  ansible.builtin.include_tasks: configure.yml
+    - name: Include Docker configuration tasks | Docker 配置
+      ansible.builtin.include_tasks: configure-docker.yml
 
-- name: Include verification tasks | 包含验证任务
-  ansible.builtin.include_tasks: verify.yml
+    - name: Include verification tasks | 验证
+      ansible.builtin.include_tasks: verify.yml
+
+- name: Binary Deployment | 二进制部署
+  when: v2board_deploy_method == 'binary'
+  block:
+    - name: Include binary installation tasks | 二进制安装
+      ansible.builtin.include_tasks: install.yml
+
+    - name: Include binary configuration tasks | 二进制配置
+      ansible.builtin.include_tasks: configure.yml
+
+    - name: Include verification tasks | 验证
+      ansible.builtin.include_tasks: verify.yml

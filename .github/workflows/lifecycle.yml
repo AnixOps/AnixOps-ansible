@@ -249,7 +249,7 @@ jobs:
             echo "🏥 Verifying V2board health..."
             echo "═══════════════════════════════════════════════════════════════"
             ansible $TARGET -i inventories/production/hosts.yml \
-              -m shell -a "systemctl status v2board --no-pager" -v || true
+              -m shell -a "docker ps --filter name=v2board --format '{{ '{{' }}.Status{{ '}}' }}' || systemctl status v2board --no-pager" -v || true
             exit 0
           fi
 
