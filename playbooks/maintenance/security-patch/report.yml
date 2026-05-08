@@ -1,0 +1,61 @@
+- name: Determine security patch target group
+  ansible.builtin.set_fact:
+    security_patch_target_group_name: "{{ security_patch_target_group | default('all') }}"
+
+- name: Determine target hosts for the report
+  ansible.builtin.set_fact:
+    security_patch_target_hosts: >-
+      {{
+        (groups[security_patch_target_group_name] if security_patch_target_group_name in groups else groups['all'])
+        | reject('equalto', 'localhost')
+        | list
+      }}
+
+- name: Initialize host summary list
+  ansible.builtin.set_fact:
+    security_patch_report_hosts: []
+
+- name: Collect host summaries
+  ansible.builtin.set_fact:
+    security_patch_report_hosts: >-
+      {{
+        security_patch_report_hosts
+        + [ hostvars[item].security_patch_summary | default(security_patch_placeholder_summary, true) ]
+      }}
+  vars:
+    security_patch_placeholder_summary:
+      host: "{{ item }}"
+      os_family: "{{ hostvars[item].ansible_os_family | default('unknown') }}"
+      pkg_mgr: "{{ hostvars[item].ansible_pkg_mgr | default('unknown') }}"
+      status: "scan_failed"
+      alert_reason: "no host summary was produced (unreachable or failed before reporting)"
+      before_count: 0
+      before_patchable_count: 0
+      before_unpatchable_count: 0
+      after_count: 0
+      after_patchable_count: 0
+      after_unpatchable_count: 0
+      update_rc: 0
+      reboot_required: false
+      findings: []
+  loop: "{{ security_patch_target_hosts }}"
+
+- name: Build aggregated report
+  ansible.builtin.set_fact:
+    security_patch_report:
+      generated_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+      target_group: "{{ security_patch_target_group | default('all') }}"
+      total_hosts: "{{ security_patch_report_hosts | length }}"
+      clean_count: "{{ security_patch_report_hosts | selectattr('status', 'equalto', 'clean') | list | length }}"
+      patched_count: "{{ security_patch_report_hosts | selectattr('status', 'equalto', 'patched') | list | length }}"
+      alert_count: >-
+        {{
+          (security_patch_report_hosts | selectattr('status', 'equalto', 'needs_attention') | list | length)
+          + (security_patch_report_hosts | selectattr('status', 'equalto', 'scan_failed') | list | length)
+        }}
+      hosts: "{{ security_patch_report_hosts }}"
+
+- name: Write report to workspace
+  ansible.builtin.copy:
+    dest: "{{ security_patch_report_path | default(playbook_dir ~ '/../../security-patch-report.json', true) }}"
+    content: "{{ security_patch_report | to_nice_json }}"

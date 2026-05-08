@@ -1,0 +1,39 @@
+- name: Refresh apt metadata before remediation
+  ansible.builtin.apt:
+    update_cache: yes
+  when:
+    - ansible_os_family == 'Debian'
+    - security_patch_before_patchable_count | int > 0
+
+- name: Apply Debian or Ubuntu updates
+  ansible.builtin.shell: |
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade
+  register: security_patch_update_result
+  changed_when: security_patch_update_result.rc == 0
+  failed_when: false
+  when:
+    - ansible_os_family == 'Debian'
+    - security_patch_before_patchable_count | int > 0
+
+- name: Apply RedHat-family updates
+  ansible.builtin.shell: |
+    dnf -y upgrade --refresh
+  register: security_patch_update_result
+  changed_when: security_patch_update_result.rc == 0
+  failed_when: false
+  when:
+    - ansible_os_family == 'RedHat'
+    - security_patch_before_patchable_count | int > 0
+
+- name: Check whether a reboot is required on Debian or Ubuntu
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: security_patch_reboot_required_file
+  changed_when: false
+  when: ansible_os_family == 'Debian'
+
+- name: Set reboot flag for Debian or Ubuntu
+  ansible.builtin.set_fact:
+    security_patch_reboot_required: "{{ security_patch_reboot_required_file.stat.exists | default(false) }}"
+  when: ansible_os_family == 'Debian'

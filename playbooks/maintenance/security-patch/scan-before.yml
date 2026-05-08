@@ -1,0 +1,44 @@
+- name: Scan for high and critical vulnerabilities before remediation
+  ansible.builtin.command:
+    argv:
+      - "{{ security_patch_trivy_bin }}"
+      - fs
+      - --quiet
+      - --no-progress
+      - --format
+      - json
+      - --exit-code
+      - "0"
+      - --timeout
+      - "{{ security_patch_trivy_timeout }}"
+      - --severity
+      - HIGH,CRITICAL
+      - --pkg-types
+      - os
+      - --scanners
+      - vuln
+      - /
+  register: security_patch_scan_before
+  changed_when: false
+  no_log: true
+
+- name: Summarize pre-remediation findings
+  delegate_to: localhost
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ security_patch_trivy_summarizer }}"
+    stdin: "{{ hostvars[inventory_hostname].security_patch_scan_before.stdout }}"
+  register: security_patch_findings_before_raw
+  changed_when: false
+  no_log: true
+
+- name: Parse pre-remediation findings
+  ansible.builtin.set_fact:
+    security_patch_findings_before: "{{ security_patch_findings_before_raw.stdout | from_json }}"
+  no_log: true
+
+- name: Count pre-remediation findings
+  ansible.builtin.set_fact:
+    security_patch_before_patchable_count: "{{ security_patch_findings_before | selectattr('fixed_version', 'match', '.+') | list | length }}"
+    security_patch_before_unpatchable_count: "{{ security_patch_findings_before | rejectattr('fixed_version', 'match', '.+') | list | length }}"

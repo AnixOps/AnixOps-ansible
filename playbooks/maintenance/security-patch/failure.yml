@@ -1,0 +1,23 @@
+- name: Record scan failure summary
+  ansible.builtin.set_fact:
+    security_patch_summary:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ ansible_os_family }}"
+      pkg_mgr: "{{ ansible_pkg_mgr | default('unknown') }}"
+      status: "scan_failed"
+      alert_reason: "{{ ansible_failed_result.msg | default(ansible_failed_result.stderr | default('security scan failed')) }}"
+      before_count: "{{ security_patch_findings_before | length }}"
+      before_patchable_count: "{{ security_patch_before_patchable_count | default(0) | int }}"
+      before_unpatchable_count: "{{ security_patch_before_unpatchable_count | default(0) | int }}"
+      after_count: "{{ security_patch_findings_after | length }}"
+      after_patchable_count: "{{ security_patch_after_patchable_count | default(0) | int }}"
+      after_unpatchable_count: "{{ security_patch_after_unpatchable_count | default(0) | int }}"
+      update_rc: "{{ security_patch_update_result.rc | default(0) }}"
+      reboot_required: "{{ security_patch_reboot_required | default(false) }}"
+      findings: "{{ security_patch_findings_after[:10] | default([]) }}"
+
+- name: Show scan failure summary
+  ansible.builtin.debug:
+    msg:
+      - "Security patch scan failed on {{ inventory_hostname }}"
+      - "{{ security_patch_summary.alert_reason }}"

@@ -1,0 +1,26 @@
+- name: Validate supported operating systems
+  ansible.builtin.fail:
+    msg: "Unsupported OS family {{ ansible_os_family }} on {{ inventory_hostname }}"
+  when: ansible_os_family not in ['Debian', 'RedHat']
+
+- name: Check whether Trivy is installed
+  ansible.builtin.stat:
+    path: "{{ security_patch_trivy_bin }}"
+  register: security_patch_trivy_stat
+
+- name: Download Trivy install script
+  ansible.builtin.get_url:
+    url: "{{ security_patch_trivy_install_script }}"
+    dest: /tmp/trivy-install.sh
+    mode: "0755"
+  when: not security_patch_trivy_stat.stat.exists
+
+- name: Install Trivy when missing
+  ansible.builtin.command:
+    argv:
+      - /tmp/trivy-install.sh
+      - -b
+      - /usr/local/bin
+  register: security_patch_trivy_install_result
+  changed_when: security_patch_trivy_install_result.rc == 0
+  when: not security_patch_trivy_stat.stat.exists

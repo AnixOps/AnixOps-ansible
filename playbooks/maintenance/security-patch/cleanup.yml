@@ -1,0 +1,4 @@
+- name: Remove temporary Trivy installer
+  ansible.builtin.file:
+    path: /tmp/trivy-install.sh
+    state: absent
