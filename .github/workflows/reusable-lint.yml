@@ -48,6 +48,7 @@ jobs:
           ansible-playbook --syntax-check playbooks/provision/quick-setup.yml
           ansible-playbook --syntax-check playbooks/maintenance/health-check.yml
           ansible-playbook --syntax-check playbooks/maintenance/firewall-setup.yml
+          ansible-playbook --syntax-check playbooks/maintenance/security-patch.yml
 
       - name: Check backup coverage
         run: |

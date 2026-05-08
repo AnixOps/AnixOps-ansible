@@ -84,6 +84,7 @@ syntax:
 	ansible-playbook --syntax-check playbooks/provision/quick-setup.yml
 	ansible-playbook --syntax-check playbooks/maintenance/health-check.yml
 	ansible-playbook --syntax-check playbooks/maintenance/firewall-setup.yml
+	ansible-playbook --syntax-check playbooks/maintenance/security-patch.yml
 	@echo "✓ Syntax check passed | 语法检查通过"
 
 # -----------------------------------------------------------------------------

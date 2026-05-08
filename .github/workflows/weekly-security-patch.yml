@@ -1,0 +1,251 @@
+name: Weekly Security Patch
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      target_group:
+        description: 'Target servers'
+        required: true
+        type: choice
+        options:
+          - all
+          - web_servers
+          - proxy_servers
+          - observability
+          - dev_servers
+          - mesh_nodes
+          - v2bx_servers
+          - v2board_servers
+          - postgres_servers
+        default: 'all'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  security-patch:
+    name: Weekly security patch
+    runs-on: ubuntu-latest
+    environment: NodeX
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Ansible and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          ansible-galaxy install -r requirements.yml
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create inventory from config
+        run: |
+          python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
+
+      - name: Run security patch playbook
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_FORCE_COLOR: 'True'
+          TARGET_GROUP: ${{ github.event.inputs.target_group }}
+          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
+          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
+          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
+          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
+          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
+          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
+          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
+          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
+          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+        run: |
+          TARGET_GROUP="${{ github.event.inputs.target_group }}"
+          if [ -z "$TARGET_GROUP" ]; then
+            TARGET_GROUP="all"
+          fi
+
+          REPORT_PATH="$GITHUB_WORKSPACE/security-patch-report.json"
+
+          ansible-playbook playbooks/maintenance/security-patch.yml \
+            -i inventories/production/hosts.yml \
+            --limit "$TARGET_GROUP,localhost" \
+            -e "security_patch_report_path=$REPORT_PATH" \
+            -e "security_patch_target_group=$TARGET_GROUP" \
+            -v
+
+      - name: Create or update security patch issue
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          TARGET_GROUP: ${{ github.event.inputs.target_group }}
+          REPORT_PATH: ${{ github.workspace }}/security-patch-report.json
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+
+            const reportPath = process.env.REPORT_PATH;
+            const targetGroup = process.env.TARGET_GROUP || 'all';
+            const jobStatus = process.env.JOB_STATUS || 'unknown';
+            if (!fs.existsSync(reportPath)) {
+              core.warning(`Security patch report was not created at ${reportPath}.`);
+            }
+
+            const title = 'AnixOps security patch backlog';
+            const { owner, repo } = context.repo;
+            const runUrl = process.env.RUN_URL;
+
+            const findExistingIssue = async () => {
+              const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+                owner,
+                repo,
+                state: 'open',
+                per_page: 100
+              });
+
+              return openIssues.find((issue) => issue.title === title && !issue.pull_request);
+            };
+
+            const upsertIssue = async (body) => {
+              const existingIssue = await findExistingIssue();
+              if (existingIssue) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: existingIssue.number,
+                  body
+                });
+                core.info(`Updated issue #${existingIssue.number} with the latest report.`);
+                return existingIssue.number;
+              }
+
+              const created = await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body
+              });
+              core.info(`Created issue #${created.data.number} for the security patch backlog.`);
+              return created.data.number;
+            };
+
+            const renderFailureBody = (reason) => {
+              const lines = [];
+              lines.push('# Security patch workflow failed');
+              lines.push('');
+              lines.push(`- Generated at: ${new Date().toISOString()}`);
+              lines.push(`- Target group: ${targetGroup}`);
+              lines.push(`- Run: ${runUrl}`);
+              lines.push(`- Job status: ${jobStatus}`);
+              lines.push('');
+              lines.push(`- Failure reason: ${reason}`);
+              lines.push('');
+              lines.push('The playbook did not produce a usable report, so host-level findings are unavailable.');
+              lines.push('Check the workflow logs for the underlying Ansible failure.');
+              return lines.join('\n');
+            };
+
+            let report;
+            if (!fs.existsSync(reportPath)) {
+              await upsertIssue(renderFailureBody(`report file was not created at ${reportPath}`));
+              return;
+            }
+
+            try {
+              report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            } catch (error) {
+              await upsertIssue(renderFailureBody(`report file could not be parsed: ${error.message}`));
+              return;
+            }
+
+            const alertHosts = (report.hosts || []).filter((host) => ['needs_attention', 'scan_failed'].includes(host.status));
+
+            const renderFinding = (finding) => {
+              const fixed = finding.fixed_version && finding.fixed_version.length > 0 ? finding.fixed_version : 'n/a';
+              return `- ${finding.id} | ${finding.package} | installed ${finding.installed_version} | fixed ${fixed} | ${finding.severity}`;
+            };
+
+            const renderBody = () => {
+              const lines = [];
+              lines.push('# Security patch report');
+              lines.push('');
+              lines.push(`- Generated at: ${report.generated_at}`);
+              lines.push(`- Target group: ${report.target_group}`);
+              lines.push(`- Run: ${runUrl}`);
+              lines.push(`- Scanned hosts: ${report.total_hosts}`);
+              lines.push(`- Clean hosts: ${report.clean_count}`);
+              lines.push(`- Patched hosts: ${report.patched_count}`);
+              lines.push(`- Alert hosts: ${alertHosts.length}`);
+              lines.push('');
+              lines.push('| Host | Status | Before | After | Reboot | Reason |');
+              lines.push('| --- | --- | ---: | ---: | --- | --- |');
+
+              for (const host of report.hosts || []) {
+                lines.push(`| ${host.host} | ${host.status} | ${host.before_count} | ${host.after_count} | ${host.reboot_required ? 'yes' : 'no'} | ${host.alert_reason} |`);
+              }
+
+              if (alertHosts.length > 0) {
+                lines.push('');
+                lines.push('## Alert details');
+                for (const host of alertHosts) {
+                  lines.push('');
+                  lines.push(`### ${host.host}`);
+                  lines.push(`- Status: ${host.status}`);
+                  lines.push(`- Reason: ${host.alert_reason}`);
+                  lines.push(`- Before: ${host.before_count} findings`);
+                  lines.push(`- After: ${host.after_count} findings`);
+                  if ((host.findings || []).length > 0) {
+                    lines.push('- Findings:');
+                    for (const finding of host.findings.slice(0, 5)) {
+                      lines.push(`  ${renderFinding(finding)}`);
+                    }
+                  }
+                }
+              }
+
+              return lines.join('\n');
+            };
+
+            const body = renderBody();
+            const existingIssue = await findExistingIssue();
+
+            if (alertHosts.length > 0) {
+              await upsertIssue(body);
+              return;
+            }
+
+            if (existingIssue) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existingIssue.number,
+                body: `Security patch run completed cleanly at ${report.generated_at} for target group \`${report.target_group}\`.`
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existingIssue.number,
+                state: 'closed'
+              });
+              core.info(`Closed issue #${existingIssue.number} because no alerts remain.`);
+            } else {
+              core.info('No unresolved findings were detected and no backlog issue is open.');
+            }

@@ -1,0 +1,335 @@
+---
+# Weekly security patch workflow.
+# Scan OS packages for HIGH/CRITICAL vulnerabilities, install available updates,
+# and write a JSON report that GitHub Actions can turn into a notification.
+
+- name: Weekly security vulnerability scan and remediation
+  hosts: all:!localhost
+  serial: 1
+  become: yes
+  gather_facts: yes
+  ignore_unreachable: yes
+
+  vars:
+    security_patch_trivy_install_script: "https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh"
+    security_patch_trivy_bin: "/usr/local/bin/trivy"
+    security_patch_trivy_timeout: "15m"
+
+  pre_tasks:
+    - name: Initialize security patch facts
+      ansible.builtin.set_fact:
+        security_patch_trivy_installed: false
+        security_patch_findings_before: []
+        security_patch_findings_after: []
+        security_patch_before_patchable_count: 0
+        security_patch_before_unpatchable_count: 0
+        security_patch_after_patchable_count: 0
+        security_patch_after_unpatchable_count: 0
+        security_patch_reboot_required: false
+        security_patch_update_result:
+          rc: 0
+          stdout: ""
+          stderr: ""
+        security_patch_summary:
+          host: "{{ inventory_hostname }}"
+          os_family: "{{ ansible_os_family }}"
+          pkg_mgr: "{{ ansible_pkg_mgr | default('unknown') }}"
+          status: "pending"
+          alert_reason: ""
+          before_count: 0
+          before_patchable_count: 0
+          before_unpatchable_count: 0
+          after_count: 0
+          after_patchable_count: 0
+          after_unpatchable_count: 0
+          update_rc: 0
+          reboot_required: false
+          findings: []
+
+  tasks:
+    - block:
+        - name: Validate supported operating systems
+          ansible.builtin.fail:
+            msg: "Unsupported OS family {{ ansible_os_family }} on {{ inventory_hostname }}"
+          when: ansible_os_family not in ['Debian', 'RedHat']
+
+        - name: Check whether Trivy is installed
+          ansible.builtin.stat:
+            path: "{{ security_patch_trivy_bin }}"
+          register: security_patch_trivy_stat
+
+        - name: Download Trivy install script
+          ansible.builtin.get_url:
+            url: "{{ security_patch_trivy_install_script }}"
+            dest: /tmp/trivy-install.sh
+            mode: "0755"
+          when: not security_patch_trivy_stat.stat.exists
+
+        - name: Install Trivy when missing
+          ansible.builtin.command:
+            argv:
+              - /tmp/trivy-install.sh
+              - -b
+              - /usr/local/bin
+          register: security_patch_trivy_install_result
+          changed_when: security_patch_trivy_install_result.rc == 0
+          when: not security_patch_trivy_stat.stat.exists
+
+        - name: Scan for high and critical vulnerabilities before remediation
+          ansible.builtin.command:
+            argv:
+              - "{{ security_patch_trivy_bin }}"
+              - fs
+              - --quiet
+              - --no-progress
+              - --format
+              - json
+              - --exit-code
+              - "0"
+              - --timeout
+              - "{{ security_patch_trivy_timeout }}"
+              - --severity
+              - HIGH,CRITICAL
+              - --pkg-types
+              - os
+              - --scanners
+              - vuln
+              - /
+          register: security_patch_scan_before
+          changed_when: false
+
+        - name: Parse pre-remediation scan results
+          ansible.builtin.set_fact:
+            security_patch_scan_before_data: "{{ security_patch_scan_before.stdout | from_json }}"
+            security_patch_scan_before_results: "{{ (security_patch_scan_before.stdout | from_json).Results | default([]) }}"
+            security_patch_findings_before: []
+
+        - name: Collect pre-remediation findings
+          ansible.builtin.set_fact:
+            security_patch_findings_before: >-
+              {{
+                security_patch_findings_before
+                + [ {
+                  'id': item.1.VulnerabilityID,
+                  'package': item.1.PkgName | default(''),
+                  'installed_version': item.1.InstalledVersion | default(''),
+                  'fixed_version': item.1.FixedVersion | default(''),
+                  'severity': item.1.Severity | default(''),
+                  'title': item.1.Title | default(''),
+                  'target': item.0.Target | default('')
+                } ]
+              }}
+          loop: "{{ security_patch_scan_before_results | subelements('Vulnerabilities', skip_missing=True) }}"
+
+        - name: Count pre-remediation findings
+          ansible.builtin.set_fact:
+            security_patch_before_patchable_count: "{{ security_patch_findings_before | selectattr('fixed_version', 'match', '.+') | list | length }}"
+            security_patch_before_unpatchable_count: "{{ security_patch_findings_before | rejectattr('fixed_version', 'match', '.+') | list | length }}"
+
+        - name: Refresh apt metadata before remediation
+          ansible.builtin.apt:
+            update_cache: yes
+          when:
+            - ansible_os_family == 'Debian'
+            - security_patch_before_patchable_count | int > 0
+
+        - name: Apply Debian or Ubuntu updates
+          ansible.builtin.shell: |
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade
+          register: security_patch_update_result
+          changed_when: security_patch_update_result.rc == 0
+          failed_when: false
+          when:
+            - ansible_os_family == 'Debian'
+            - security_patch_before_patchable_count | int > 0
+
+        - name: Apply RedHat-family updates
+          ansible.builtin.shell: |
+            dnf -y upgrade --refresh
+          register: security_patch_update_result
+          changed_when: security_patch_update_result.rc == 0
+          failed_when: false
+          when:
+            - ansible_os_family == 'RedHat'
+            - security_patch_before_patchable_count | int > 0
+
+        - name: Check whether a reboot is required on Debian or Ubuntu
+          ansible.builtin.stat:
+            path: /var/run/reboot-required
+          register: security_patch_reboot_required_file
+          changed_when: false
+          when: ansible_os_family == 'Debian'
+
+        - name: Set reboot flag for Debian or Ubuntu
+          ansible.builtin.set_fact:
+            security_patch_reboot_required: "{{ security_patch_reboot_required_file.stat.exists | default(false) }}"
+          when: ansible_os_family == 'Debian'
+
+        - name: Scan for high and critical vulnerabilities after remediation
+          ansible.builtin.command:
+            argv:
+              - "{{ security_patch_trivy_bin }}"
+              - fs
+              - --quiet
+              - --no-progress
+              - --format
+              - json
+              - --exit-code
+              - "0"
+              - --timeout
+              - "{{ security_patch_trivy_timeout }}"
+              - --severity
+              - HIGH,CRITICAL
+              - --pkg-types
+              - os
+              - --scanners
+              - vuln
+              - /
+          register: security_patch_scan_after
+          changed_when: false
+
+        - name: Parse post-remediation scan results
+          ansible.builtin.set_fact:
+            security_patch_scan_after_data: "{{ security_patch_scan_after.stdout | from_json }}"
+            security_patch_scan_after_results: "{{ (security_patch_scan_after.stdout | from_json).Results | default([]) }}"
+            security_patch_findings_after: []
+
+        - name: Collect post-remediation findings
+          ansible.builtin.set_fact:
+            security_patch_findings_after: >-
+              {{
+                security_patch_findings_after
+                + [ {
+                  'id': item.1.VulnerabilityID,
+                  'package': item.1.PkgName | default(''),
+                  'installed_version': item.1.InstalledVersion | default(''),
+                  'fixed_version': item.1.FixedVersion | default(''),
+                  'severity': item.1.Severity | default(''),
+                  'title': item.1.Title | default(''),
+                  'target': item.0.Target | default('')
+                } ]
+              }}
+          loop: "{{ security_patch_scan_after_results | subelements('Vulnerabilities', skip_missing=True) }}"
+
+        - name: Count post-remediation findings
+          ansible.builtin.set_fact:
+            security_patch_after_patchable_count: "{{ security_patch_findings_after | selectattr('fixed_version', 'match', '.+') | list | length }}"
+            security_patch_after_unpatchable_count: "{{ security_patch_findings_after | rejectattr('fixed_version', 'match', '.+') | list | length }}"
+
+        - name: Build host summary
+          ansible.builtin.set_fact:
+            security_patch_summary:
+              host: "{{ inventory_hostname }}"
+              os_family: "{{ ansible_os_family }}"
+              pkg_mgr: "{{ ansible_pkg_mgr | default('unknown') }}"
+              status: "{{ 'needs_attention' if security_patch_findings_after | length > 0 else 'patched' if security_patch_findings_before | length > 0 else 'clean' }}"
+              alert_reason: "{{ 'package update command failed and vulnerabilities remain' if security_patch_findings_after | length > 0 and (security_patch_update_result.rc | default(0)) != 0 else 'patchable vulnerabilities remain after remediation' if security_patch_findings_after | length > 0 and security_patch_after_patchable_count | int > 0 else 'vulnerabilities remain without a package fix' if security_patch_findings_after | length > 0 else 'security updates were applied successfully' if security_patch_findings_before | length > 0 else 'no high or critical OS vulnerabilities found' }}"
+              before_count: "{{ security_patch_findings_before | length }}"
+              before_patchable_count: "{{ security_patch_before_patchable_count | int }}"
+              before_unpatchable_count: "{{ security_patch_before_unpatchable_count | int }}"
+              after_count: "{{ security_patch_findings_after | length }}"
+              after_patchable_count: "{{ security_patch_after_patchable_count | int }}"
+              after_unpatchable_count: "{{ security_patch_after_unpatchable_count | int }}"
+              update_rc: "{{ security_patch_update_result.rc | default(0) }}"
+              reboot_required: "{{ security_patch_reboot_required | default(false) }}"
+              findings: "{{ security_patch_findings_after[:10] }}"
+
+      rescue:
+        - name: Record scan failure summary
+          ansible.builtin.set_fact:
+            security_patch_summary:
+              host: "{{ inventory_hostname }}"
+              os_family: "{{ ansible_os_family }}"
+              pkg_mgr: "{{ ansible_pkg_mgr | default('unknown') }}"
+              status: "scan_failed"
+              alert_reason: "{{ ansible_failed_result.msg | default(ansible_failed_result.stderr | default('security scan failed')) }}"
+              before_count: "{{ security_patch_findings_before | length }}"
+              before_patchable_count: "{{ security_patch_before_patchable_count | default(0) | int }}"
+              before_unpatchable_count: "{{ security_patch_before_unpatchable_count | default(0) | int }}"
+              after_count: "{{ security_patch_findings_after | length }}"
+              after_patchable_count: "{{ security_patch_after_patchable_count | default(0) | int }}"
+              after_unpatchable_count: "{{ security_patch_after_unpatchable_count | default(0) | int }}"
+              update_rc: "{{ security_patch_update_result.rc | default(0) }}"
+              reboot_required: "{{ security_patch_reboot_required | default(false) }}"
+              findings: "{{ security_patch_findings_after[:10] | default([]) }}"
+
+        - name: Show scan failure summary
+          ansible.builtin.debug:
+            msg:
+              - "Security patch scan failed on {{ inventory_hostname }}"
+              - "{{ security_patch_summary.alert_reason }}"
+
+      always:
+        - name: Remove temporary Trivy installer
+          ansible.builtin.file:
+            path: /tmp/trivy-install.sh
+            state: absent
+
+- name: Publish security patch report
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Determine security patch target group
+      ansible.builtin.set_fact:
+        security_patch_target_group_name: "{{ security_patch_target_group | default('all') }}"
+
+    - name: Determine target hosts for the report
+      ansible.builtin.set_fact:
+        security_patch_target_hosts: >-
+          {{
+            (groups[security_patch_target_group_name] if security_patch_target_group_name in groups else groups['all'])
+            | reject('equalto', 'localhost')
+            | list
+          }}
+
+    - name: Initialize host summary list
+      ansible.builtin.set_fact:
+        security_patch_report_hosts: []
+
+    - name: Collect host summaries
+      ansible.builtin.set_fact:
+        security_patch_report_hosts: >-
+          {{
+            security_patch_report_hosts
+            + [ hostvars[item].security_patch_summary | default(security_patch_placeholder_summary, true) ]
+          }}
+      vars:
+        security_patch_placeholder_summary:
+          host: "{{ item }}"
+          os_family: "{{ hostvars[item].ansible_os_family | default('unknown') }}"
+          pkg_mgr: "{{ hostvars[item].ansible_pkg_mgr | default('unknown') }}"
+          status: "scan_failed"
+          alert_reason: "no host summary was produced (unreachable or failed before reporting)"
+          before_count: 0
+          before_patchable_count: 0
+          before_unpatchable_count: 0
+          after_count: 0
+          after_patchable_count: 0
+          after_unpatchable_count: 0
+          update_rc: 0
+          reboot_required: false
+          findings: []
+      loop: "{{ security_patch_target_hosts }}"
+
+    - name: Build aggregated report
+      ansible.builtin.set_fact:
+        security_patch_report:
+          generated_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+          target_group: "{{ security_patch_target_group | default('all') }}"
+          total_hosts: "{{ security_patch_report_hosts | length }}"
+          clean_count: "{{ security_patch_report_hosts | selectattr('status', 'equalto', 'clean') | list | length }}"
+          patched_count: "{{ security_patch_report_hosts | selectattr('status', 'equalto', 'patched') | list | length }}"
+          alert_count: >-
+            {{
+              (security_patch_report_hosts | selectattr('status', 'equalto', 'needs_attention') | list | length)
+              + (security_patch_report_hosts | selectattr('status', 'equalto', 'scan_failed') | list | length)
+            }}
+          hosts: "{{ security_patch_report_hosts }}"
+
+    - name: Write report to workspace
+      ansible.builtin.copy:
+        dest: "{{ security_patch_report_path | default(playbook_dir ~ '/../../security-patch-report.json', true) }}"
+        content: "{{ security_patch_report | to_nice_json }}"

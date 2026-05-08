@@ -191,6 +191,7 @@ AnixOps-ansible/
 |----------|-------|---------|
 | `playbooks/maintenance/health-check.yml` | All servers | Service health verification |
 | `playbooks/maintenance/firewall-setup.yml` | All servers | Firewall rules + monitoring whitelist |
+| `playbooks/maintenance/security-patch.yml` | All servers | Weekly security scan, apply available OS patches, and notify on unresolved findings |
 | `playbooks/maintenance/rollback.yml` | All servers | Config rollback from backup |
 | `playbooks/maintenance/ssh-config-force-apply.yml` | All servers | Force-apply SSH configuration |
 
