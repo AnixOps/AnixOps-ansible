@@ -59,6 +59,7 @@ Ansible automation for AnixOps' multi-region server fleet. The repository covers
 | `playbooks/provision/site.yml` | All servers | Full deployment for the common stack |
 | `playbooks/provision/quick-setup.yml` | All servers | Fast bootstrap for base services and monitoring |
 | `playbooks/provision/web-servers.yml` | `web_servers` | Nginx-only deployment |
+| `playbooks/provision/selfhosted-web.yml` | `anixops_selfhosted_servers` | AnixOps self-hosted web stack with internal API and Nginx edge proxy |
 | `playbooks/platform/k3s.yml` | `k8s_servers` | Production K3s cluster deployment |
 | `playbooks/platform/kind.yml` | `localhost` | Local Kind cluster deployment |
 | `playbooks/maintenance/health-check.yml` | All servers | Service health verification |
@@ -97,6 +98,7 @@ The GitHub Actions pipeline also runs inventory generation, playbook execution, 
 | [docs/SSH_KEY_MANAGEMENT.md](docs/SSH_KEY_MANAGEMENT.md) | SSH key management workflows |
 | [docs/OBSERVABILITY_SETUP.md](docs/OBSERVABILITY_SETUP.md) | Observability stack setup |
 | [docs/SECURITY_PATCHING.md](docs/SECURITY_PATCHING.md) | Weekly security patch workflow |
+| [docs/SELFHOSTED_WEB_TEMPLATE.md](docs/SELFHOSTED_WEB_TEMPLATE.md) | Self-hosted AnixOps web stack template |
 
 ## License
 

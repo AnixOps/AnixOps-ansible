@@ -1,0 +1,79 @@
+---
+- name: Wait for the web container to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}.State.Health.Status{{ '}}' }}"
+      - "{{ anixops_web_container_name }}"
+  register: anixops_web_health
+  changed_when: false
+  retries: 20
+  delay: 6
+  until: anixops_web_health.stdout == "healthy"
+
+- name: Wait for the API container to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}.State.Health.Status{{ '}}' }}"
+      - "{{ anixops_api_container_name }}"
+  register: anixops_api_health
+  changed_when: false
+  retries: 20
+  delay: 6
+  until: anixops_api_health.stdout == "healthy"
+
+- name: Wait for the PostgreSQL container to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}.State.Health.Status{{ '}}' }}"
+      - "{{ anixops_postgres_container_name }}"
+  register: anixops_postgres_health
+  changed_when: false
+  retries: 20
+  delay: 6
+  until: anixops_postgres_health.stdout == "healthy"
+
+- name: Wait for the Redis container to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}.State.Health.Status{{ '}}' }}"
+      - "{{ anixops_redis_container_name }}"
+  register: anixops_redis_health
+  changed_when: false
+  retries: 20
+  delay: 6
+  until: anixops_redis_health.stdout == "healthy"
+
+- name: Wait for the provision container to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}.State.Health.Status{{ '}}' }}"
+      - "{{ anixops_provision_container_name }}"
+  register: anixops_provision_health
+  changed_when: false
+  retries: 20
+  delay: 6
+  until: anixops_provision_health.stdout == "healthy"
+
+- name: Verify the web port responds locally
+  ansible.builtin.uri:
+    url: "http://{{ anixops_frontend_bind_address }}:{{ anixops_frontend_port }}"
+    status_code: 200
+  register: anixops_web_uri
+  retries: 10
+  delay: 5
+  until: anixops_web_uri.status == 200

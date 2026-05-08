@@ -1,0 +1,23 @@
+---
+# Public edge for the self-hosted stack.
+server_role: selfhosted_web
+
+# Replace with the actual public hostname for the web stack.
+anixops_server_name: anixops.example.com
+anixops_public_url: http://anixops.example.com
+
+# Nginx stays on the host and proxies only the frontend container port.
+nginx_default_site_enabled: false
+nginx_sites:
+  - name: anixops-selfhosted
+    listen: 80
+    listen_ipv6: true
+    server_name: "{{ anixops_server_name }}"
+    locations:
+      - path: /
+        proxy_pass: "http://127.0.0.1:{{ anixops_frontend_port }}"
+        custom_content: |
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_buffering off;
