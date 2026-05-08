@@ -86,8 +86,7 @@ jobs:
             -i inventories/production/hosts.yml \
             --limit "$TARGET_GROUP,localhost" \
             -e "security_patch_report_path=$REPORT_PATH" \
-            -e "security_patch_target_group=$TARGET_GROUP" \
-            -v
+            -e "security_patch_target_group=$TARGET_GROUP"
 
       - name: Create or update security patch issue
         if: always()

@@ -97,29 +97,43 @@
               - /
           register: security_patch_scan_before
           changed_when: false
+          no_log: true
 
-        - name: Parse pre-remediation scan results
-          ansible.builtin.set_fact:
-            security_patch_scan_before_data: "{{ security_patch_scan_before.stdout | from_json }}"
-            security_patch_scan_before_results: "{{ (security_patch_scan_before.stdout | from_json).Results | default([]) }}"
-            security_patch_findings_before: []
+        - name: Summarize pre-remediation findings
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - |
+                import json
+                import sys
 
-        - name: Collect pre-remediation findings
+                report = json.load(sys.stdin)
+                findings = []
+
+                for result in report.get("Results", []):
+                    target = result.get("Target", "")
+                    for vuln in result.get("Vulnerabilities", []) or []:
+                        findings.append({
+                            "id": vuln.get("VulnerabilityID", ""),
+                            "package": vuln.get("PkgName", ""),
+                            "installed_version": vuln.get("InstalledVersion", ""),
+                            "fixed_version": vuln.get("FixedVersion", ""),
+                            "severity": vuln.get("Severity", ""),
+                            "title": vuln.get("Title", ""),
+                            "target": target,
+                        })
+
+                sys.stdout.write(json.dumps(findings))
+            stdin: "{{ security_patch_scan_before.stdout }}"
+          register: security_patch_findings_before_raw
+          changed_when: false
+          no_log: true
+
+        - name: Parse pre-remediation findings
           ansible.builtin.set_fact:
-            security_patch_findings_before: >-
-              {{
-                security_patch_findings_before
-                + [ {
-                  'id': item.1.VulnerabilityID,
-                  'package': item.1.PkgName | default(''),
-                  'installed_version': item.1.InstalledVersion | default(''),
-                  'fixed_version': item.1.FixedVersion | default(''),
-                  'severity': item.1.Severity | default(''),
-                  'title': item.1.Title | default(''),
-                  'target': item.0.Target | default('')
-                } ]
-              }}
-          loop: "{{ security_patch_scan_before_results | subelements('Vulnerabilities', skip_missing=True) }}"
+            security_patch_findings_before: "{{ security_patch_findings_before_raw.stdout | from_json }}"
+          no_log: true
 
         - name: Count pre-remediation findings
           ansible.builtin.set_fact:
@@ -188,29 +202,43 @@
               - /
           register: security_patch_scan_after
           changed_when: false
+          no_log: true
 
-        - name: Parse post-remediation scan results
-          ansible.builtin.set_fact:
-            security_patch_scan_after_data: "{{ security_patch_scan_after.stdout | from_json }}"
-            security_patch_scan_after_results: "{{ (security_patch_scan_after.stdout | from_json).Results | default([]) }}"
-            security_patch_findings_after: []
+        - name: Summarize post-remediation findings
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - |
+                import json
+                import sys
 
-        - name: Collect post-remediation findings
+                report = json.load(sys.stdin)
+                findings = []
+
+                for result in report.get("Results", []):
+                    target = result.get("Target", "")
+                    for vuln in result.get("Vulnerabilities", []) or []:
+                        findings.append({
+                            "id": vuln.get("VulnerabilityID", ""),
+                            "package": vuln.get("PkgName", ""),
+                            "installed_version": vuln.get("InstalledVersion", ""),
+                            "fixed_version": vuln.get("FixedVersion", ""),
+                            "severity": vuln.get("Severity", ""),
+                            "title": vuln.get("Title", ""),
+                            "target": target,
+                        })
+
+                sys.stdout.write(json.dumps(findings))
+            stdin: "{{ security_patch_scan_after.stdout }}"
+          register: security_patch_findings_after_raw
+          changed_when: false
+          no_log: true
+
+        - name: Parse post-remediation findings
           ansible.builtin.set_fact:
-            security_patch_findings_after: >-
-              {{
-                security_patch_findings_after
-                + [ {
-                  'id': item.1.VulnerabilityID,
-                  'package': item.1.PkgName | default(''),
-                  'installed_version': item.1.InstalledVersion | default(''),
-                  'fixed_version': item.1.FixedVersion | default(''),
-                  'severity': item.1.Severity | default(''),
-                  'title': item.1.Title | default(''),
-                  'target': item.0.Target | default('')
-                } ]
-              }}
-          loop: "{{ security_patch_scan_after_results | subelements('Vulnerabilities', skip_missing=True) }}"
+            security_patch_findings_after: "{{ security_patch_findings_after_raw.stdout | from_json }}"
+          no_log: true
 
         - name: Count post-remediation findings
           ansible.builtin.set_fact:
