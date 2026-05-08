@@ -56,7 +56,8 @@ jobs:
 
       - name: Create inventory from config
         run: |
-          python3 tools/generate_inventory.py github-actions > inventories/production/hosts.yml
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
+          python3 tools/generate_inventory.py github-actions > "$inventory_path"
 
       - name: Run security patch playbook
         env:
@@ -80,10 +81,11 @@ jobs:
             TARGET_GROUP="all"
           fi
 
-          REPORT_PATH="$GITHUB_WORKSPACE/security-patch-report.json"
+          INVENTORY_PATH="$RUNNER_TEMP/github-actions-hosts.yml"
+          REPORT_PATH="$RUNNER_TEMP/security-patch-report.json"
 
           ansible-playbook playbooks/maintenance/security-patch.yml \
-            -i inventories/production/hosts.yml \
+            -i "$INVENTORY_PATH" \
             --limit "$TARGET_GROUP,localhost" \
             -e "security_patch_report_path=$REPORT_PATH" \
             -e "security_patch_target_group=$TARGET_GROUP"
@@ -92,7 +94,7 @@ jobs:
         if: always()
         env:
           TARGET_GROUP: ${{ github.event.inputs.target_group }}
-          REPORT_PATH: ${{ github.workspace }}/security-patch-report.json
+          REPORT_PATH: ${{ runner.temp }}/security-patch-report.json
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           JOB_STATUS: ${{ job.status }}
           GITHUB_TOKEN: ${{ github.token }}
