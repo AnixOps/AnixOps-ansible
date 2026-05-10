@@ -1,0 +1,223 @@
+﻿---
+# Managed by Ansible. API and web bind to loopback; provision stays on the Docker network only.
+
+services:
+  api:
+    container_name: {{ anixops_node_platform_api_container_name }}
+    build:
+      context: ./src
+      dockerfile: server/Dockerfile
+    environment:
+      - PORT={{ anixops_node_platform_api_port }}
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://anixops:${POSTGRES_PASSWORD}@postgres:5432/anixops
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - PROVISION_SERVER_URL=http://provision:{{ anixops_node_platform_provision_port }}
+      - PROVISION_SERVER_TOKEN=${PROVISION_SERVER_TOKEN}
+      - API_SECRET=${API_SECRET}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - INSTALL_MODE=${INSTALL_MODE}
+      - DISGUISE_DOMAINS=${DISGUISE_DOMAINS}
+      - CHAIN_ENVIRONMENT=${CHAIN_ENVIRONMENT}
+      - CHAIN_TESTNET_WHITELIST_EMAILS=${CHAIN_TESTNET_WHITELIST_EMAILS}
+      - CRYPTO_TOPUP_CHAIN=${CRYPTO_TOPUP_CHAIN}
+      - CRYPTO_TOPUP_ASSET=${CRYPTO_TOPUP_ASSET}
+      - CRYPTO_TOPUP_CONFIRMATIONS_REQUIRED=${CRYPTO_TOPUP_CONFIRMATIONS_REQUIRED}
+      - CRYPTO_TOPUP_RPC_URL=${CRYPTO_TOPUP_RPC_URL}
+      - CRYPTO_TOPUP_SIGNER_PRIVATE_KEY=${CRYPTO_TOPUP_SIGNER_PRIVATE_KEY}
+      - CRYPTO_TOPUP_RECEIVER_ADDRESS=${CRYPTO_TOPUP_RECEIVER_ADDRESS}
+      - CRYPTO_TOPUP_TOKEN_ADDRESS=${CRYPTO_TOPUP_TOKEN_ADDRESS}
+      - CRYPTO_TOPUP_TOKEN_DECIMALS=${CRYPTO_TOPUP_TOKEN_DECIMALS}
+      - CRYPTO_TOPUP_PROVIDER_API_KEY=${CRYPTO_TOPUP_PROVIDER_API_KEY}
+      - FX_PROVIDER_API_KEY=${FX_PROVIDER_API_KEY}
+      - AUDIT_ANCHOR_CHAIN=${AUDIT_ANCHOR_CHAIN}
+      - AUDIT_ANCHOR_RPC_URL=${AUDIT_ANCHOR_RPC_URL}
+      - AUDIT_ANCHOR_SIGNER_PRIVATE_KEY=${AUDIT_ANCHOR_SIGNER_PRIVATE_KEY}
+      - AUDIT_ANCHOR_TARGET_ADDRESS=${AUDIT_ANCHOR_TARGET_ADDRESS}
+      - AUDIT_ANCHOR_MIN_NATIVE_BALANCE=${AUDIT_ANCHOR_MIN_NATIVE_BALANCE}
+      - CRYPTO_ALERT_WEBHOOK_URL=${CRYPTO_ALERT_WEBHOOK_URL}
+      - AUDIT_ANCHOR_ALERT_WEBHOOK_URL=${AUDIT_ANCHOR_ALERT_WEBHOOK_URL}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_FROM=${SMTP_FROM}
+      - PROBE_ENABLED=${PROBE_ENABLED}
+      - PROBE_SERVICE_URL=${PROBE_SERVICE_URL}
+      - PROBE_SERVICE_TOKEN=${PROBE_SERVICE_TOKEN}
+      - PROBE_TIMEOUT_MS=${PROBE_TIMEOUT_MS}
+      - PROBE_POLL_INTERVAL_MS=${PROBE_POLL_INTERVAL_MS}
+      - PROBE_MAX_POLLS=${PROBE_MAX_POLLS}
+      - PROBE_MIN_NODES=${PROBE_MIN_NODES}
+      - PROBE_PASS_RATIO=${PROBE_PASS_RATIO}
+      - PROBE_PROVIDER=${PROBE_PROVIDER}
+      - PROBE_GLOBALPING_API_URL=${PROBE_GLOBALPING_API_URL}
+      - PROBE_GLOBALPING_TOKEN=${PROBE_GLOBALPING_TOKEN}
+      - PROBE_GLOBALPING_COUNTRY=${PROBE_GLOBALPING_COUNTRY}
+      - PROBE_GLOBALPING_EYEBALL_BIAS=${PROBE_GLOBALPING_EYEBALL_BIAS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      provision:
+        condition: service_healthy
+    ports:
+      - "{{ anixops_node_platform_frontend_bind_address }}:{{ anixops_node_platform_api_port }}:{{ anixops_node_platform_api_port }}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:{{ anixops_node_platform_api_port }}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  provision:
+    container_name: {{ anixops_node_platform_provision_container_name }}
+    build:
+      context: ./src
+      dockerfile: provision-server/Dockerfile
+    environment:
+      - PORT={{ anixops_node_platform_provision_port }}
+      - HOST=0.0.0.0
+      - LOG_LEVEL=info
+      - CLOUD_PROVIDER=${CLOUD_PROVIDER}
+      - VPS_REGION=${VPS_REGION}
+      - VPS_PLAN=${VPS_PLAN}
+      - INSTALL_MODE=${INSTALL_MODE}
+      - DISGUISE_DOMAINS=${DISGUISE_DOMAINS}
+      - VULTR_API_KEY=${VULTR_API_KEY}
+      - DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN}
+      - DO_API_TOKEN=${DO_API_TOKEN}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_SECURITY_GROUP_ID=${AWS_SECURITY_GROUP_ID}
+      - SERVER_TOKEN=${PROVISION_SERVER_TOKEN}
+      - PROBE_ENABLED=${PROBE_ENABLED}
+      - PROBE_SERVICE_URL=${PROBE_SERVICE_URL}
+      - PROBE_SERVICE_TOKEN=${PROBE_SERVICE_TOKEN}
+      - PROBE_TIMEOUT_MS=${PROBE_TIMEOUT_MS}
+      - PROBE_POLL_INTERVAL_MS=${PROBE_POLL_INTERVAL_MS}
+      - PROBE_MAX_POLLS=${PROBE_MAX_POLLS}
+      - PROBE_MIN_NODES=${PROBE_MIN_NODES}
+      - PROBE_PASS_RATIO=${PROBE_PASS_RATIO}
+    volumes:
+      - ${PROVISION_SSH_PATH:-provision-ssh}:/app/.ssh
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:{{ anixops_node_platform_provision_port }}/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    container_name: {{ anixops_node_platform_postgres_container_name }}
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=anixops
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=anixops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/server/src/db/migrations:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "anixops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    container_name: {{ anixops_node_platform_redis_container_name }}
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    container_name: {{ anixops_node_platform_web_container_name }}
+    build:
+      context: ./src
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_WORKER_URL: ${NEXT_PUBLIC_WORKER_URL}
+        NEXT_PUBLIC_RELEASE_PROFILE: ${NEXT_PUBLIC_RELEASE_PROFILE}
+    ports:
+      - "{{ anixops_node_platform_frontend_bind_address }}:{{ anixops_node_platform_frontend_port }}:30000"
+    environment:
+      - PORT=30000
+      - HOSTNAME=0.0.0.0
+      - API_URL=http://api:{{ anixops_node_platform_api_port }}
+      - NEXT_PUBLIC_WORKER_URL=${NEXT_PUBLIC_WORKER_URL}
+      - NEXT_PUBLIC_RELEASE_PROFILE=${NEXT_PUBLIC_RELEASE_PROFILE}
+      - API_PROXY_TIMEOUT_MS=${API_PROXY_TIMEOUT_MS}
+      - CLOUDFLARE_TOKEN=${CLOUDFLARE_TOKEN}
+      - CLOUDFLARE_ZONE_ID=${CLOUDFLARE_ZONE_ID}
+      - HYSTERIA2_PROXY_DOMAIN=${HYSTERIA2_PROXY_DOMAIN}
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  scheduler:
+    container_name: {{ anixops_node_platform_scheduler_container_name }}
+    build:
+      context: ./src
+      dockerfile: Dockerfile.scheduler
+    environment:
+      - ANIXOPS_API_URL=http://api:{{ anixops_node_platform_api_port }}
+      - API_SECRET=${API_SECRET}
+      - CHAIN_ENVIRONMENT=${CHAIN_ENVIRONMENT}
+      - CHAIN_TESTNET_WHITELIST_EMAILS=${CHAIN_TESTNET_WHITELIST_EMAILS}
+      - CRYPTO_TOPUP_CHAIN=${CRYPTO_TOPUP_CHAIN}
+      - CRYPTO_TOPUP_ASSET=${CRYPTO_TOPUP_ASSET}
+      - CRYPTO_TOPUP_CONFIRMATIONS_REQUIRED=${CRYPTO_TOPUP_CONFIRMATIONS_REQUIRED}
+      - CRYPTO_TOPUP_RPC_URL=${CRYPTO_TOPUP_RPC_URL}
+      - CRYPTO_TOPUP_SIGNER_PRIVATE_KEY=${CRYPTO_TOPUP_SIGNER_PRIVATE_KEY}
+      - CRYPTO_TOPUP_RECEIVER_ADDRESS=${CRYPTO_TOPUP_RECEIVER_ADDRESS}
+      - CRYPTO_TOPUP_TOKEN_ADDRESS=${CRYPTO_TOPUP_TOKEN_ADDRESS}
+      - CRYPTO_TOPUP_TOKEN_DECIMALS=${CRYPTO_TOPUP_TOKEN_DECIMALS}
+      - CRYPTO_TOPUP_PROVIDER_API_KEY=${CRYPTO_TOPUP_PROVIDER_API_KEY}
+      - FX_PROVIDER_API_KEY=${FX_PROVIDER_API_KEY}
+      - CRYPTO_ALERT_WEBHOOK_URL=${CRYPTO_ALERT_WEBHOOK_URL}
+      - AUDIT_ANCHOR_CHAIN=${AUDIT_ANCHOR_CHAIN}
+      - AUDIT_ANCHOR_RPC_URL=${AUDIT_ANCHOR_RPC_URL}
+      - AUDIT_ANCHOR_SIGNER_PRIVATE_KEY=${AUDIT_ANCHOR_SIGNER_PRIVATE_KEY}
+      - AUDIT_ANCHOR_TARGET_ADDRESS=${AUDIT_ANCHOR_TARGET_ADDRESS}
+      - AUDIT_ANCHOR_MIN_NATIVE_BALANCE=${AUDIT_ANCHOR_MIN_NATIVE_BALANCE}
+      - AUDIT_ANCHOR_ALERT_WEBHOOK_URL=${AUDIT_ANCHOR_ALERT_WEBHOOK_URL}
+      - BILLING_TICK_CRON=${BILLING_TICK_CRON}
+      - CRYPTO_TOPUP_CRON=${CRYPTO_TOPUP_CRON}
+      - AUDIT_ANCHOR_CRON=${AUDIT_ANCHOR_CRON}
+      - COMPLIANCE_STATS_CRON=${COMPLIANCE_STATS_CRON}
+      - SCHEDULER_ENABLE_BILLING_TICK=${SCHEDULER_ENABLE_BILLING_TICK}
+      - SCHEDULER_ENABLE_CRYPTO_TOPUPS=${SCHEDULER_ENABLE_CRYPTO_TOPUPS}
+      - SCHEDULER_ENABLE_AUDIT_ANCHOR=${SCHEDULER_ENABLE_AUDIT_ANCHOR}
+      - SCHEDULER_ENABLE_COMPLIANCE_STATS=${SCHEDULER_ENABLE_COMPLIANCE_STATS}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "crontab -l >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+  provision-ssh:

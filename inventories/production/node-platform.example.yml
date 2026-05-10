@@ -1,0 +1,11 @@
+﻿---
+# Minimal inventory example for the AnixOps node platform web stack.
+
+all:
+  children:
+    anixops_node_platform_servers:
+      hosts:
+        # anixops-node-platform-1:
+        #   ansible_host: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_1_V4_SSH') }}"
+      vars:
+        server_role: node_platform_web

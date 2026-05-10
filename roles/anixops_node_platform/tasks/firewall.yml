@@ -1,0 +1,50 @@
+﻿---
+- name: Ensure UFW is installed for node platform port policy
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Remove direct allow rules for node platform application ports
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    delete: yes
+  loop: "{{ anixops_node_platform_block_direct_public_ports }}"
+  ignore_errors: yes
+  when:
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(true)
+
+- name: Deny direct inbound access to node platform application ports
+  ansible.builtin.ufw:
+    rule: deny
+    port: "{{ item }}"
+    proto: tcp
+    comment: "AnixOps edge only"
+  loop: "{{ anixops_node_platform_block_direct_public_ports }}"
+  when:
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(true)
+
+- name: Ensure HTTP and HTTPS stay publicly reachable through Nginx
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "80"
+    - "443"
+  when:
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(true)
+
+- name: Enable UFW for node platform edge policy
+  ansible.builtin.ufw:
+    state: enabled
+    policy: allow
+  when:
+    - ansible_os_family == "Debian"
+    - firewall_enabled | default(true)

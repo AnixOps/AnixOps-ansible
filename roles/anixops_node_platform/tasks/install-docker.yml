@@ -1,9 +1,9 @@
----
+﻿---
 - name: Check supported operating system
   ansible.builtin.assert:
     that:
       - ansible_os_family == "Debian"
-    fail_msg: "anixops_selfhosted currently supports Debian and Ubuntu hosts only."
+    fail_msg: "anixops_node_platform currently supports Debian and Ubuntu hosts only."
 
 - name: Install Docker prerequisites
   ansible.builtin.apt:

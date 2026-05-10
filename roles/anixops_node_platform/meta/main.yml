@@ -1,7 +1,7 @@
----
+﻿---
 galaxy_info:
   author: AnixOps
-  description: Deploy the AnixOps self-hosted web stack
+  description: Deploy the AnixOps node platform web stack
   company: AnixOps
   license: MIT
   min_ansible_version: "2.15"
@@ -16,7 +16,7 @@ galaxy_info:
         - noble
   galaxy_tags:
     - anixops
-    - selfhosted
+    - node_platform
     - docker
     - nginx
 dependencies: []

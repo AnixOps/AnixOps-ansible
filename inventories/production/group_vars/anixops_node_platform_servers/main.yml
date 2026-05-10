@@ -1,0 +1,28 @@
+﻿---
+# Public edge for the node platform stack.
+server_role: node_platform_web
+
+# Public hostname for the web stack. Set ANIXOPS_NODE_PLATFORM_SERVER_NAME=x.anixops.com
+# or ANIXOPS_NODE_PLATFORM_DOMAIN=x.anixops.com in the execution environment.
+anixops_node_platform_server_name: >-
+  {{
+    lookup('env', 'ANIXOPS_NODE_PLATFORM_SERVER_NAME')
+    | default(lookup('env', 'ANIXOPS_NODE_PLATFORM_DOMAIN') | default('x.anixops.com', true), true)
+  }}
+anixops_node_platform_public_url: "http://{{ anixops_node_platform_server_name }}"
+
+# Nginx stays on the host and proxies only the frontend container port.
+nginx_default_site_enabled: false
+nginx_sites:
+  - name: anixops-node-platform
+    listen: 80
+    listen_ipv6: true
+    server_name: "{{ anixops_node_platform_server_name }}"
+    locations:
+      - path: /
+        proxy_pass: "http://127.0.0.1:{{ anixops_node_platform_frontend_port }}"
+        custom_content: |
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_buffering off;

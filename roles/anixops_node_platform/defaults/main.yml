@@ -1,0 +1,130 @@
+﻿---
+# AnixOps node platform web stack defaults.
+
+# Source checkout and managed config paths.
+anixops_node_platform_repo_url: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_REPO_URL') | default('https://github.com/AnixOps/AnixOps-xray-install.git', true) }}
+anixops_node_platform_repo_version: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_REPO_VERSION') | default('main', true) }}"
+anixops_node_platform_deploy_dir: "/opt/anixops-node-platform"
+anixops_node_platform_source_dir: "{{ anixops_node_platform_deploy_dir }}/src"
+anixops_node_platform_compose_file: "{{ anixops_node_platform_deploy_dir }}/docker-compose.node-platform.yml"
+anixops_node_platform_env_file: "/etc/anixops-node-platform.env"
+anixops_node_platform_project_name: "anixops-node-platform"
+
+# Public edge settings.
+anixops_node_platform_server_name: >-
+  {{
+    lookup('env', 'ANIXOPS_NODE_PLATFORM_SERVER_NAME')
+    | default(lookup('env', 'ANIXOPS_NODE_PLATFORM_DOMAIN') | default('localhost', true), true)
+  }}
+anixops_node_platform_public_url: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PUBLIC_URL') | default('http://' ~ anixops_node_platform_server_name, true) }}"
+anixops_node_platform_frontend_url: "{{ anixops_node_platform_public_url }}"
+anixops_node_platform_allowed_origins: "{{ anixops_node_platform_public_url }}"
+anixops_node_platform_next_public_worker_url: ""
+anixops_node_platform_next_public_release_profile: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_NEXT_PUBLIC_RELEASE_PROFILE') | default('', true) }}"
+anixops_node_platform_api_proxy_timeout_ms: 15000
+
+# Ports exposed on the host.
+anixops_node_platform_frontend_bind_address: "127.0.0.1"
+anixops_node_platform_frontend_port: 30000
+anixops_node_platform_api_port: 8787
+anixops_node_platform_provision_port: 3001
+
+# Ports published for local host routing but blocked from direct inbound access.
+anixops_node_platform_block_direct_public_ports:
+  - "{{ anixops_node_platform_frontend_port }}"
+  - "{{ anixops_node_platform_api_port }}"
+
+# Container names for the node platform compose stack.
+anixops_node_platform_web_container_name: "anixops-node-platform-web"
+anixops_node_platform_api_container_name: "anixops-node-platform-api"
+anixops_node_platform_postgres_container_name: "anixops-node-platform-postgres"
+anixops_node_platform_redis_container_name: "anixops-node-platform-redis"
+anixops_node_platform_provision_container_name: "anixops-node-platform-provision"
+anixops_node_platform_scheduler_container_name: "anixops-node-platform-scheduler"
+
+# Required secrets and service credentials.
+anixops_node_platform_provision_server_token: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROVISION_SERVER_TOKEN') | default('', true) }}"
+anixops_node_platform_api_secret: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_API_SECRET') | default('', true) }}"
+anixops_node_platform_postgres_password: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_POSTGRES_PASSWORD') | default('', true) }}"
+anixops_node_platform_redis_password: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_REDIS_PASSWORD') | default('', true) }}"
+anixops_node_platform_admin_emails: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_ADMIN_EMAILS') | default('', true) }}"
+
+# Optional payments and notifications.
+anixops_node_platform_stripe_secret_key: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_STRIPE_SECRET_KEY') | default('', true) }}"
+anixops_node_platform_stripe_webhook_secret: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_STRIPE_WEBHOOK_SECRET') | default('', true) }}"
+anixops_node_platform_notification_webhook_url: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_NOTIFICATION_WEBHOOK_URL') | default('', true) }}"
+
+# Chain-backed feature settings.
+anixops_node_platform_chain_environment: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CHAIN_ENVIRONMENT') | default('testnet', true) }}"
+anixops_node_platform_chain_testnet_whitelist_emails: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CHAIN_TESTNET_WHITELIST_EMAILS') | default('', true) }}"
+anixops_node_platform_crypto_topup_chain: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_CHAIN') | default('base', true) }}"
+anixops_node_platform_crypto_topup_asset: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_ASSET') | default('USDT', true) }}"
+anixops_node_platform_crypto_topup_confirmations_required: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_CONFIRMATIONS_REQUIRED') | default('12', true) }}
+anixops_node_platform_crypto_topup_rpc_url: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_RPC_URL') | default('https://sepolia.base.org', true) }}"
+anixops_node_platform_crypto_topup_signer_private_key: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_SIGNER_PRIVATE_KEY') | default('', true) }}"
+anixops_node_platform_crypto_topup_receiver_address: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_RECEIVER_ADDRESS') | default('', true) }}"
+anixops_node_platform_crypto_topup_token_address: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_TOKEN_ADDRESS') | default('', true) }}"
+anixops_node_platform_crypto_topup_token_decimals: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_TOKEN_DECIMALS') | default('6', true) }}"
+anixops_node_platform_crypto_topup_provider_api_key: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_PROVIDER_API_KEY') | default('', true) }}"
+anixops_node_platform_fx_provider_api_key: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_FX_PROVIDER_API_KEY') | default('', true) }}"
+anixops_node_platform_audit_anchor_chain: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AUDIT_ANCHOR_CHAIN') | default('base', true) }}"
+anixops_node_platform_audit_anchor_rpc_url: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AUDIT_ANCHOR_RPC_URL') | default('https://sepolia.base.org', true) }}"
+anixops_node_platform_audit_anchor_signer_private_key: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AUDIT_ANCHOR_SIGNER_PRIVATE_KEY') | default('', true) }}"
+anixops_node_platform_audit_anchor_target_address: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AUDIT_ANCHOR_TARGET_ADDRESS') | default('', true) }}"
+anixops_node_platform_audit_anchor_min_native_balance: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AUDIT_ANCHOR_MIN_NATIVE_BALANCE') | default('', true) }}"
+anixops_node_platform_crypto_alert_webhook_url: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_ALERT_WEBHOOK_URL') | default('', true) }}"
+anixops_node_platform_audit_anchor_alert_webhook_url: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AUDIT_ANCHOR_ALERT_WEBHOOK_URL') | default('', true) }}"
+
+# SMTP settings for magic-link login.
+anixops_node_platform_smtp_host: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SMTP_HOST') | default('', true) }}"
+anixops_node_platform_smtp_port: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SMTP_PORT') | default('465', true) }}"
+anixops_node_platform_smtp_user: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SMTP_USER') | default('', true) }}"
+anixops_node_platform_smtp_pass: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SMTP_PASS') | default('', true) }}"
+anixops_node_platform_smtp_secure: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SMTP_SECURE') | default('true', true) }}"
+anixops_node_platform_smtp_from: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SMTP_FROM') | default('', true) }}"
+
+# Rental / provisioning settings.
+anixops_node_platform_cloud_provider: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CLOUD_PROVIDER') | default('vultr', true) }}"
+anixops_node_platform_vps_region: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_VPS_REGION') | default('nrt', true) }}"
+anixops_node_platform_vps_plan: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_VPS_PLAN') | default('vhf-1c-1gb', true) }}"
+anixops_node_platform_install_mode: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_INSTALL_MODE') | default('cloud-init-preferred', true) }}"
+anixops_node_platform_disguise_domains: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_DISGUISE_DOMAINS') | default('addons.mozilla.org', true) }}"
+anixops_node_platform_vultr_api_key: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_VULTR_API_KEY') | default('', true) }}"
+anixops_node_platform_digitalocean_token: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_DIGITALOCEAN_TOKEN') | default('', true) }}"
+anixops_node_platform_do_api_token: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_DO_API_TOKEN') | default('', true) }}"
+anixops_node_platform_aws_access_key_id: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AWS_ACCESS_KEY_ID') | default('', true) }}"
+anixops_node_platform_aws_secret_access_key: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AWS_SECRET_ACCESS_KEY') | default('', true) }}"
+anixops_node_platform_aws_region: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AWS_REGION') | default('', true) }}"
+anixops_node_platform_aws_security_group_id: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AWS_SECURITY_GROUP_ID') | default('', true) }}"
+anixops_node_platform_cloudflare_token: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CLOUDFLARE_TOKEN') | default('', true) }}"
+anixops_node_platform_cloudflare_zone_id: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CLOUDFLARE_ZONE_ID') | default('', true) }}"
+anixops_node_platform_hysteria2_proxy_domain: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_HYSTERIA2_PROXY_DOMAIN') | default('pblaze.com', true) }}"
+
+# node platform scheduler settings.
+anixops_node_platform_billing_tick_cron: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_BILLING_TICK_CRON') | default('*/5 * * * *', true) }}"
+anixops_node_platform_crypto_topup_cron: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_CRYPTO_TOPUP_CRON') | default('*/2 * * * *', true) }}"
+anixops_node_platform_audit_anchor_cron: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_AUDIT_ANCHOR_CRON') | default('17 * * * *', true) }}"
+anixops_node_platform_compliance_stats_cron: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_COMPLIANCE_STATS_CRON') | default('*/15 * * * *', true) }}"
+anixops_node_platform_scheduler_enable_billing_tick: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SCHEDULER_ENABLE_BILLING_TICK') | default('true', true) }}"
+anixops_node_platform_scheduler_enable_crypto_topups: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SCHEDULER_ENABLE_CRYPTO_TOPUPS') | default('auto', true) }}"
+anixops_node_platform_scheduler_enable_audit_anchor: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SCHEDULER_ENABLE_AUDIT_ANCHOR') | default('auto', true) }}"
+anixops_node_platform_scheduler_enable_compliance_stats: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SCHEDULER_ENABLE_COMPLIANCE_STATS') | default('true', true) }}
+
+# Internal connectivity probe.
+anixops_node_platform_probe_enabled: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROBE_ENABLED') | default('false', true) }}"
+anixops_node_platform_probe_service_url: "http://api:{{ anixops_node_platform_api_port }}"
+anixops_node_platform_probe_service_token: "{{ anixops_node_platform_provision_server_token }}"
+anixops_node_platform_probe_timeout_ms: 5000
+anixops_node_platform_probe_poll_interval_ms: 1000
+anixops_node_platform_probe_max_polls: 30
+anixops_node_platform_probe_min_nodes: 3
+anixops_node_platform_probe_pass_ratio: 0.7
+anixops_node_platform_probe_provider: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROBE_PROVIDER') | default('', true) }}"
+anixops_node_platform_probe_globalping_api_url: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_API_URL') | default('https://api.globalping.io/v1', true) }}
+anixops_node_platform_probe_globalping_token: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_TOKEN') | default('', true) }}"
+anixops_node_platform_probe_globalping_country: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_COUNTRY') | default('CN', true) }}"
+anixops_node_platform_probe_globalping_eyeball_bias: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_EYEBALL_BIAS') | default('true', true) }}"

@@ -1,0 +1,30 @@
+﻿---
+- name: Validate required node platform variables
+  ansible.builtin.assert:
+    that:
+      - (anixops_node_platform_provision_server_token | default('', true) | string | length) > 0
+      - (anixops_node_platform_api_secret | default('', true) | string | length) > 0
+      - (anixops_node_platform_postgres_password | default('', true) | string | length) > 0
+      - (anixops_node_platform_redis_password | default('', true) | string | length) > 0
+      - (anixops_node_platform_admin_emails | default('', true) | string | length) > 0
+    fail_msg: |
+      Missing required AnixOps node platform values:
+      - ANIXOPS_NODE_PLATFORM_PROVISION_SERVER_TOKEN
+      - ANIXOPS_NODE_PLATFORM_API_SECRET
+      - ANIXOPS_NODE_PLATFORM_POSTGRES_PASSWORD
+      - ANIXOPS_NODE_PLATFORM_REDIS_PASSWORD
+      - ANIXOPS_NODE_PLATFORM_ADMIN_EMAILS
+
+- name: Deploy the node platform stack
+  block:
+    - name: Install Docker and Docker Compose
+      ansible.builtin.include_tasks: install-docker.yml
+
+    - name: Configure the node platform stack
+      ansible.builtin.include_tasks: configure.yml
+
+    - name: Configure node platform edge firewall policy
+      ansible.builtin.include_tasks: firewall.yml
+
+    - name: Verify the node platform stack
+      ansible.builtin.include_tasks: verify.yml

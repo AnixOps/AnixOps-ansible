@@ -1,0 +1,30 @@
+﻿---
+- name: Deploy AnixOps node platform web stack
+  hosts: anixops_node_platform_servers
+  serial: "30%"
+  max_fail_percentage: 25
+  become: yes
+  gather_facts: yes
+  ignore_unreachable: yes
+
+  roles:
+    - anixops_node_platform
+    - nginx
+
+  post_tasks:
+    - name: Verify the Nginx edge responds locally
+      ansible.builtin.uri:
+        url: "http://localhost"
+        status_code: 200
+      register: anixops_node_platform_edge_check
+
+    - name: Display node platform deployment summary
+      ansible.builtin.debug:
+        msg: |
+          AnixOps node platform web stack deployed successfully
+          - Host: {{ inventory_hostname }}
+          - Edge domain: {{ anixops_node_platform_server_name }}
+          - Public URL: {{ anixops_node_platform_public_url }}
+          - Nginx upstream: http://127.0.0.1:{{ anixops_node_platform_frontend_port }}
+          - Direct inbound blocked: {{ anixops_node_platform_block_direct_public_ports | join(', ') }}
+          - Edge status: {{ anixops_node_platform_edge_check.status }}

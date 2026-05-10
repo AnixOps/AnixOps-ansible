@@ -1,0 +1,68 @@
+﻿---
+- name: Create deployment directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ anixops_node_platform_deploy_dir }}"
+    - "{{ anixops_node_platform_source_dir }}"
+
+- name: Check out the node platform application source
+  ansible.builtin.git:
+    repo: "{{ anixops_node_platform_repo_url }}"
+    dest: "{{ anixops_node_platform_source_dir }}"
+    version: "{{ anixops_node_platform_repo_version }}"
+    force: yes
+    update: yes
+
+- name: Render node platform environment file
+  ansible.builtin.template:
+    src: env.node-platform.j2
+    dest: "{{ anixops_node_platform_env_file }}"
+    mode: '0600'
+  no_log: true
+
+- name: Render node platform compose file
+  ansible.builtin.template:
+    src: docker-compose.node-platform.yml.j2
+    dest: "{{ anixops_node_platform_compose_file }}"
+    mode: '0644'
+
+- name: Validate the compose configuration
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ anixops_node_platform_project_name }}"
+      - --env-file
+      - "{{ anixops_node_platform_env_file }}"
+      - -f
+      - "{{ anixops_node_platform_compose_file }}"
+      - config
+      - --quiet
+    chdir: "{{ anixops_node_platform_deploy_dir }}"
+  changed_when: false
+
+- name: Start or update the node platform stack
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ anixops_node_platform_project_name }}"
+      - --env-file
+      - "{{ anixops_node_platform_env_file }}"
+      - -f
+      - "{{ anixops_node_platform_compose_file }}"
+      - up
+      - -d
+      - --build
+      - --remove-orphans
+    chdir: "{{ anixops_node_platform_deploy_dir }}"
+  register: anixops_node_platform_compose_up
+
+- name: Show compose summary
+  ansible.builtin.debug:
+    msg: "{{ anixops_node_platform_compose_up.stdout | default('Stack updated') }}"
