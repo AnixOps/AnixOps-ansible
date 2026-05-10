@@ -16,6 +16,7 @@ This template turns the AnixOps stack into a normal host-managed deployment:
 - `playbooks/provision/node-platform.yml` ties the two together.
 - `inventories/production/group_vars/anixops_node_platform_servers/main.yml` defines the public edge.
 - `inventories/production/node-platform.example.yml` shows the minimal host group shape.
+- `.github/workflows/node-platform-deploy.yml` provides a dedicated GitHub Actions deployment entry.
 
 ## Ports
 
@@ -31,6 +32,7 @@ This template turns the AnixOps stack into a normal host-managed deployment:
 
 Operator-facing environment variables use the `ANIXOPS_NODE_PLATFORM_` prefix:
 
+- `ANIXOPS_NODE_PLATFORM_1_V4_SSH`
 - `ANIXOPS_NODE_PLATFORM_PROVISION_SERVER_TOKEN`
 - `ANIXOPS_NODE_PLATFORM_API_SECRET`
 - `ANIXOPS_NODE_PLATFORM_POSTGRES_PASSWORD`
@@ -42,6 +44,43 @@ Operator-facing environment variables use the `ANIXOPS_NODE_PLATFORM_` prefix:
 The generated env file is stored at `/etc/anixops-node-platform.env`, outside the source checkout, so secrets do not sit inside the Docker build context. That file keeps upstream runtime keys such as `PROVISION_SERVER_TOKEN`, `API_SECRET`, `INSTALL_MODE`, and `DISGUISE_DOMAINS`, because those are read by the application containers.
 
 Node provisioning stays inside the upstream provision server. Set `ANIXOPS_NODE_PLATFORM_INSTALL_MODE` and `ANIXOPS_NODE_PLATFORM_DISGUISE_DOMAINS` in the Ansible environment or group vars to control that path; this playbook does not install node runtime software on the node platform web host.
+
+## GitHub Actions
+
+Use the `Deploy AnixOps Node Platform` workflow for this stack. It runs `playbooks/provision/node-platform.yml` against `inventories/production/node-platform.actions.yml`. The general `Lifecycle Management` workflow also exposes `anixops_node_platform` for deploy/status style operations.
+
+Required GitHub Secrets:
+
+- `SSH_PRIVATE_KEY`
+- `ANSIBLE_USER`
+- `ANSIBLE_PORT`
+- `ANIXOPS_NODE_PLATFORM_1_V4_SSH`
+- `ANIXOPS_NODE_PLATFORM_PROVISION_SERVER_TOKEN`
+- `ANIXOPS_NODE_PLATFORM_API_SECRET`
+- `ANIXOPS_NODE_PLATFORM_POSTGRES_PASSWORD`
+- `ANIXOPS_NODE_PLATFORM_REDIS_PASSWORD`
+- `ANIXOPS_NODE_PLATFORM_ADMIN_EMAILS`
+
+Required domain input:
+
+- Set the workflow `domain` input to the public hostname, for example `x.anixops.com`, or set `ANIXOPS_NODE_PLATFORM_SERVER_NAME` / `ANIXOPS_NODE_PLATFORM_DOMAIN` as a secret for non-dedicated runs.
+
+Common optional secrets:
+
+- `ANIXOPS_NODE_PLATFORM_REPO_URL`
+- `ANIXOPS_NODE_PLATFORM_REPO_VERSION`
+- `ANIXOPS_NODE_PLATFORM_PUBLIC_URL`
+- `ANIXOPS_NODE_PLATFORM_INSTALL_MODE`
+- `ANIXOPS_NODE_PLATFORM_DISGUISE_DOMAINS`
+- `ANIXOPS_NODE_PLATFORM_CLOUD_PROVIDER`
+- `ANIXOPS_NODE_PLATFORM_VULTR_API_KEY`
+- `ANIXOPS_NODE_PLATFORM_DIGITALOCEAN_TOKEN`
+- `ANIXOPS_NODE_PLATFORM_DO_API_TOKEN`
+- `ANIXOPS_NODE_PLATFORM_CLOUDFLARE_TOKEN`
+- `ANIXOPS_NODE_PLATFORM_CLOUDFLARE_ZONE_ID`
+- `ANIXOPS_NODE_PLATFORM_SMTP_HOST`
+- `ANIXOPS_NODE_PLATFORM_SMTP_USER`
+- `ANIXOPS_NODE_PLATFORM_SMTP_PASS`
 
 ## Nginx
 

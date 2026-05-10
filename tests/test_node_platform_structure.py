@@ -104,3 +104,20 @@ def test_inventory_example_mentions_the_new_group():
     example_text = (ROOT / "inventories/production/node-platform.example.yml").read_text(encoding="utf-8")
 
     assert "anixops_node_platform_servers" in example_text
+
+
+def test_node_platform_has_dedicated_github_actions_entry():
+    workflow = yaml.safe_load((ROOT / ".github/workflows/node-platform-deploy.yml").read_text(encoding="utf-8"))
+    inventory = yaml.safe_load((ROOT / "inventories/production/node-platform.actions.yml").read_text(encoding="utf-8"))
+    lifecycle_text = (ROOT / ".github/workflows/lifecycle.yml").read_text(encoding="utf-8")
+    docs_text = (ROOT / "docs/ANIXOPS_NODE_PLATFORM.md").read_text(encoding="utf-8")
+
+    assert workflow["name"] == "Deploy AnixOps Node Platform"
+    assert "domain" in workflow[True]["workflow_dispatch"]["inputs"]
+    assert "ANIXOPS_NODE_PLATFORM_1_V4_SSH" in workflow["jobs"]["deploy"]["env"]
+    assert "ANIXOPS_NODE_PLATFORM_PROVISION_SERVER_TOKEN" in workflow["jobs"]["deploy"]["env"]
+    assert "anixops_node_platform_servers" in inventory["all"]["children"]
+    assert "anixops_node_platform" in lifecycle_text
+    assert "node-platform.actions.yml" in lifecycle_text
+    assert "Deploy AnixOps Node Platform" in docs_text
+    assert "ANIXOPS_NODE_PLATFORM_1_V4_SSH" in docs_text
