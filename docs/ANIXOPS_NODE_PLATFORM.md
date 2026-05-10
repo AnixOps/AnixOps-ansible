@@ -47,9 +47,9 @@ Node provisioning stays inside the upstream provision server. Set `ANIXOPS_NODE_
 
 ## GitHub Actions
 
-Use the `Deploy AnixOps Node Platform` workflow for this stack. It runs `playbooks/provision/node-platform.yml` against `inventories/production/node-platform.actions.yml`. The general `Lifecycle Management` workflow also exposes `anixops_node_platform` for deploy/status style operations.
+Use the standalone `Deploy AnixOps Node Platform` workflow for this stack. It runs `playbooks/provision/node-platform.yml` against `inventories/production/node-platform.actions.yml` and reads secrets from the GitHub Environment named `node-platform`.
 
-Required GitHub Secrets:
+Required secrets in the `node-platform` GitHub Environment:
 
 - `SSH_PRIVATE_KEY`
 - `ANSIBLE_USER`
@@ -61,9 +61,21 @@ Required GitHub Secrets:
 - `ANIXOPS_NODE_PLATFORM_REDIS_PASSWORD`
 - `ANIXOPS_NODE_PLATFORM_ADMIN_EMAILS`
 
+`ANSIBLE_USER` is the SSH login user for the target server, for example `root` or `ubuntu`. `ANSIBLE_PORT` is the SSH port, usually `22`. `ANIXOPS_NODE_PLATFORM_1_V4_SSH` is the node platform host address, matching the same pattern as the old server secrets such as `PL_V4_SSH`.
+
 Required domain input:
 
-- Set the workflow `domain` input to the public hostname, for example `x.anixops.com`, or set `ANIXOPS_NODE_PLATFORM_SERVER_NAME` / `ANIXOPS_NODE_PLATFORM_DOMAIN` as a secret for non-dedicated runs.
+- Set the workflow `domain` input to the public hostname, for example `x.anixops.com`. The workflow maps it to `ANIXOPS_NODE_PLATFORM_SERVER_NAME` and `ANIXOPS_NODE_PLATFORM_DOMAIN` for Ansible.
+
+The dedicated workflow also maps the shorter Environment secret names you already use:
+
+- `VULTR_API_KEY` becomes `ANIXOPS_NODE_PLATFORM_VULTR_API_KEY`
+- `SMTP_HOST` becomes `ANIXOPS_NODE_PLATFORM_SMTP_HOST`
+- `SMTP_PORT` becomes `ANIXOPS_NODE_PLATFORM_SMTP_PORT`
+- `SMTP_USER` becomes `ANIXOPS_NODE_PLATFORM_SMTP_USER`
+- `SMTP_PASS` becomes `ANIXOPS_NODE_PLATFORM_SMTP_PASS`
+- `SMTP_SECURE` becomes `ANIXOPS_NODE_PLATFORM_SMTP_SECURE`
+- `SMTP_FROM` becomes `ANIXOPS_NODE_PLATFORM_SMTP_FROM`
 
 Common optional secrets:
 
@@ -73,14 +85,10 @@ Common optional secrets:
 - `ANIXOPS_NODE_PLATFORM_INSTALL_MODE`
 - `ANIXOPS_NODE_PLATFORM_DISGUISE_DOMAINS`
 - `ANIXOPS_NODE_PLATFORM_CLOUD_PROVIDER`
-- `ANIXOPS_NODE_PLATFORM_VULTR_API_KEY`
 - `ANIXOPS_NODE_PLATFORM_DIGITALOCEAN_TOKEN`
 - `ANIXOPS_NODE_PLATFORM_DO_API_TOKEN`
 - `ANIXOPS_NODE_PLATFORM_CLOUDFLARE_TOKEN`
 - `ANIXOPS_NODE_PLATFORM_CLOUDFLARE_ZONE_ID`
-- `ANIXOPS_NODE_PLATFORM_SMTP_HOST`
-- `ANIXOPS_NODE_PLATFORM_SMTP_USER`
-- `ANIXOPS_NODE_PLATFORM_SMTP_PASS`
 
 ## Nginx
 
