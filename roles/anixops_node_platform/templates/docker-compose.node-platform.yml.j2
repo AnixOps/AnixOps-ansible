@@ -69,7 +69,10 @@ services:
       provision:
         condition: service_healthy
     ports:
-      - "{{ anixops_node_platform_frontend_bind_address }}:{{ anixops_node_platform_api_port }}:{{ anixops_node_platform_api_port }}"
+      - target: {{ anixops_node_platform_api_port }}
+        published: {{ anixops_node_platform_api_port }}
+        host_ip: {{ anixops_node_platform_api_bind_address }}
+        protocol: tcp
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:{{ anixops_node_platform_api_port }}/health"]
@@ -157,7 +160,10 @@ services:
         NEXT_PUBLIC_WORKER_URL: ${NEXT_PUBLIC_WORKER_URL}
         NEXT_PUBLIC_RELEASE_PROFILE: ${NEXT_PUBLIC_RELEASE_PROFILE}
     ports:
-      - "{{ anixops_node_platform_frontend_bind_address }}:{{ anixops_node_platform_frontend_port }}:30000"
+      - target: 30000
+        published: {{ anixops_node_platform_frontend_port }}
+        host_ip: {{ anixops_node_platform_frontend_bind_address }}
+        protocol: tcp
     environment:
       - PORT=30000
       - HOSTNAME=0.0.0.0

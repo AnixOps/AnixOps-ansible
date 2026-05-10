@@ -29,6 +29,54 @@
     dest: "{{ anixops_node_platform_compose_file }}"
     mode: '0644'
 
+- name: List legacy self-hosted compose project containers after node platform rename
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - -aq
+      - --filter
+      - "label=com.docker.compose.project={{ item }}"
+  loop: "{{ anixops_node_platform_legacy_compose_projects }}"
+  register: anixops_node_platform_legacy_project_containers
+  changed_when: false
+  failed_when: false
+  when: anixops_node_platform_cleanup_legacy_containers | bool
+
+- name: Remove legacy self-hosted compose project containers
+  ansible.builtin.command:
+    argv:
+      - docker
+      - rm
+      - -f
+      - "{{ item }}"
+  loop: >-
+    {{
+      anixops_node_platform_legacy_project_containers.results
+      | map(attribute='stdout_lines')
+      | flatten
+      | reject('equalto', '')
+      | list
+    }}
+  changed_when: false
+  failed_when: false
+  when:
+    - anixops_node_platform_cleanup_legacy_containers | bool
+    - (anixops_node_platform_legacy_project_containers.results | map(attribute='stdout_lines') | flatten | list | length) > 0
+
+- name: Stop legacy self-hosted containers that can hold application ports
+  ansible.builtin.command:
+    argv:
+      - docker
+      - rm
+      - -f
+      - "{{ item }}"
+  loop: "{{ anixops_node_platform_legacy_container_names }}"
+  register: anixops_node_platform_legacy_container_rm
+  changed_when: false
+  failed_when: false
+  when: anixops_node_platform_cleanup_legacy_containers | bool
+
 - name: Validate the compose configuration
   ansible.builtin.command:
     argv:

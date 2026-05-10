@@ -9,7 +9,30 @@ anixops_node_platform_server_name: >-
     lookup('env', 'ANIXOPS_NODE_PLATFORM_SERVER_NAME')
     | default(lookup('env', 'ANIXOPS_NODE_PLATFORM_DOMAIN') | default('x.anixops.com', true), true)
   }}
-anixops_node_platform_public_url: "http://{{ anixops_node_platform_server_name }}"
+anixops_node_platform_ssl_enabled: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_ENABLED') | default('true', true) | bool }}
+anixops_node_platform_ssl_cert: >-
+  {{
+    lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_CERT')
+    | default('/etc/nginx/ssl/' ~ anixops_node_platform_server_name ~ '.crt', true)
+  }}
+anixops_node_platform_ssl_key: >-
+  {{
+    lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_KEY')
+    | default('/etc/nginx/ssl/' ~ anixops_node_platform_server_name ~ '.key', true)
+  }}
+anixops_node_platform_ssl_self_signed_fallback: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_SELF_SIGNED_FALLBACK') | default('true', true) | bool }}
+anixops_node_platform_public_scheme: >-
+  {{
+    lookup('env', 'ANIXOPS_NODE_PLATFORM_PUBLIC_SCHEME')
+    | default((anixops_node_platform_ssl_enabled | bool) | ternary('https', 'http'), true)
+  }}
+anixops_node_platform_public_url: >-
+  {{
+    lookup('env', 'ANIXOPS_NODE_PLATFORM_PUBLIC_URL')
+    | default(anixops_node_platform_public_scheme ~ '://' ~ anixops_node_platform_server_name, true)
+  }}
 
 # Nginx stays on the host and proxies only the frontend container port.
 nginx_default_site_enabled: false
@@ -18,6 +41,24 @@ nginx_sites:
     listen: 80
     listen_ipv6: true
     server_name: "{{ anixops_node_platform_server_name }}"
+    locations:
+      - path: /
+        proxy_pass: "http://127.0.0.1:{{ anixops_node_platform_frontend_port }}"
+        custom_content: |
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_buffering off;
+  - name: anixops-node-platform-https
+    enabled: "{{ anixops_node_platform_ssl_enabled }}"
+    listen: 443
+    listen_ipv6: true
+    http2: true
+    server_name: "{{ anixops_node_platform_server_name }}"
+    ssl:
+      cert: "{{ anixops_node_platform_ssl_cert }}"
+      key: "{{ anixops_node_platform_ssl_key }}"
+      protocols: TLSv1.2 TLSv1.3
     locations:
       - path: /
         proxy_pass: "http://127.0.0.1:{{ anixops_node_platform_frontend_port }}"

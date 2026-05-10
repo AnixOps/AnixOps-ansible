@@ -3,7 +3,7 @@
 
 # Source checkout and managed config paths.
 anixops_node_platform_repo_url: >-
-  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_REPO_URL') | default('https://github.com/AnixOps/AnixOps-xray-install.git', true) }}
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_REPO_URL') | default('https://github.com/AnixOps/AnixOps-node-platform.git', true) }}
 anixops_node_platform_repo_version: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_REPO_VERSION') | default('main', true) }}"
 anixops_node_platform_deploy_dir: "/opt/anixops-node-platform"
 anixops_node_platform_source_dir: "{{ anixops_node_platform_deploy_dir }}/src"
@@ -17,7 +17,20 @@ anixops_node_platform_server_name: >-
     lookup('env', 'ANIXOPS_NODE_PLATFORM_SERVER_NAME')
     | default(lookup('env', 'ANIXOPS_NODE_PLATFORM_DOMAIN') | default('localhost', true), true)
   }}
-anixops_node_platform_public_url: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PUBLIC_URL') | default('http://' ~ anixops_node_platform_server_name, true) }}"
+anixops_node_platform_ssl_enabled: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_ENABLED') | default('true', true) | bool }}"
+anixops_node_platform_ssl_cert: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_CERT') | default('/etc/nginx/ssl/' ~ anixops_node_platform_server_name ~ '.crt', true) }}
+anixops_node_platform_ssl_key: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_KEY') | default('/etc/nginx/ssl/' ~ anixops_node_platform_server_name ~ '.key', true) }}
+anixops_node_platform_ssl_self_signed_fallback: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_SELF_SIGNED_FALLBACK') | default('true', true) | bool }}
+anixops_node_platform_public_scheme: >-
+  {{
+    lookup('env', 'ANIXOPS_NODE_PLATFORM_PUBLIC_SCHEME')
+    | default((anixops_node_platform_ssl_enabled | bool) | ternary('https', 'http'), true)
+  }}
+anixops_node_platform_public_url: >-
+  {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PUBLIC_URL') | default(anixops_node_platform_public_scheme ~ '://' ~ anixops_node_platform_server_name, true) }}
 anixops_node_platform_frontend_url: "{{ anixops_node_platform_public_url }}"
 anixops_node_platform_allowed_origins: "{{ anixops_node_platform_public_url }}"
 anixops_node_platform_next_public_worker_url: ""
@@ -26,6 +39,7 @@ anixops_node_platform_api_proxy_timeout_ms: 15000
 
 # Ports exposed on the host.
 anixops_node_platform_frontend_bind_address: "127.0.0.1"
+anixops_node_platform_api_bind_address: "127.0.0.1"
 anixops_node_platform_frontend_port: 30000
 anixops_node_platform_api_port: 8787
 anixops_node_platform_provision_port: 3001
@@ -42,6 +56,16 @@ anixops_node_platform_postgres_container_name: "anixops-node-platform-postgres"
 anixops_node_platform_redis_container_name: "anixops-node-platform-redis"
 anixops_node_platform_provision_container_name: "anixops-node-platform-provision"
 anixops_node_platform_scheduler_container_name: "anixops-node-platform-scheduler"
+
+# Migration cleanup for containers created before the project was renamed.
+anixops_node_platform_cleanup_legacy_containers: true
+anixops_node_platform_legacy_compose_projects:
+  - anixops-selfhosted
+anixops_node_platform_legacy_container_names:
+  - anixops-audit-api
+  - anixops-ui-audit
+  - anixops-scheduler-audit
+  - anixops-provision-audit
 
 # Required secrets and service credentials.
 anixops_node_platform_provision_server_token: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_PROVISION_SERVER_TOKEN') | default('', true) }}"

@@ -26,5 +26,11 @@
     - name: Configure node platform edge firewall policy
       ansible.builtin.include_tasks: firewall.yml
 
+    - name: Configure node platform TLS fallback certificate
+      ansible.builtin.include_tasks: tls.yml
+      when:
+        - anixops_node_platform_ssl_enabled | default(false) | bool
+        - anixops_node_platform_ssl_self_signed_fallback | default(true) | bool
+
     - name: Verify the node platform stack
       ansible.builtin.include_tasks: verify.yml

@@ -98,7 +98,7 @@
     mode: '0644'
     backup: yes
   loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
-  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true))
+  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true) | bool)
   notify: reload nginx
 
 - name: Enable dynamic virtual hosts
@@ -107,7 +107,7 @@
     dest: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
     state: link
   loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
-  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true))
+  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true) | bool)
   notify: reload nginx
 
 - name: Disable unwanted virtual hosts
@@ -115,7 +115,7 @@
     path: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
     state: absent
   loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
-  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and not (item.enabled | default(true))
+  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and not (item.enabled | default(true) | bool)
   notify: reload nginx
 
 - name: Check for host-specific raw config files
