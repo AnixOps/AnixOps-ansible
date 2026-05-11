@@ -82,6 +82,8 @@ def test_node_platform_role_blocks_direct_app_port_ingress():
     assert "anixops_node_platform_block_direct_public_ports:" in defaults_text
     assert "anixops_node_platform_api_bind_address: \"127.0.0.1\"" in defaults_text
     assert "anixops_node_platform_ssl_self_signed_fallback" in defaults_text
+    assert "anixops_node_platform_ssl_certificate_pem" in defaults_text
+    assert "anixops_node_platform_ssl_certificate_key_pem" in defaults_text
     assert "anixops-selfhosted" in defaults_text
     assert "anixops-audit-api" in defaults_text
     assert "label=com.docker.compose.project={{ item }}" in configure_text
@@ -92,6 +94,7 @@ def test_node_platform_role_blocks_direct_app_port_ingress():
     assert "include_tasks: firewall.yml" in main_text
     assert "include_tasks: tls.yml" in main_text
     assert "Create self-signed node platform TLS certificate when missing" in tls_text
+    assert "| b64decode" in tls_text
     assert "Deny direct inbound access to node platform application ports" in firewall_text
     assert "AnixOps edge only" in firewall_text
     assert "80" in firewall_text
@@ -143,12 +146,15 @@ def test_node_platform_has_dedicated_github_actions_entry():
     assert "ANIXOPS_NODE_PLATFORM_1_V4_SSH" in env
     assert "ANIXOPS_NODE_PLATFORM_PROVISION_SERVER_TOKEN" in env
     assert "ANIXOPS_NODE_PLATFORM_SSL_ENABLED" in env
+    assert env["ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_PEM"] == "${{ secrets.SSL_CERTIFICATE_PEM }}"
+    assert env["ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_KEY_PEM"] == "${{ secrets.SSL_CERTIFICATE_KEY_PEM }}"
     assert env["ANIXOPS_NODE_PLATFORM_VULTR_API_KEY"] == "${{ secrets.VULTR_API_KEY }}"
     assert env["ANIXOPS_NODE_PLATFORM_SMTP_HOST"] == "${{ secrets.SMTP_HOST }}"
     assert "anixops_node_platform_servers" in inventory["all"]["children"]
     assert "Deploy AnixOps Node Platform" in docs_text
     assert "GitHub Environment named `node-platform`" in docs_text
     assert "ANIXOPS_NODE_PLATFORM_1_V4_SSH" in docs_text
+    assert "ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_PEM" in docs_text
 
 
 def test_nginx_dynamic_site_template_supports_ssl_vhosts():

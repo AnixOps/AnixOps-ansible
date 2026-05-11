@@ -17,6 +17,30 @@
     - "{{ anixops_node_platform_ssl_cert | dirname }}"
     - "{{ anixops_node_platform_ssl_key | dirname }}"
 
+- name: Install node platform TLS certificate from Actions secret when provided
+  ansible.builtin.copy:
+    content: "{{ anixops_node_platform_ssl_certificate_pem | b64decode }}"
+    dest: "{{ anixops_node_platform_ssl_cert }}"
+    mode: '0644'
+    owner: root
+    group: root
+  when:
+    - anixops_node_platform_ssl_certificate_pem | default('', true) | string | length > 0
+    - anixops_node_platform_ssl_certificate_key_pem | default('', true) | string | length > 0
+  no_log: true
+
+- name: Install node platform TLS key from Actions secret when provided
+  ansible.builtin.copy:
+    content: "{{ anixops_node_platform_ssl_certificate_key_pem | b64decode }}"
+    dest: "{{ anixops_node_platform_ssl_key }}"
+    mode: '0600'
+    owner: root
+    group: root
+  when:
+    - anixops_node_platform_ssl_certificate_pem | default('', true) | string | length > 0
+    - anixops_node_platform_ssl_certificate_key_pem | default('', true) | string | length > 0
+  no_log: true
+
 - name: Check node platform TLS certificate
   ansible.builtin.stat:
     path: "{{ anixops_node_platform_ssl_cert }}"

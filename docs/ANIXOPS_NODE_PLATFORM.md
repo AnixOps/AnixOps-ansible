@@ -40,7 +40,7 @@ Operator-facing environment variables use the `ANIXOPS_NODE_PLATFORM_` prefix:
 - `ANIXOPS_NODE_PLATFORM_ADMIN_EMAILS`
 - `ANIXOPS_NODE_PLATFORM_SERVER_NAME` or `ANIXOPS_NODE_PLATFORM_DOMAIN`, for example `x.anixops.com`
 - optional SMTP, Stripe, cloud provider, probe, chain-backed topup, audit anchor, Cloudflare DNS, release-profile, and scheduler settings
-- optional `ANIXOPS_NODE_PLATFORM_SSL_ENABLED`, `ANIXOPS_NODE_PLATFORM_SSL_CERT`, `ANIXOPS_NODE_PLATFORM_SSL_KEY`, `ANIXOPS_NODE_PLATFORM_SSL_SELF_SIGNED_FALLBACK`, and `ANIXOPS_NODE_PLATFORM_PUBLIC_SCHEME` for the Nginx HTTPS virtual host
+- optional `ANIXOPS_NODE_PLATFORM_SSL_ENABLED`, `ANIXOPS_NODE_PLATFORM_SSL_CERT`, `ANIXOPS_NODE_PLATFORM_SSL_KEY`, `ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_PEM`, `ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_KEY_PEM`, `ANIXOPS_NODE_PLATFORM_SSL_SELF_SIGNED_FALLBACK`, and `ANIXOPS_NODE_PLATFORM_PUBLIC_SCHEME` for the Nginx HTTPS virtual host
 
 The generated env file is stored at `/etc/anixops-node-platform.env`, outside the source checkout, so secrets do not sit inside the Docker build context. That file keeps upstream runtime keys such as `PROVISION_SERVER_TOKEN`, `API_SECRET`, `INSTALL_MODE`, and `DISGUISE_DOMAINS`, because those are read by the application containers.
 
@@ -79,6 +79,8 @@ The dedicated workflow also maps the shorter Environment secret names you alread
 - `SMTP_PASS` becomes `ANIXOPS_NODE_PLATFORM_SMTP_PASS`
 - `SMTP_SECURE` becomes `ANIXOPS_NODE_PLATFORM_SMTP_SECURE`
 - `SMTP_FROM` becomes `ANIXOPS_NODE_PLATFORM_SMTP_FROM`
+- `SSL_CERTIFICATE_PEM` becomes `ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_PEM`
+- `SSL_CERTIFICATE_KEY_PEM` becomes `ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_KEY_PEM`
 
 Common optional secrets:
 
@@ -104,7 +106,7 @@ The node platform host generates separate HTTP and HTTPS virtual hosts for that 
 - `/etc/nginx/ssl/<domain>.crt`
 - `/etc/nginx/ssl/<domain>.key`
 
-If those files do not exist, the role creates a self-signed fallback certificate so Nginx can still route `https://x.anixops.com` by `server_name`. Replace it with an ACME or Cloudflare Origin certificate when browser-trusted TLS is required. Set `ANIXOPS_NODE_PLATFORM_SSL_ENABLED=false` to disable the HTTPS vhost, or set `ANIXOPS_NODE_PLATFORM_SSL_CERT` and `ANIXOPS_NODE_PLATFORM_SSL_KEY` to custom paths. Without a matching HTTPS vhost for `x.anixops.com`, Nginx can serve whatever existing `443` default catches the request, such as Grafana.
+If `SSL_CERTIFICATE_PEM` and `SSL_CERTIFICATE_KEY_PEM` are present in Actions, the workflow passes them through and the role decodes them into those files. If they are missing, the role creates a self-signed fallback certificate so Nginx can still route `https://x.anixops.com` by `server_name`. Replace it with an ACME or Cloudflare Origin certificate when browser-trusted TLS is required. Set `ANIXOPS_NODE_PLATFORM_SSL_ENABLED=false` to disable the HTTPS vhost, or set `ANIXOPS_NODE_PLATFORM_SSL_CERT` and `ANIXOPS_NODE_PLATFORM_SSL_KEY` to custom paths. Without a matching HTTPS vhost for `x.anixops.com`, Nginx can serve whatever existing `443` default catches the request, such as Grafana.
 
 Example site definition:
 

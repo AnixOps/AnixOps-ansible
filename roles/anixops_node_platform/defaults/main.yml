@@ -22,6 +22,9 @@ anixops_node_platform_ssl_cert: >-
   {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_CERT') | default('/etc/nginx/ssl/' ~ anixops_node_platform_server_name ~ '.crt', true) }}
 anixops_node_platform_ssl_key: >-
   {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_KEY') | default('/etc/nginx/ssl/' ~ anixops_node_platform_server_name ~ '.key', true) }}
+# Base64-encoded PEM payloads reused from GitHub Actions secrets.
+anixops_node_platform_ssl_certificate_pem: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_PEM') | default('', true) }}"
+anixops_node_platform_ssl_certificate_key_pem: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_KEY_PEM') | default('', true) }}"
 anixops_node_platform_ssl_self_signed_fallback: >-
   {{ lookup('env', 'ANIXOPS_NODE_PLATFORM_SSL_SELF_SIGNED_FALLBACK') | default('true', true) | bool }}
 anixops_node_platform_public_scheme: >-
