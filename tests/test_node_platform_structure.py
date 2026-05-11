@@ -165,3 +165,6 @@ def test_nginx_dynamic_site_template_supports_ssl_vhosts():
     assert "{% if item.http2 | default(false) %} http2{% endif %}" in site_template
     assert "ssl_certificate {{ item.ssl.cert }};" in site_template
     assert "item.enabled | default(true) | bool" in nginx_tasks
+    assert "- name: Enable default site" in nginx_tasks
+    assert "- name: Disable default site" in nginx_tasks
+    assert "path: /etc/nginx/sites-enabled/default" in nginx_tasks

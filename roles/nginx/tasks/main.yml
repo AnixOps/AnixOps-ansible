@@ -81,14 +81,22 @@
     dest: /etc/nginx/sites-available/default
     mode: '0644'
     backup: yes
-  when: nginx_default_site_enabled | default(true)
+  when: nginx_default_site_enabled | default(true) | bool
   notify: reload nginx
 
 - name: Enable default site
   file:
     src: /etc/nginx/sites-available/default
     dest: /etc/nginx/sites-enabled/default
-    state: "{% if nginx_default_site_enabled | default(true) %}link{% else %}absent{% endif %}"
+    state: link
+  when: nginx_default_site_enabled | default(true) | bool
+  notify: reload nginx
+
+- name: Disable default site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  when: not (nginx_default_site_enabled | default(true) | bool)
   notify: reload nginx
 
 - name: Deploy dynamic virtual hosts
