@@ -160,11 +160,14 @@ def test_node_platform_has_dedicated_github_actions_entry():
 def test_nginx_dynamic_site_template_supports_ssl_vhosts():
     site_template = (ROOT / "roles/nginx/templates/site.conf.j2").read_text(encoding="utf-8")
     nginx_tasks = (ROOT / "roles/nginx/tasks/main.yml").read_text(encoding="utf-8")
+    nginx_handlers = (ROOT / "roles/nginx/handlers/main.yml").read_text(encoding="utf-8")
 
     assert "{% if item.ssl is defined %} ssl{% endif %}" in site_template
     assert "{% if item.http2 | default(false) %} http2{% endif %}" in site_template
     assert "ssl_certificate {{ item.ssl.cert }};" in site_template
     assert "item.enabled | default(true) | bool" in nginx_tasks
+    assert "notify: reload nginx" in nginx_tasks
+    assert "- name: reload nginx" in nginx_handlers
     assert "- name: Enable default site" in nginx_tasks
     assert "- name: Disable default site" in nginx_tasks
     assert "path: /etc/nginx/sites-enabled/default" in nginx_tasks
