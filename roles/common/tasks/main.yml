@@ -61,9 +61,23 @@
   when: ansible_os_family == "Debian"
 
 - name: Update apt cache (Debian/Ubuntu) | 更新 apt 缓存 (Debian/Ubuntu)
-  ansible.builtin.apt:
-    update_cache: yes
-    cache_valid_time: 3600
+  block:
+    - name: Refresh apt cache with retry/backoff | 重试刷新 apt 缓存
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+        update_cache_retries: 10
+        update_cache_retry_max_delay: 30
+      register: apt_cache_refresh
+      retries: 3
+      delay: 10
+      until: apt_cache_refresh is succeeded
+  rescue:
+    - name: Warn and continue when apt cache refresh fails | apt 缓存刷新失败时告警并继续
+      ansible.builtin.debug:
+        msg: >-
+          APT cache refresh failed on {{ inventory_hostname }} after retries;
+          continuing with the existing cache.
   when: ansible_os_family == "Debian"
 
 - name: Update yum cache (RedHat/CentOS) | 更新 yum 缓存 (RedHat/CentOS)
