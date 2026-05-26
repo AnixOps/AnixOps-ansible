@@ -37,19 +37,19 @@
 
     - name: Download node_exporter | 下载 node_exporter
       get_url:
-        url: "{{ prometheus.node_exporter.download_url }}/v{{ prometheus.node_exporter.version }}/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}.tar.gz"
-        dest: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}.tar.gz"
+        url: "{{ node_exporter_download_url }}/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}.tar.gz"
+        dest: "/tmp/node_exporter/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}.tar.gz"
         mode: '0644'
 
     - name: Extract node_exporter | 解压 node_exporter
       unarchive:
-        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}.tar.gz"
+        src: "/tmp/node_exporter/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}.tar.gz"
         dest: /tmp/node_exporter
         remote_src: yes
 
     - name: Copy node_exporter binary | 复制 node_exporter 二进制文件
       copy:
-        src: "/tmp/node_exporter/node_exporter-{{ prometheus.node_exporter.version }}.linux-{{ _target_arch }}/node_exporter"
+        src: "/tmp/node_exporter/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}/node_exporter"
         dest: /usr/local/bin/node_exporter
         mode: '0755'
         remote_src: yes
@@ -60,7 +60,7 @@
         state: absent
   when: >
     not node_exporter_binary.stat.exists or
-    (installed_version.stdout is defined and installed_version.stdout != prometheus.node_exporter.version)
+    (installed_version.stdout is defined and installed_version.stdout != node_exporter_version)
 
 # -----------------------------------------------------------------------------
 # 用户和服务配置 | User and Service Configuration
@@ -90,7 +90,7 @@
 
 - name: Verify node_exporter is responding
   uri:
-    url: "http://localhost:{{ prometheus.node_exporter.port }}/metrics"
+    url: "http://localhost:{{ node_exporter_port }}/metrics"
     status_code: 200
   register: node_exporter_health
   retries: 3
