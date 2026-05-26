@@ -41,8 +41,8 @@
           ═══════════════════════════════════════════════════════════
           已安装组件 | Components installed:
           ✓ 通用配置已应用 | Common configuration applied
-          ✓ Node Exporter 已安装（端口 {{ prometheus.node_exporter.port }}）| Node Exporter installed (port {{ prometheus.node_exporter.port }})
-          ✓ Promtail 配置完成（端口 {{ loki.promtail.port }}）| Promtail configured (port {{ loki.promtail.port }})
+          ✓ Node Exporter 已安装（端口 {{ node_exporter_port }}）| Node Exporter installed (port {{ node_exporter_port }})
+          ✓ Promtail 配置完成（端口 {{ promtail_port }}）| Promtail configured (port {{ promtail_port }})
           ✓ 防火墙规则已配置 | Firewall rules configured:
             - 公开端口 | Public ports: {{ firewall_public_ports | join(', ') }}
             - 受限端口 | Restricted ports: {{ firewall_restricted_ports | join(', ') }}

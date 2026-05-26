@@ -38,7 +38,7 @@
 
     - name: Download promtail | 下载 promtail
       get_url:
-        url: "{{ loki.promtail.download_url }}/v{{ loki.promtail.version }}/promtail-linux-{{ _target_arch }}.zip"
+        url: "{{ promtail_download_url }}/v{{ promtail_version }}/promtail-linux-{{ _target_arch }}.zip"
         dest: "/tmp/promtail/promtail-linux-{{ _target_arch }}.zip"
         mode: '0644'
 
@@ -61,7 +61,7 @@
         state: absent
   when: >
     not promtail_binary.stat.exists or
-    (installed_version.stdout is defined and installed_version.stdout != loki.promtail.version)
+    (installed_version.stdout is defined and installed_version.stdout != promtail_version)
 
 # -----------------------------------------------------------------------------
 # 用户和目录配置 | User and Directory Configuration
@@ -100,8 +100,8 @@
     mode: '0644'
     owner: promtail
     group: promtail
-    backup: yes
-  notify: restart promtail
+  backup: yes
+  notify: Restart promtail
 
 - name: Create promtail systemd service | 创建 promtail systemd 服务
   template:
@@ -110,8 +110,8 @@
     mode: '0644'
     backup: yes
   notify:
-    - reload systemd
-    - restart promtail
+    - Reload systemd
+    - Restart promtail
 
 # -----------------------------------------------------------------------------
 # 服务启动 | Service Start
@@ -124,7 +124,7 @@
 
 - name: Verify promtail is responding
   uri:
-    url: "http://localhost:{{ loki.promtail.port }}/ready"
+    url: "http://localhost:{{ promtail_port }}/ready"
     status_code: 200
   register: promtail_health
   retries: 3

@@ -1,12 +1,12 @@
 server:
-  http_listen_port: {{ loki.promtail.port }}
+  http_listen_port: {{ promtail_port }}
   grpc_listen_port: 0
 
 positions:
   filename: /var/lib/promtail/positions.yaml
 
 clients:
-  - url: {{ loki.server_url }}/loki/api/v1/push
+  - url: {{ loki_server_url }}/loki/api/v1/push
 
 scrape_configs:
   # System logs
