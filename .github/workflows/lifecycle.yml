@@ -81,8 +81,6 @@ jobs:
     name: Lifecycle (${{ github.event.inputs.action }} - ${{ github.event.inputs.role }})
     runs-on: ubuntu-latest
     environment: NodeX
-    env:
-      INVENTORY_PATH: ${{ runner.temp }}/github-actions-hosts.yml
 
     steps:
       - name: Checkout code
@@ -109,8 +107,9 @@ jobs:
 
       - name: Create inventory from config
         run: |
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           echo "Generating inventory from servers-config.yml..."
-          python3 tools/generate_inventory.py github-actions --output "$INVENTORY_PATH"
+          python3 tools/generate_inventory.py github-actions --output "$inventory_path"
           echo "✓ Inventory generated"
 
       - name: Display Lifecycle Configuration
@@ -148,9 +147,10 @@ jobs:
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           echo "🔍 Verifying connectivity..."
           ansible ${{ github.event.inputs.target_group }} \
-            -i "$INVENTORY_PATH" \
+            -i "$inventory_path" \
             -m ping -v
 
       - name: Execute Lifecycle Action
@@ -203,15 +203,17 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🧹 Stopping old network services..."
             echo "═══════════════════════════════════════════════════════════════"
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             ansible-playbook playbooks/maintenance/emergency-cleanup.yml \
-              -i "$INVENTORY_PATH" \
+              -i "$inventory_path" \
               --limit $TARGET -v || true
 
             echo "═══════════════════════════════════════════════════════════════"
             echo "🎯 Deploying Cloudflare Mesh..."
             echo "═══════════════════════════════════════════════════════════════"
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$INVENTORY_PATH\""
+            CMD="$CMD -i \"$inventory_path\""
             CMD="$CMD --limit $TARGET"
             CMD="$CMD --tags cloudflare_mesh"
             CMD="$CMD -v"
@@ -220,7 +222,8 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🏥 Verifying Mesh connectivity..."
             echo "═══════════════════════════════════════════════════════════════"
-            ansible $TARGET -i "$INVENTORY_PATH" \
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
+            ansible $TARGET -i "$inventory_path" \
               -m shell -a "warp-cli status" -v || true
             exit 0
           fi
@@ -230,8 +233,9 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🗄️  Deploying PostgreSQL..."
             echo "═══════════════════════════════════════════════════════════════"
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$INVENTORY_PATH\""
+            CMD="$CMD -i \"$inventory_path\""
             CMD="$CMD --limit $TARGET"
             CMD="$CMD --tags postgresql"
             CMD="$CMD -v"
@@ -240,8 +244,9 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🎯 Deploying V2board Control Panel..."
             echo "═══════════════════════════════════════════════════════════════"
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$INVENTORY_PATH\""
+            CMD="$CMD -i \"$inventory_path\""
             CMD="$CMD --limit $TARGET"
             CMD="$CMD --tags v2board"
             CMD="$CMD -v"
@@ -250,7 +255,8 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🏥 Verifying V2board health..."
             echo "═══════════════════════════════════════════════════════════════"
-            ansible $TARGET -i "$INVENTORY_PATH" \
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
+            ansible $TARGET -i "$inventory_path" \
               -m shell -a "docker ps --filter name=v2board --format '{{ '{{' }}.Status{{ '}}' }}' || systemctl status v2board --no-pager" -v || true
             exit 0
           fi
@@ -260,8 +266,9 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🗄️  Deploying PostgreSQL..."
             echo "═══════════════════════════════════════════════════════════════"
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$INVENTORY_PATH\""
+            CMD="$CMD -i \"$inventory_path\""
             CMD="$CMD --limit $TARGET"
             CMD="$CMD --tags postgresql"
             CMD="$CMD -v"
@@ -270,7 +277,8 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🏥 Verifying PostgreSQL..."
             echo "═══════════════════════════════════════════════════════════════"
-            ansible $TARGET -i "$INVENTORY_PATH" \
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
+            ansible $TARGET -i "$inventory_path" \
               -m shell -a "sudo -u postgres psql -c 'SELECT version()'" -v || true
             exit 0
           fi
@@ -280,8 +288,9 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🎯 Deploying V2bX Proxy Nodes..."
             echo "═══════════════════════════════════════════════════════════════"
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$INVENTORY_PATH\""
+            CMD="$CMD -i \"$inventory_path\""
             CMD="$CMD --limit $TARGET"
             CMD="$CMD --tags v2bx"
             CMD="$CMD -v"
@@ -290,7 +299,8 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🏥 Verifying V2bX service..."
             echo "═══════════════════════════════════════════════════════════════"
-            ansible $TARGET -i "$INVENTORY_PATH" \
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
+            ansible $TARGET -i "$inventory_path" \
               -m shell -a "systemctl status V2bX" -v || true
             exit 0
           fi
@@ -300,8 +310,9 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════"
             echo "🎯 Deploying Speedtest..."
             echo "═══════════════════════════════════════════════════════════════"
+            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$INVENTORY_PATH\""
+            CMD="$CMD -i \"$inventory_path\""
             CMD="$CMD --limit $TARGET"
             CMD="$CMD --tags speedtest"
             CMD="$CMD -v"
@@ -310,8 +321,9 @@ jobs:
           fi
 
           # Standard lifecycle action
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           CMD="ansible-playbook playbooks/maintenance/lifecycle.yml"
-          CMD="$CMD -i \"$INVENTORY_PATH\""
+          CMD="$CMD -i \"$inventory_path\""
           CMD="$CMD -e lifecycle_target_role=$ROLE"
           CMD="$CMD --limit $TARGET"
           CMD="$CMD --tags $ACTION"

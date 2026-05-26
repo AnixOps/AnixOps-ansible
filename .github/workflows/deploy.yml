@@ -77,8 +77,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
     environment: NodeX
-    env:
-      INVENTORY_PATH: ${{ runner.temp }}/github-actions-hosts.yml
 
     steps:
       - name: Checkout code
@@ -105,8 +103,9 @@ jobs:
 
       - name: Create inventory from config
         run: |
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           echo "Generating inventory from servers-config.yml..."
-          python3 tools/generate_inventory.py github-actions --output "$INVENTORY_PATH"
+          python3 tools/generate_inventory.py github-actions --output "$inventory_path"
           echo "Inventory generated"
 
       - name: Display Deployment Configuration
@@ -136,8 +135,9 @@ jobs:
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           ansible ${{ github.event.inputs.target_group }} \
-            -i "$INVENTORY_PATH" \
+            -i "$inventory_path" \
             -m ping -v
 
       - name: Run Ansible Playbook
@@ -191,8 +191,9 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
         run: |
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           CMD="ansible-playbook playbooks/${{ github.event.inputs.playbook }}"
-          CMD="$CMD -i \"$INVENTORY_PATH\""
+          CMD="$CMD -i \"$inventory_path\""
           CMD="$CMD --limit ${{ github.event.inputs.target_group }}"
           CMD="$CMD -v"
 
@@ -220,8 +221,9 @@ jobs:
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           ansible ${{ github.event.inputs.target_group }} \
-            -i "$INVENTORY_PATH" \
+            -i "$inventory_path" \
             -m shell \
             -a "uptime && df -h / && free -h" || true
 
@@ -253,8 +255,6 @@ jobs:
     if: github.ref_type == 'tag' && needs.detect-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     environment: NodeX
-    env:
-      INVENTORY_PATH: ${{ runner.temp }}/github-actions-hosts.yml
 
     steps:
       - name: Checkout
@@ -281,7 +281,8 @@ jobs:
 
       - name: Create inventory from config
         run: |
-          python3 tools/generate_inventory.py github-actions --output "$INVENTORY_PATH"
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
+          python3 tools/generate_inventory.py github-actions --output "$inventory_path"
 
       - name: Deploy roles
         env:
@@ -316,6 +317,7 @@ jobs:
           V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
           V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
         run: |
+          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           ROLES="${{ needs.detect-changes.outputs.roles }}"
           echo "Tag release: deploying all roles"
           echo "Roles: $ROLES"
@@ -332,7 +334,7 @@ jobs:
             esac
 
             ansible-playbook playbooks/provision/site.yml \
-              -i "$INVENTORY_PATH" \
+              -i "$inventory_path" \
               --limit $TARGET \
               --tags $ROLE \
               -v
