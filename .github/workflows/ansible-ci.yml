@@ -40,7 +40,8 @@ jobs:
 
       - name: Create test inventory
         run: |
-          cat > inventories/production/hosts.yml << 'EOF'
+          inventory_path="$RUNNER_TEMP/ansible-ci-inventory.yml"
+          cat > "$inventory_path" << 'EOF'
           ---
           all:
             children:
@@ -64,8 +65,9 @@ jobs:
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
+          inventory_path="$RUNNER_TEMP/ansible-ci-inventory.yml"
           echo "Running Ansible in check mode (dry run)..."
-          ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml --check -v || true
+          ansible-playbook -i "$inventory_path" playbooks/provision/site.yml --check -v || true
 
       - name: Cleanup SSH keys
         if: always()

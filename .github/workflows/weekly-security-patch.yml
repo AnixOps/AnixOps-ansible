@@ -57,7 +57,7 @@ jobs:
       - name: Create inventory from config
         run: |
           inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          python3 tools/generate_inventory.py github-actions > "$inventory_path"
+          python3 tools/generate_inventory.py github-actions --output "$inventory_path"
 
       - name: Run security patch playbook
         env:
