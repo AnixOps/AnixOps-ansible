@@ -79,8 +79,8 @@
     mode: '0644'
     backup: yes
   notify:
-    - reload systemd
-    - restart node_exporter
+    - Reload systemd
+    - Restart node_exporter
 
 - name: Enable and start node_exporter | 启用并启动 node_exporter
   service:
