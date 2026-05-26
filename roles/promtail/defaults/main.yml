@@ -6,3 +6,4 @@ promtail_version: "2.9.3"
 promtail_port: 9080
 promtail_download_url: "https://github.com/grafana/loki/releases/download"
 loki_server_url: "{{ lookup('env', 'LOKI_URL') | default('http://localhost:3100') }}"
+promtail_app_log_dir: "/var/log/apps"

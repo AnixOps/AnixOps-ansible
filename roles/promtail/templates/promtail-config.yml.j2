@@ -47,4 +47,4 @@ scrape_configs:
         labels:
           job: applications
           host: {{ ansible_hostname }}
-          __path__: {{ app.log_dir | default('/var/log/apps') }}/*.log
+          __path__: {{ promtail_app_log_dir }}/*.log
