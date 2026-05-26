@@ -108,7 +108,7 @@
     dest: /etc/chrony/chrony.conf
     mode: '0644'
     backup: yes
-  notify: restart chrony
+  notify: Restart chrony
   when: ansible_os_family == "Debian"
 
 - name: Configure NTP servers (RedHat/CentOS) | 配置 NTP 服务器 (RedHat/CentOS)
@@ -117,7 +117,7 @@
     dest: /etc/chrony.conf
     mode: '0644'
     backup: yes
-  notify: restart chrony
+  notify: Restart chrony
   when: ansible_os_family == "RedHat"
 
 - name: Ensure chrony is running (RedHat/CentOS) | 确保 chrony 运行中 (RedHat/CentOS)
@@ -171,7 +171,7 @@
     mode: '0600'
     backup: yes
     validate: '/usr/sbin/sshd -t -f %s'
-  notify: restart sshd
+  notify: Restart sshd
 
 - name: Ensure SSH service is enabled and started | 确保 SSH 服务已启用并启动
   ansible.builtin.service:
@@ -210,7 +210,7 @@
     dest: /etc/fail2ban/jail.local
     mode: '0644'
     backup: yes
-  notify: restart fail2ban
+  notify: Restart fail2ban
   when: security.fail2ban_enabled | default(false)
 
 - name: Ensure fail2ban is running
