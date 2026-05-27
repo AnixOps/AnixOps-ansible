@@ -1,24 +1,24 @@
+﻿# =============================================================================
+# 鏈嶅姟鍣ㄩ厤缃腑蹇?| Server Configuration Center
 # =============================================================================
-# 服务器配置中心 | Server Configuration Center
-# =============================================================================
-# 此文件是服务器配置的唯一真实来源 (Single Source of Truth)
+# 姝ゆ枃浠舵槸鏈嶅姟鍣ㄩ厤缃殑鍞竴鐪熷疄鏉ユ簮 (Single Source of Truth)
 # This file is the single source of truth for all server configurations
 #
-# 用途 | Purpose:
-#   - 本地环境配置 | Local environment configuration
-#   - GitHub Actions 自动化部署 | GitHub Actions automated deployment
-#   - 服务器清单生成 | Server inventory generation
+# 鐢ㄩ€?| Purpose:
+#   - 鏈湴鐜閰嶇疆 | Local environment configuration
+#   - GitHub Actions 鑷姩鍖栭儴缃?| GitHub Actions automated deployment
+#   - 鏈嶅姟鍣ㄦ竻鍗曠敓鎴?| Server inventory generation
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# GitHub Actions 测试服务器 | GitHub Actions Test Servers
+# GitHub Actions 娴嬭瘯鏈嶅姟鍣?| GitHub Actions Test Servers
 # -----------------------------------------------------------------------------
-# 用于 CI/CD 流程的测试服务器配置
+# 鐢ㄤ簬 CI/CD 娴佺▼鐨勬祴璇曟湇鍔″櫒閰嶇疆
 # Test server configurations for CI/CD workflows
 github_actions_servers:
   pl-test-1:
     secret_name: PL_1_V4_SSH
-    alias: "波兰-测试-1 | Poland-Test-1"
+    alias: "娉㈠叞-娴嬭瘯-1 | Poland-Test-1"
     location: "Poland"
     groups:
       - web_servers
@@ -30,16 +30,16 @@ github_actions_servers:
     server_environment: production
 
 # -----------------------------------------------------------------------------
-# 生产环境服务器 | Production Environment Servers
+# 鐢熶骇鐜鏈嶅姟鍣?| Production Environment Servers
 # -----------------------------------------------------------------------------
-# 完整的生产服务器配置列表
+# 瀹屾暣鐨勭敓浜ф湇鍔″櫒閰嶇疆鍒楄〃
 # Complete list of production server configurations
 production_servers:
 
   jp-1:
     env_var: JP_1_V4_SSH
-    alias: "日本-1 | Japan-1"
-    description: "日本 Web 服务器 - Oracle | Japan Web Server - Oracle"
+    alias: "鏃ユ湰-1 | Japan-1"
+    description: "鏃ユ湰 Web 鏈嶅姟鍣?- Oracle | Japan Web Server - Oracle"
     location: "Japan"
     groups:
       - web_servers
@@ -49,13 +49,12 @@ production_servers:
 
   uk-1:
     env_var: UK_1_V4_SSH
-    alias: "英国-1 | UK-1"
-    description: "英国 Web 服务器 - Oracle | UK Web Server - Oracle"
+    alias: "鑻卞浗-1 | UK-1"
+    description: "鑻卞浗 Web 鏈嶅姟鍣?- Oracle | UK Web Server - Oracle"
     location: "United Kingdom"
     groups:
       - web_servers
       - v2bx_servers
-      - mesh_nodes
     roles:
       - web
       - v2bx
@@ -63,28 +62,26 @@ production_servers:
 
   us-w-1:
     env_var: US_W_1_V4_SSH
-    alias: "美国西-1 | US-West-1"
-    description: "美国西 Web 服务器 - Oracle | US West Web Server - Oracle"
+    alias: "缇庡浗瑗?1 | US-West-1"
+    description: "缇庡浗瑗?Web 鏈嶅姟鍣?- Oracle | US West Web Server - Oracle"
     location: "United States"
     groups:
       - web_servers
       - v2board_servers
-      - mesh_nodes
     roles:
       - web
       - v2board
     server_environment: production
 
   # ---------------------------------------------------------------------------
-  # Proxy 服务器组 (PLG Stack) | Proxy Server Group (PLG Stack)
+  # Proxy 鏈嶅姟鍣ㄧ粍 (PLG Stack) | Proxy Server Group (PLG Stack)
   # ---------------------------------------------------------------------------
-  # 部署 Prometheus、Loki、Grafana 栈的代理服务器
-  # Proxy servers deploying Prometheus, Loki, and Grafana stack
+  # 閮ㄧ讲 Prometheus銆丩oki銆丟rafana 鏍堢殑浠ｇ悊鏈嶅姟鍣?  # Proxy servers deploying Prometheus, Loki, and Grafana stack
 
   sg-1:
     env_var: SG_1_V4_SSH
-    alias: "新加坡-1 | Singapore-1"
-    description: "新加坡 Proxy 服务器 - PLG Stack - Aliyun | Singapore Proxy Server - PLG Stack - Aliyun"
+    alias: "鏂板姞鍧?1 | Singapore-1"
+    description: "鏂板姞鍧?Proxy 鏈嶅姟鍣?- PLG Stack - Aliyun | Singapore Proxy Server - PLG Stack - Aliyun"
     location: "Singapore"
     groups:
       - proxy_servers
@@ -95,8 +92,8 @@ production_servers:
 
   hk-1:
     env_var: HK_1_V4_SSH
-    alias: "香港-1 | Hong Kong-1"
-    description: "香港 Proxy 服务器 - PLG Stack - Zouter | Hong Kong Proxy Server - PLG Stack - Zouter"
+    alias: "棣欐腐-1 | Hong Kong-1"
+    description: "棣欐腐 Proxy 鏈嶅姟鍣?- PLG Stack - Zouter | Hong Kong Proxy Server - PLG Stack - Zouter"
     location: "Hong Kong"
     groups:
       - proxy_servers
@@ -107,13 +104,12 @@ production_servers:
 
   uk-2:
     env_var: UK_2_V4_SSH
-    alias: "英国-2 | UK-2"
-    description: "英国 Proxy 服务器 - PLG Stack - Akko | UK Proxy Server - PLG Stack - Akko"
+    alias: "鑻卞浗-2 | UK-2"
+    description: "鑻卞浗 Proxy 鏈嶅姟鍣?- PLG Stack - Akko | UK Proxy Server - PLG Stack - Akko"
     location: "United Kingdom"
     groups:
       - proxy_servers
       - v2bx_servers
-      - mesh_nodes
     roles:
       - proxy
       - plg_stack
@@ -121,15 +117,15 @@ production_servers:
     server_environment: production
 
   # ---------------------------------------------------------------------------
-  # 开发服务器组 | Development Server Group
+  # 寮€鍙戞湇鍔″櫒缁?| Development Server Group
   # ---------------------------------------------------------------------------
-  # 用于开发和测试的服务器环境
+  # 鐢ㄤ簬寮€鍙戝拰娴嬭瘯鐨勬湇鍔″櫒鐜
   # Server environments for development and testing
 
   fr-1:
     env_var: FR_1_V4_SSH
-    alias: "法国-1 | France-1"
-    description: "法国 Development 服务器 - OVH | France Development Server - OVH"
+    alias: "娉曞浗-1 | France-1"
+    description: "娉曞浗 Development 鏈嶅姟鍣?- OVH | France Development Server - OVH"
     location: "France"
     groups:
       - dev_servers
@@ -139,20 +135,18 @@ production_servers:
     server_environment: development
 
   # ---------------------------------------------------------------------------
-  # 可观测性服务器组 | Observability Server Group
+  # 鍙娴嬫€ф湇鍔″櫒缁?| Observability Server Group
   # ---------------------------------------------------------------------------
-  # 部署监控和日志系统的中心服务器
-  # Central servers for monitoring and logging systems
+  # 閮ㄧ讲鐩戞帶鍜屾棩蹇楃郴缁熺殑涓績鏈嶅姟鍣?  # Central servers for monitoring and logging systems
 
   pl-1:
     env_var: PL_1_V4_SSH
-    alias: "波兰-1 | Poland-1"
-    description: "波兰 Observability 服务器 - PLG Stack - OVH | Poland Observability Server - PLG Stack - OVH"
+    alias: "娉㈠叞-1 | Poland-1"
+    description: "娉㈠叞 Observability 鏈嶅姟鍣?- PLG Stack - OVH | Poland Observability Server - PLG Stack - OVH"
     location: "Poland"
     groups:
       - observability
       - v2board_servers
-      - mesh_nodes
       - postgres_servers
     roles:
       - observability
@@ -164,67 +158,65 @@ production_servers:
     server_environment: production
 
 # =============================================================================
-# 组别定义 | Group Definitions
+# 缁勫埆瀹氫箟 | Group Definitions
 # =============================================================================
-# 定义服务器组和相关变量
-# Define server groups and their associated variables
+# 瀹氫箟鏈嶅姟鍣ㄧ粍鍜岀浉鍏冲彉閲?# Define server groups and their associated variables
 group_definitions:
 
   web_servers:
-    description: "Web 应用服务器 | Web Application Servers"
+    description: "Web 搴旂敤鏈嶅姟鍣?| Web Application Servers"
     vars:
       server_role: web
 
   proxy_servers:
-    description: "代理服务器 (PLG Stack) | Proxy Servers (PLG Stack)"
+    description: "浠ｇ悊鏈嶅姟鍣?(PLG Stack) | Proxy Servers (PLG Stack)"
     vars:
       server_role: proxy
 
   dev_servers:
-    description: "开发测试服务器 | Development Test Servers"
+    description: "寮€鍙戞祴璇曟湇鍔″櫒 | Development Test Servers"
     vars:
       server_role: development
 
   observability:
-    description: "监控系统服务器 (Prometheus + Loki + Grafana) | Monitoring System Servers (PLG)"
+    description: "鐩戞帶绯荤粺鏈嶅姟鍣?(Prometheus + Loki + Grafana) | Monitoring System Servers (PLG)"
     vars:
       server_role: observability
 
-  mesh_nodes:
-    description: "Cloudflare Mesh 节点 | Cloudflare Mesh Network Nodes"
+    description: "Cloudflare Mesh 鑺傜偣 | Cloudflare Mesh Network Nodes"
     vars:
       server_role: mesh_node
 
   v2bx_servers:
-    description: "V2bX 代理节点 | V2bX Proxy Nodes"
+    description: "V2bX 浠ｇ悊鑺傜偣 | V2bX Proxy Nodes"
     vars:
       server_role: v2bx_node
 
   v2board_servers:
-    description: "V2board 控制面板 | V2board Control Panels"
+    description: "V2board 鎺у埗闈㈡澘 | V2board Control Panels"
     vars:
       server_role: v2board_panel
 
   postgres_servers:
-    description: "PostgreSQL 数据库服务器 | PostgreSQL Database Servers"
+    description: "PostgreSQL 鏁版嵁搴撴湇鍔″櫒 | PostgreSQL Database Servers"
     vars:
       server_role: database
 
-  # 环境分组 | Environment Groups
+  # 鐜鍒嗙粍 | Environment Groups
   dev:
-    description: "开发环境 | Development Environment"
+    description: "寮€鍙戠幆澧?| Development Environment"
     vars:
       server_environment: development
 
   prod:
-    description: "生产环境 | Production Environment"
+    description: "鐢熶骇鐜 | Production Environment"
     vars:
       server_environment: production
 
 # =============================================================================
-# 全局变量 | Global Variables
+# 鍏ㄥ眬鍙橀噺 | Global Variables
 # =============================================================================
-# 适用于所有服务器的全局配置
+# 閫傜敤浜庢墍鏈夋湇鍔″櫒鐨勫叏灞€閰嶇疆
 # Global configurations applicable to all servers
 global_vars:
   ansible_python_interpreter: /usr/bin/python3

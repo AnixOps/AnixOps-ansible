@@ -1,4 +1,4 @@
-name: Weekly Security Patch
+﻿name: Weekly Security Patch
 
 on:
   schedule:
@@ -15,7 +15,6 @@ on:
           - proxy_servers
           - observability
           - dev_servers
-          - mesh_nodes
           - v2bx_servers
           - v2board_servers
           - postgres_servers

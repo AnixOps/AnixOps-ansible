@@ -1,63 +1,55 @@
-# V2board Control Panel Role
+﻿# V2board Control Panel Role
 
-部署 v2board 控制面板（二进制部署），用于管理 V2bX 代理节点。
+閮ㄧ讲 v2board 鎺у埗闈㈡澘锛堜簩杩涘埗閮ㄧ讲锛夛紝鐢ㄤ簬绠＄悊 V2bX 浠ｇ悊鑺傜偣銆?
+## 閮ㄧ讲鏂瑰紡
 
-## 部署方式
+**浜岃繘鍒堕儴缃?*锛圔inary Deployment锛夛細
+- 浠?GitHub Releases 鎴栨寚瀹?URL 涓嬭浇浜岃繘鍒舵枃浠?- systemd 鏈嶅姟绠＄悊
+- 涓嶄緷璧?Docker
 
-**二进制部署**（Binary Deployment）：
-- 从 GitHub Releases 或指定 URL 下载二进制文件
-- systemd 服务管理
-- 不依赖 Docker
+## 閰嶇疆鍙橀噺
 
-## 配置变量
-
-| Secret | 说明 |
+| Secret | 璇存槑 |
 |--------|------|
-| `V2BOARD_API_TOKEN` | **内部 API 令牌**（用于 Ansible 自动化、V2bX 注册） |
-| `V2BOARD_JWT_SECRET` | JWT 密钥（32+ 字符随机） |
-| `V2BOARD_ADMIN_EMAIL` | 管理员邮箱 |
-| `V2BOARD_ADMIN_PASSWORD` | 管理员密码 |
-| `V2BOARD_MESH_IP` | 面板 Mesh IP |
-| `V2BOARD_DB_TYPE` | 数据库类型（sqlite/postgres） |
-| `V2BOARD_BINARY_URL` | 二进制下载 URL（可选，默认从 GitHub Releases） |
-| `V2BOARD_PG_HOST` | PostgreSQL 地址（postgres 模式） |
-| `V2BOARD_PG_PASSWORD` | PostgreSQL 密码 |
-| `V2BOARD_REDIS_HOST` | Redis 地址 |
-| `V2BOARD_REDIS_PASSWORD` | Redis 密码（可选） |
+| `V2BOARD_API_TOKEN` | **鍐呴儴 API 浠ょ墝**锛堢敤浜?Ansible 鑷姩鍖栥€乂2bX 娉ㄥ唽锛?|
+| `V2BOARD_JWT_SECRET` | JWT 瀵嗛挜锛?2+ 瀛楃闅忔満锛?|
+| `V2BOARD_ADMIN_EMAIL` | 绠＄悊鍛橀偖绠?|
+| `V2BOARD_ADMIN_PASSWORD` | 绠＄悊鍛樺瘑鐮?|
+| `V2BOARD_DB_TYPE` | 鏁版嵁搴撶被鍨嬶紙sqlite/postgres锛?|
+| `V2BOARD_BINARY_URL` | 浜岃繘鍒朵笅杞?URL锛堝彲閫夛紝榛樿浠?GitHub Releases锛?|
+| `V2BOARD_PG_HOST` | PostgreSQL 鍦板潃锛坧ostgres 妯″紡锛?|
+| `V2BOARD_PG_PASSWORD` | PostgreSQL 瀵嗙爜 |
+| `V2BOARD_REDIS_HOST` | Redis 鍦板潃 |
+| `V2BOARD_REDIS_PASSWORD` | Redis 瀵嗙爜锛堝彲閫夛級 |
 
-## API_TOKEN 用途
+## API_TOKEN 鐢ㄩ€?
+鍚屼竴涓?`V2BOARD_API_TOKEN` 鐢ㄤ簬锛?
+1. **鍐欏叆闈㈡澘 config.yaml** 鈫?闈㈡澘鍚姩鍚庨獙璇佸唴閮?API
+2. **Ansible 璋冪敤闈㈡澘 API** 鈫?鑷姩鐢熸垚 AuthKey
+3. **V2bX 閮ㄧ讲鏃?* 鈫?璋冪敤闈㈡澘 `/api/v2/internal/auth-keys`
 
-同一个 `V2BOARD_API_TOKEN` 用于：
+## 绔彛
 
-1. **写入面板 config.yaml** → 面板启动后验证内部 API
-2. **Ansible 调用面板 API** → 自动生成 AuthKey
-3. **V2bX 部署时** → 调用面板 `/api/v2/internal/auth-keys`
-
-## 端口
-
-| 端口 | 用途 |
+| 绔彛 | 鐢ㄩ€?|
 |------|------|
-| 3000 | 前端界面 |
-| 8080 | API 端口 |
-| 50051 | gRPC 端口 |
-| 18081 | NodeX 端口 |
+| 3000 | 鍓嶇鐣岄潰 |
+| 8080 | API 绔彛 |
+| 50051 | gRPC 绔彛 |
+| 18081 | NodeX 绔彛 |
 
-## 部署流程
+## 閮ㄧ讲娴佺▼
 
 ```
-部署 v2board (API_TOKEN 写入 config.yaml)
-↓
-部署 V2bX (用 API_TOKEN 调用面板生成 AuthKey)
-↓
-V2bX 注册 (获取 node_id + ApiKey + Secret)
+閮ㄧ讲 v2board (API_TOKEN 鍐欏叆 config.yaml)
+鈫?閮ㄧ讲 V2bX (鐢?API_TOKEN 璋冪敤闈㈡澘鐢熸垚 AuthKey)
+鈫?V2bX 娉ㄥ唽 (鑾峰彇 node_id + ApiKey + Secret)
 ```
 
-## GitHub Secrets 配置
+## GitHub Secrets 閰嶇疆
 
 ```
 V2BOARD_API_TOKEN=your-random-token-here
 V2BOARD_JWT_SECRET=your-jwt-secret-32chars
 V2BOARD_ADMIN_EMAIL=admin@example.com
 V2BOARD_ADMIN_PASSWORD=your-password
-V2BOARD_MESH_IP=100.96.0.5
 ```

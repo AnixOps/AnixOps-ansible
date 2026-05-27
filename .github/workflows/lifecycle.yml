@@ -1,4 +1,4 @@
-name: Lifecycle Management
+﻿name: Lifecycle Management
 
 on:
   workflow_dispatch:
@@ -26,7 +26,6 @@ on:
           - promtail
           - node_exporter
           - common
-          - cloudflare_mesh
           - firewall
           - acme_ssl
           - v2bx
@@ -50,7 +49,6 @@ on:
           - web_servers
           - proxy_servers
           - observability
-          - mesh_nodes
           - v2bx_servers
           - v2board_servers
           - jp-1
@@ -109,13 +107,13 @@ jobs:
           inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           echo "Generating inventory from servers-config.yml..."
           python3 tools/generate_inventory.py github-actions --output "$inventory_path"
-          echo "✓ Inventory generated"
+          echo "鉁?Inventory generated"
 
       - name: Display Lifecycle Configuration
         run: |
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "🔄 LIFECYCLE MANAGEMENT"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+          echo "馃攧 LIFECYCLE MANAGEMENT"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "Action:          ${{ github.event.inputs.action }}"
           echo "Role:            ${{ github.event.inputs.role }}"
           echo "Target:          ${{ github.event.inputs.target_group }}"
@@ -126,10 +124,10 @@ jobs:
             echo "Keep Backups:     ${{ github.event.inputs.keep_backups }}"
           fi
           echo "Force:           ${{ github.event.inputs.force }}"
-          echo "───────────────────────────────────────────────────────────────"
+          echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
           echo "Triggered by:    ${{ github.actor }}"
           echo "Branch:          ${{ github.ref_name }}"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
       - name: Verify Connectivity
         env:
@@ -146,7 +144,7 @@ jobs:
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
         run: |
           inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          echo "🔍 Verifying connectivity..."
+          echo "馃攳 Verifying connectivity..."
           ansible ${{ github.event.inputs.target_group }} \
             -i "$inventory_path" \
             -m ping -v
@@ -165,8 +163,6 @@ jobs:
           FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
-          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
           # V2bX Secrets (Auto-Registration Mode)
           # Uses V2BOARD_API_TOKEN for panel API calls (same as v2board config)
           V2BX_CORE: ${{ secrets.V2BX_CORE }}
@@ -185,7 +181,6 @@ jobs:
           V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
           V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
           V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
-          V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
           V2BOARD_FRONTEND_PORT: ${{ secrets.V2BOARD_FRONTEND_PORT }}
           V2BOARD_API_PORT: ${{ secrets.V2BOARD_API_PORT }}
           V2BOARD_GRPC_PORT: ${{ secrets.V2BOARD_GRPC_PORT }}
@@ -194,42 +189,11 @@ jobs:
           ACTION="${{ github.event.inputs.action }}"
           ROLE="${{ github.event.inputs.role }}"
           TARGET="${{ github.event.inputs.target_group }}"
-
-          # Mesh deploy special handling
-          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "cloudflare_mesh" ]; then
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🧹 Stopping old network services..."
-            echo "═══════════════════════════════════════════════════════════════"
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            ansible-playbook playbooks/maintenance/emergency-cleanup.yml \
-              -i "$inventory_path" \
-              --limit $TARGET -v || true
-
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🎯 Deploying Cloudflare Mesh..."
-            echo "═══════════════════════════════════════════════════════════════"
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$inventory_path\""
-            CMD="$CMD --limit $TARGET"
-            CMD="$CMD --tags cloudflare_mesh"
-            CMD="$CMD -v"
-            eval $CMD
-
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🏥 Verifying Mesh connectivity..."
-            echo "═══════════════════════════════════════════════════════════════"
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            ansible $TARGET -i "$inventory_path" \
-              -m shell -a "warp-cli status" -v || true
-            exit 0
-          fi
-
           # V2board deploy special handling
           if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "v2board" ]; then
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🗄️  Deploying PostgreSQL..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃梽锔? Deploying PostgreSQL..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
             CMD="$CMD -i \"$inventory_path\""
@@ -238,9 +202,9 @@ jobs:
             CMD="$CMD -v"
             eval $CMD || true
 
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🎯 Deploying V2board Control Panel..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃幆 Deploying V2board Control Panel..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
             CMD="$CMD -i \"$inventory_path\""
@@ -249,9 +213,9 @@ jobs:
             CMD="$CMD -v"
             eval $CMD
 
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🏥 Verifying V2board health..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃彞 Verifying V2board health..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             ansible $TARGET -i "$inventory_path" \
               -m shell -a "docker ps --filter name=v2board --format '{{ '{{' }}.Status{{ '}}' }}' || systemctl status v2board --no-pager" -v || true
@@ -260,9 +224,9 @@ jobs:
 
           # PostgreSQL deploy special handling
           if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "postgresql" ]; then
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🗄️  Deploying PostgreSQL..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃梽锔? Deploying PostgreSQL..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
             CMD="$CMD -i \"$inventory_path\""
@@ -271,9 +235,9 @@ jobs:
             CMD="$CMD -v"
             eval $CMD
 
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🏥 Verifying PostgreSQL..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃彞 Verifying PostgreSQL..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             ansible $TARGET -i "$inventory_path" \
               -m shell -a "sudo -u postgres psql -c 'SELECT version()'" -v || true
@@ -282,9 +246,9 @@ jobs:
 
           # V2bX deploy special handling
           if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "v2bx" ]; then
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🎯 Deploying V2bX Proxy Nodes..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃幆 Deploying V2bX Proxy Nodes..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
             CMD="$CMD -i \"$inventory_path\""
@@ -293,9 +257,9 @@ jobs:
             CMD="$CMD -v"
             eval $CMD
 
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🏥 Verifying V2bX service..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃彞 Verifying V2bX service..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             ansible $TARGET -i "$inventory_path" \
               -m shell -a "systemctl status V2bX" -v || true
@@ -304,9 +268,9 @@ jobs:
 
           # Speedtest deploy special handling
           if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "speedtest" ]; then
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "🎯 Deploying Speedtest..."
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+            echo "馃幆 Deploying Speedtest..."
+            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
             inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
             CMD="ansible-playbook playbooks/provision/site.yml"
             CMD="$CMD -i \"$inventory_path\""
@@ -343,9 +307,9 @@ jobs:
             fi
           fi
 
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "🎯 Executing: $CMD"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+          echo "馃幆 Executing: $CMD"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
           eval $CMD
 
@@ -358,19 +322,19 @@ jobs:
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            STATUS_EMOJI="✅"
+            STATUS_EMOJI="鉁?
             STATUS_TEXT="SUCCESS"
           else
-            STATUS_EMOJI="❌"
+            STATUS_EMOJI="鉂?
             STATUS_TEXT="FAILED"
           fi
 
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "$STATUS_EMOJI LIFECYCLE $STATUS_TEXT"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "Action:          ${{ github.event.inputs.action }}"
           echo "Role:            ${{ github.event.inputs.role }}"
           echo "Target:          ${{ github.event.inputs.target_group }}"
-          echo "───────────────────────────────────────────────────────────────"
+          echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
           echo "Completed at:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?

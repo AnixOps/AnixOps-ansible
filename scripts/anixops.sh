@@ -1,14 +1,14 @@
-#!/bin/bash
+﻿#!/bin/bash
 # =============================================================================
 # AnixOps Deployment Tool
 # =============================================================================
-# 统一的部署管理脚本
+# 缁熶竴鐨勯儴缃茬鐞嗚剼鏈?
 # Unified deployment management script
 # =============================================================================
 
 set -e
 
-# 颜色定义
+# 棰滆壊瀹氫箟
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -17,54 +17,54 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
-# 脚本目录
+# 鑴氭湰鐩綍
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# 激活虚拟环境
+# 婵€娲昏櫄鎷熺幆澧?
 VENV_PATH="${PROJECT_ROOT}/venv"
 if [ -d "$VENV_PATH" ]; then
     if [ -f "$VENV_PATH/bin/activate" ]; then
         source "$VENV_PATH/bin/activate"
-        echo -e "${GREEN}✅ 已激活虚拟环境: $VENV_PATH${NC}"
+        echo -e "${GREEN}鉁?宸叉縺娲昏櫄鎷熺幆澧? $VENV_PATH${NC}"
     else
-        echo -e "${YELLOW}⚠️  虚拟环境存在但 activate 文件未找到: $VENV_PATH${NC}"
+        echo -e "${YELLOW}鈿狅笍  铏氭嫙鐜瀛樺湪浣?activate 鏂囦欢鏈壘鍒? $VENV_PATH${NC}"
     fi
 else
-    echo -e "${YELLOW}⚠️  虚拟环境不存在: $VENV_PATH${NC}"
-    echo -e "${YELLOW}   提示: 可以运行 'python3 -m venv $VENV_PATH' 创建虚拟环境${NC}"
+    echo -e "${YELLOW}鈿狅笍  铏氭嫙鐜涓嶅瓨鍦? $VENV_PATH${NC}"
+    echo -e "${YELLOW}   鎻愮ず: 鍙互杩愯 'python3 -m venv $VENV_PATH' 鍒涘缓铏氭嫙鐜${NC}"
 fi
 
-# 打印函数
+# 鎵撳嵃鍑芥暟
 print_header() {
     echo ""
-    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}  $1"
-    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${MAGENTA}鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晽${NC}"
+    echo -e "${MAGENTA}鈺?{NC}  $1"
+    echo -e "${MAGENTA}鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暆${NC}"
     echo ""
 }
 
 print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
+    echo -e "${BLUE}鈩癸笍  $1${NC}"
 }
 
 print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
+    echo -e "${GREEN}鉁?$1${NC}"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+    echo -e "${YELLOW}鈿狅笍  $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}❌ $1${NC}"
+    echo -e "${RED}鉂?$1${NC}"
 }
 
 print_step() {
-    echo -e "${CYAN}▶ $1${NC}"
+    echo -e "${CYAN}鈻?$1${NC}"
 }
 
-# 加载环境变量（安全方式，忽略注释和空行）
+# 鍔犺浇鐜鍙橀噺锛堝畨鍏ㄦ柟寮忥紝蹇界暐娉ㄩ噴鍜岀┖琛岋級
 load_env() {
     local env_file="${1:-.env}"
     if [ ! -f "$env_file" ]; then
@@ -74,14 +74,14 @@ load_env() {
     
     print_step "Loading environment variables from $env_file"
     
-    # 使用 set -a 自动 export 所有变量
+    # 浣跨敤 set -a 鑷姩 export 鎵€鏈夊彉閲?
     set -a
-    # 只加载非注释、非空行且包含等号的行
+    # 鍙姞杞介潪娉ㄩ噴銆侀潪绌鸿涓斿寘鍚瓑鍙风殑琛?
     while IFS= read -r line || [ -n "$line" ]; do
-        # 跳过注释和空行
+        # 璺宠繃娉ㄩ噴鍜岀┖琛?
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$line" ]] && continue
-        # 只处理包含等号的行
+        # 鍙鐞嗗寘鍚瓑鍙风殑琛?
         if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
             eval "export $line"
         fi
@@ -92,7 +92,7 @@ load_env() {
     return 0
 }
 
-# 显示使用说明
+# 鏄剧ず浣跨敤璇存槑
 show_usage() {
     cat << EOF
 $(print_header "AnixOps Deployment Tool")
@@ -100,58 +100,58 @@ $(print_header "AnixOps Deployment Tool")
 Usage: $0 [COMMAND] [OPTIONS]
 
 Commands:
-  quick-setup               快速初始化服务器（主机名 + 监控 + 防火墙）
-  deploy-local              创建本地 Kind 集群（不部署应用）
-  deploy-remote-test        创建远程 K3s 测试集群（波兰服务器）
-  deploy-production         部署到生产环境 K3s 集群
-  deploy-k8s-control-panel  部署 K8s 控制面板（Dashboard + 反向代理 + SSL）
-  cleanup-local             清理本地 Kind 集群
-  cleanup-remote-test       清理远程测试集群
-  cleanup-production        清理生产环境（谨慎使用）
-  status-local              查看本地集群状态
-  status-remote-test        查看远程测试集群状态
-  status-production         查看生产集群状态
+  quick-setup               蹇€熷垵濮嬪寲鏈嶅姟鍣紙涓绘満鍚?+ 鐩戞帶 + 闃茬伀澧欙級
+  deploy-local              鍒涘缓鏈湴 Kind 闆嗙兢锛堜笉閮ㄧ讲搴旂敤锛?
+  deploy-remote-test        鍒涘缓杩滅▼ K3s 娴嬭瘯闆嗙兢锛堟尝鍏版湇鍔″櫒锛?
+  deploy-production         閮ㄧ讲鍒扮敓浜х幆澧?K3s 闆嗙兢
+  deploy-k8s-control-panel  閮ㄧ讲 K8s 鎺у埗闈㈡澘锛圖ashboard + 鍙嶅悜浠ｇ悊 + SSL锛?
+  cleanup-local             娓呯悊鏈湴 Kind 闆嗙兢
+  cleanup-remote-test       娓呯悊杩滅▼娴嬭瘯闆嗙兢
+  cleanup-production        娓呯悊鐢熶骇鐜锛堣皑鎱庝娇鐢級
+  status-local              鏌ョ湅鏈湴闆嗙兢鐘舵€?
+  status-remote-test        鏌ョ湅杩滅▼娴嬭瘯闆嗙兢鐘舵€?
+  status-production         鏌ョ湅鐢熶骇闆嗙兢鐘舵€?
 
 Lifecycle Commands:
-  status <role>             查看服务部署状态和历史
-  rollback <role> [version] 回滚服务到指定版本（prev 或具体版本号）
-  cleanup-role <role>       清理服务（停止、删除配置、保留最近备份）
+  status <role>             鏌ョ湅鏈嶅姟閮ㄧ讲鐘舵€佸拰鍘嗗彶
+  rollback <role> [version] 鍥炴粴鏈嶅姟鍒版寚瀹氱増鏈紙prev 鎴栧叿浣撶増鏈彿锛?
+  cleanup-role <role>       娓呯悊鏈嶅姟锛堝仠姝€佸垹闄ら厤缃€佷繚鐣欐渶杩戝浠斤級
 
 Options:
-  --target <host|group>     限定操作目标主机或主机组
-  --force                   跳过确认提示，直接执行
-  --dry-run                 测试运行（不执行实际操作）
-  --keep-backups <n>        清理时保留最近 N 个备份（默认 5）
+  --target <host|group>     闄愬畾鎿嶄綔鐩爣涓绘満鎴栦富鏈虹粍
+  --force                   璺宠繃纭鎻愮ず锛岀洿鎺ユ墽琛?
+  --dry-run                 娴嬭瘯杩愯锛堜笉鎵ц瀹為檯鎿嶄綔锛?
+  --keep-backups <n>        娓呯悊鏃朵繚鐣欐渶杩?N 涓浠斤紙榛樿 5锛?
 
 Examples:
-  # 快速初始化所有服务器（设置主机名、监控、防火墙）
+  # 蹇€熷垵濮嬪寲鎵€鏈夋湇鍔″櫒锛堣缃富鏈哄悕銆佺洃鎺с€侀槻鐏锛?
   $0 quick-setup
 
-  # 查看 nginx 服务部署状态
+  # 鏌ョ湅 nginx 鏈嶅姟閮ㄧ讲鐘舵€?
   $0 status nginx
 
-  # 查看指定主机的 prometheus 状态
+  # 鏌ョ湅鎸囧畾涓绘満鐨?prometheus 鐘舵€?
   $0 status prometheus --target jp-1
 
-  # 回滚 nginx 到上一版本
+  # 鍥炴粴 nginx 鍒颁笂涓€鐗堟湰
   $0 rollback nginx
 
-  # 回滚 prometheus 到指定版本
+  # 鍥炴粴 prometheus 鍒版寚瀹氱増鏈?
   $0 rollback nginx v20260426_120000
 
-  # 回滚到指定主机
+  # 鍥炴粴鍒版寚瀹氫富鏈?
   $0 rollback nginx --target jp-1
 
-  # 清理 loki 服务（保留最近 10 个备份）
+  # 娓呯悊 loki 鏈嶅姟锛堜繚鐣欐渶杩?10 涓浠斤級
   $0 cleanup-role loki --keep-backups 10
 
-  # 强制清理（跳过确认）
+  # 寮哄埗娓呯悊锛堣烦杩囩‘璁わ級
   $0 cleanup-role nginx --force
 
 EOF
 }
 
-# 检查必要工具
+# 妫€鏌ュ繀瑕佸伐鍏?
 check_requirements() {
     print_step "Checking requirements..."
     
@@ -178,15 +178,15 @@ check_requirements() {
     print_success "All requirements met"
 }
 
-# 检查 Token (已弃用 - Cloudflare Mesh 使用 CLOUDFLARE_MESH_TOKEN)
-# check_token 函数已移除，Mesh token 在 cloudflare_mesh role 中验证
+# 妫€鏌?Token (宸插純鐢?- Cloudflare Mesh 浣跨敤 _TOKEN)
+# check_token 鍑芥暟宸茬Щ闄わ紝Mesh token 鍦? role 涓獙璇?
 
-# 部署到本地
+# 閮ㄧ讲鍒版湰鍦?
 deploy_local() {
     print_header "Create Local Kind Cluster"
     
     check_requirements
-    # 移除 check_token - 不再需要 Cloudflare Token
+    # 绉婚櫎 check_token - 涓嶅啀闇€瑕?Cloudflare Token
     
     local ansible_args=()
     ansible_args+=("-i" "$PROJECT_ROOT/inventories/development/hosts.yml")
@@ -231,13 +231,13 @@ deploy_local() {
     fi
 }
 
-# 部署到远程测试服务器
+# 閮ㄧ讲鍒拌繙绋嬫祴璇曟湇鍔″櫒
 deploy_remote_test() {
     print_header "Create Remote K3s Test Cluster"
     
     check_requirements
     
-    # 加载环境变量
+    # 鍔犺浇鐜鍙橀噺
     load_env "$PROJECT_ROOT/.env" || exit 1
     
     local ansible_args=()
@@ -265,7 +265,7 @@ deploy_remote_test() {
     
     cd "$PROJECT_ROOT"
     
-    # 导出所有环境变量给 Ansible
+    # 瀵煎嚭鎵€鏈夌幆澧冨彉閲忕粰 Ansible
     export DE_1_V4_SSH
     export ANSIBLE_USER="${ANSIBLE_USER:-root}"
     export ANSIBLE_PORT="${ANSIBLE_PORT:-22}"
@@ -290,24 +290,24 @@ deploy_remote_test() {
     fi
 }
 
-# 部署 WARP Connector（宿主机方式）
+# 閮ㄧ讲 WARP Connector锛堝涓绘満鏂瑰紡锛?
 
-# 部署 WARP Connector（宿主机方式）
-# 快速设置服务器
+# 閮ㄧ讲 WARP Connector锛堝涓绘満鏂瑰紡锛?
+# 蹇€熻缃湇鍔″櫒
 quick_setup() {
     print_header "Quick Server Setup (Hostname + Monitoring + Firewall)"
     
     check_requirements
     
-    # 加载环境变量
+    # 鍔犺浇鐜鍙橀噺
     load_env "$PROJECT_ROOT/.env" || exit 1
     
     print_step "This will configure:"
-    echo "  ✓ Server hostname (from inventory)"
-    echo "  ✓ Common system configuration"
-    echo "  ✓ Node Exporter (monitoring)"
-    echo "  ✓ Promtail (log collection)"
-    echo "  ✓ Firewall rules"
+    echo "  鉁?Server hostname (from inventory)"
+    echo "  鉁?Common system configuration"
+    echo "  鉁?Node Exporter (monitoring)"
+    echo "  鉁?Promtail (log collection)"
+    echo "  鉁?Firewall rules"
     echo ""
     
     local ansible_args=()
@@ -355,18 +355,18 @@ quick_setup() {
     fi
 }
 
-# 部署 K8s 控制面板 (Dashboard + 反向代理 + SSL)
+# 閮ㄧ讲 K8s 鎺у埗闈㈡澘 (Dashboard + 鍙嶅悜浠ｇ悊 + SSL)
 
-# 部署 K8s 控制面板 (Dashboard + 反向代理 + SSL)
+# 閮ㄧ讲 K8s 鎺у埗闈㈡澘 (Dashboard + 鍙嶅悜浠ｇ悊 + SSL)
 deploy_k8s_control_panel() {
     print_header "Deploy K8s Control Panel (Dashboard + Reverse Proxy + SSL)"
     
     check_requirements
     
-    # 加载环境变量
+    # 鍔犺浇鐜鍙橀噺
     load_env "$PROJECT_ROOT/.env" || exit 1
     
-    # 检查必要的环境变量
+    # 妫€鏌ュ繀瑕佺殑鐜鍙橀噺
     if [ "$K8S_CONTROL_SSL_ENABLED" = "true" ]; then
         if [ "$K8S_CONTROL_SSL_METHOD" = "custom" ]; then
             if [ -z "$SSL_CERTIFICATE_PEM" ] || [ -z "$SSL_CERTIFICATE_KEY_PEM" ]; then
@@ -428,7 +428,7 @@ deploy_k8s_control_panel() {
     
     cd "$PROJECT_ROOT"
     
-    # 设置环境变量供 Ansible 使用
+    # 璁剧疆鐜鍙橀噺渚?Ansible 浣跨敤
     export K8S_CONTROL_SSL_ENABLED
     export K8S_CONTROL_SSL_METHOD
     export K8S_DASHBOARD_DOMAIN
@@ -446,21 +446,21 @@ deploy_k8s_control_panel() {
         echo ""
         print_success "K8s Control Panel deployed successfully!"
         echo ""
-        echo "═══════════════════════════════════════════════════════════"
-        echo "📊 Access Dashboard:"
+        echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+        echo "馃搳 Access Dashboard:"
         echo "   URL: https://${K8S_DASHBOARD_DOMAIN:-k8s-dashboard.anixops.com}"
         echo ""
-        echo "🔑 Get Access Token:"
+        echo "馃攽 Get Access Token:"
         echo "   ssh root@\$(grep pl-1 inventories/production/hosts.yml | grep ansible_host | awk '{print \$2}' | cut -d= -f2) 'cat /root/k8s-dashboard-token.txt'"
         echo ""
-        echo "📋 Or view token directly on server:"
+        echo "馃搵 Or view token directly on server:"
         echo "   /root/k8s-dashboard-token.txt"
         echo ""
-        echo "✅ Services:"
+        echo "鉁?Services:"
         echo "   - Dashboard: https://${K8S_DASHBOARD_DOMAIN:-k8s-dashboard.anixops.com}"
         echo "   - API: https://${K8S_API_DOMAIN:-k8s-api.anixops.com}"
         echo "   - Metrics: https://${K8S_METRICS_DOMAIN:-k8s-metrics.anixops.com}"
-        echo "═══════════════════════════════════════════════════════════"
+        echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
         echo ""
     else
         print_error "Deployment failed"
@@ -468,7 +468,7 @@ deploy_k8s_control_panel() {
     fi
 }
 
-# 部署到生产
+# 閮ㄧ讲鍒扮敓浜?
 deploy_production() {
     print_header "Deploy to Production (K3s)"
 
@@ -524,7 +524,7 @@ deploy_production() {
     fi
 }
 
-# 清理本地环境
+# 娓呯悊鏈湴鐜
 cleanup_local() {
     print_header "Cleanup Local Environment"
     
@@ -551,7 +551,7 @@ cleanup_local() {
         print_warning "Cluster '${cluster_name}' not found"
     fi
     
-    # 清理临时文件
+    # 娓呯悊涓存椂鏂囦欢
     if [ -f "/tmp/kind-config.yaml" ]; then
         rm -f /tmp/kind-config.yaml
         print_success "Cleaned up temporary files"
@@ -560,7 +560,7 @@ cleanup_local() {
     print_success "Cleanup completed"
 }
 
-# 清理生产环境
+# 娓呯悊鐢熶骇鐜
 cleanup_production() {
     print_header "Cleanup Production Environment"
     
@@ -590,7 +590,7 @@ cleanup_production() {
     fi
 }
 
-# 查看本地状态
+# 鏌ョ湅鏈湴鐘舵€?
 status_local() {
     print_header "Local Environment Status"
     
@@ -624,7 +624,7 @@ status_local() {
     kubectl get namespaces 2>/dev/null || echo "  Cannot list namespaces"
 }
 
-# 查看生产状态
+# 鏌ョ湅鐢熶骇鐘舵€?
 status_production() {
     print_header "Production Environment Status"
     
@@ -643,7 +643,7 @@ status_production() {
         -i inventories/production/hosts.yml
 }
 
-# 运行测试
+# 杩愯娴嬭瘯
 run_tests() {
     print_header "Running Tests"
     
@@ -659,17 +659,17 @@ run_tests() {
 }
 
 # =============================================================================
-# Lifecycle 命令函数
+# Lifecycle 鍛戒护鍑芥暟
 # =============================================================================
 
-# 查看服务状态
+# 鏌ョ湅鏈嶅姟鐘舵€?
 lifecycle_status() {
     if [ -z "$LIFECYCLE_ROLE" ]; then
-        print_error "必须指定 role 名称"
+        print_error "蹇呴』鎸囧畾 role 鍚嶇О"
         echo ""
-        echo "用法: $0 status <role> [--target <host|group>]"
+        echo "鐢ㄦ硶: $0 status <role> [--target <host|group>]"
         echo ""
-        echo "支持的 roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common, cloudflare_mesh"
+        echo "鏀寔鐨?roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common, "
         exit 1
     fi
 
@@ -695,27 +695,27 @@ lifecycle_status() {
     fi
 }
 
-# 回滚服务
+# 鍥炴粴鏈嶅姟
 lifecycle_rollback() {
     if [ -z "$LIFECYCLE_ROLE" ]; then
-        print_error "必须指定 role 名称"
+        print_error "蹇呴』鎸囧畾 role 鍚嶇О"
         echo ""
-        echo "用法: $0 rollback <role> [version] [--target <host|group>] [--force]"
+        echo "鐢ㄦ硶: $0 rollback <role> [version] [--target <host|group>] [--force]"
         echo ""
-        echo "支持的 roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common"
-        echo "version: prev (上一版本) 或 vYYYYMMDD_HHMMSS (具体版本)"
+        echo "鏀寔鐨?roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common"
+        echo "version: prev (涓婁竴鐗堟湰) 鎴?vYYYYMMDD_HHMMSS (鍏蜂綋鐗堟湰)"
         exit 1
     fi
 
     print_header "Rollback Service: ${LIFECYCLE_ROLE}"
 
-    # 用户确认
+    # 鐢ㄦ埛纭
     if [ "$LIFECYCLE_FORCE" != true ]; then
-        print_warning "即将回滚 ${LIFECYCLE_ROLE} 到 ${LIFECYCLE_VERSION:-prev}"
+        print_warning "鍗冲皢鍥炴粴 ${LIFECYCLE_ROLE} 鍒?${LIFECYCLE_VERSION:-prev}"
         echo ""
-        read -p "确认执行回滚? (yes/no): " confirm
+        read -p "纭鎵ц鍥炴粴? (yes/no): " confirm
         if [ "$confirm" != "yes" ]; then
-            print_warning "已取消"
+            print_warning "宸插彇娑?
             exit 0
         fi
     fi
@@ -745,31 +745,31 @@ lifecycle_rollback() {
     fi
 }
 
-# 清理服务
+# 娓呯悊鏈嶅姟
 lifecycle_cleanup_role() {
     if [ -z "$LIFECYCLE_ROLE" ]; then
-        print_error "必须指定 role 名称"
+        print_error "蹇呴』鎸囧畾 role 鍚嶇О"
         echo ""
-        echo "用法: $0 cleanup-role <role> [--target <host|group>] [--force] [--keep-backups <n>]"
+        echo "鐢ㄦ硶: $0 cleanup-role <role> [--target <host|group>] [--force] [--keep-backups <n>]"
         echo ""
-        echo "支持的 roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common, cloudflare_mesh"
+        echo "鏀寔鐨?roles: nginx, prometheus, grafana, loki, promtail, node_exporter, common, "
         exit 1
     fi
 
     print_header "Cleanup Service: ${LIFECYCLE_ROLE}"
 
-    print_warning "⚠️ 这将:"
-    echo "  - 停止并禁用服务"
-    echo "  - 删除配置文件（数据将归档）"
-    echo "  - 删除旧备份（保留最近 ${LIFECYCLE_KEEP_BACKUPS} 个）"
+    print_warning "鈿狅笍 杩欏皢:"
+    echo "  - 鍋滄骞剁鐢ㄦ湇鍔?
+    echo "  - 鍒犻櫎閰嶇疆鏂囦欢锛堟暟鎹皢褰掓。锛?
+    echo "  - 鍒犻櫎鏃у浠斤紙淇濈暀鏈€杩?${LIFECYCLE_KEEP_BACKUPS} 涓級"
     echo ""
 
-    # 用户确认
+    # 鐢ㄦ埛纭
     if [ "$LIFECYCLE_FORCE" != true ]; then
-        print_error "这是一个破坏性操作!"
-        read -p "输入 'yes' 确认清理 ${LIFECYCLE_ROLE}: " confirm
+        print_error "杩欐槸涓€涓牬鍧忔€ф搷浣?"
+        read -p "杈撳叆 'yes' 纭娓呯悊 ${LIFECYCLE_ROLE}: " confirm
         if [ "$confirm" != "yes" ]; then
-            print_warning "已取消"
+            print_warning "宸插彇娑?
             exit 0
         fi
     fi
@@ -796,9 +796,9 @@ lifecycle_cleanup_role() {
     fi
 }
 
-# 主函数
+# 涓诲嚱鏁?
 main() {
-    # 默认值
+    # 榛樿鍊?
     VERBOSE=false
     DRY_RUN=false
     ASK_VAULT_PASS=false
@@ -807,17 +807,17 @@ main() {
     SKIP_TAGS=""
     TARGET_GROUP=""
     MANIFEST_DIR=""
-    CLOUDFLARE_MESH_TOKEN=""
+    _TOKEN=""
     INVENTORY_FILE=""
 
-    # Lifecycle 命令参数
+    # Lifecycle 鍛戒护鍙傛暟
     LIFECYCLE_ROLE=""
     LIFECYCLE_VERSION=""
     LIFECYCLE_TARGET=""
     LIFECYCLE_FORCE=false
     LIFECYCLE_KEEP_BACKUPS=5
 
-    # 解析参数
+    # 瑙ｆ瀽鍙傛暟
     COMMAND=""
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -825,8 +825,8 @@ main() {
                 COMMAND="$1"
                 shift
                 ;;
-            # Lifecycle role 参数（位置参数）
-            nginx|prometheus|grafana|loki|promtail|node_exporter|common|cloudflare_mesh|acme_ssl|firewall)
+            # Lifecycle role 鍙傛暟锛堜綅缃弬鏁帮級
+            nginx|prometheus|grafana|loki|promtail|node_exporter|common|acme_ssl|firewall)
                 if [ "$COMMAND" == "status" ] || [ "$COMMAND" == "rollback" ] || [ "$COMMAND" == "cleanup-role" ]; then
                     LIFECYCLE_ROLE="$1"
                     shift
@@ -836,7 +836,7 @@ main() {
                     exit 1
                 fi
                 ;;
-            # Lifecycle version 参数
+            # Lifecycle version 鍙傛暟
             prev|v[0-9]*)
                 if [ "$COMMAND" == "rollback" ]; then
                     LIFECYCLE_VERSION="$1"
@@ -897,7 +897,7 @@ main() {
         esac
     done
     
-    # 执行命令
+    # 鎵ц鍛戒护
     case $COMMAND in
         quick-setup)
             quick_setup
@@ -967,5 +967,5 @@ main() {
     esac
 }
 
-# 运行主函数
+# 杩愯涓诲嚱鏁?
 main "$@"

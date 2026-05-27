@@ -1,4 +1,4 @@
-name: Deploy
+﻿name: Deploy
 
 on:
   workflow_dispatch:
@@ -27,7 +27,6 @@ on:
           - proxy_servers
           - observability
           - dev_servers
-          - mesh_nodes
           - v2bx_servers
           - v2board_servers
         default: 'all'
@@ -69,7 +68,7 @@ jobs:
         id: detect
         run: |
           echo "Detecting roles to deploy for tag ${{ github.ref_name }}"
-          echo "roles=nginx,prometheus,grafana,loki,promtail,node_exporter,cloudflare_mesh,v2board,v2bx,speedtest" >> $GITHUB_OUTPUT
+          echo "roles=nginx,prometheus,grafana,loki,promtail,node_exporter,v2board,v2bx,speedtest" >> $GITHUB_OUTPUT
           echo "has_changes=true" >> $GITHUB_OUTPUT
 
   deploy-manual:
@@ -110,15 +109,15 @@ jobs:
 
       - name: Display Deployment Configuration
         run: |
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "DEPLOYMENT CONFIGURATION"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "Playbook:        ${{ github.event.inputs.playbook }}"
           echo "Target Group:    ${{ github.event.inputs.target_group }}"
           echo "Dry Run:         ${{ github.event.inputs.dry_run }}"
           echo "Triggered by:    ${{ github.actor }}"
           echo "Branch:          ${{ github.ref_name }}"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
       - name: Verify Connectivity
         env:
@@ -155,8 +154,6 @@ jobs:
           FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
-          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
           V2BX_CORE: ${{ secrets.V2BX_CORE }}
           V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
           V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
@@ -171,7 +168,6 @@ jobs:
           V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
           V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
           V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
-          V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
           V2BOARD_FRONTEND_PORT: ${{ secrets.V2BOARD_FRONTEND_PORT }}
           V2BOARD_API_PORT: ${{ secrets.V2BOARD_API_PORT }}
           V2BOARD_GRPC_PORT: ${{ secrets.V2BOARD_GRPC_PORT }}
@@ -240,14 +236,14 @@ jobs:
           else
             STATUS="FAILED"
           fi
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "DEPLOYMENT $STATUS"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "Playbook:  ${{ github.event.inputs.playbook }}"
           echo "Target:    ${{ github.event.inputs.target_group }}"
           echo "Dry Run:   ${{ github.event.inputs.dry_run }}"
           echo "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
   deploy-tag:
     name: Deploy Changed Roles (Tag ${{ github.ref_name }})
@@ -299,8 +295,6 @@ jobs:
           FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
           ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
           ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
-          CLOUDFLARE_MESH_ADVERTISE_SUBNETS: ${{ secrets.CLOUDFLARE_MESH_ADVERTISE_SUBNETS }}
           V2BX_CORE: ${{ secrets.V2BX_CORE }}
           V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
           V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
@@ -315,7 +309,6 @@ jobs:
           V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
           V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
           V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
-          V2BOARD_MESH_IP: ${{ secrets.V2BOARD_MESH_IP }}
         run: |
           inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
           ROLES="${{ needs.detect-changes.outputs.roles }}"
@@ -330,7 +323,6 @@ jobs:
               nginx) TARGET="web_servers" ;;
               v2board) TARGET="v2board_servers" ;;
               v2bx) TARGET="v2bx_servers" ;;
-              cloudflare_mesh) TARGET="mesh_nodes" ;;
             esac
 
             ansible-playbook playbooks/provision/site.yml \
@@ -348,10 +340,10 @@ jobs:
       - name: Deploy Summary
         if: always()
         run: |
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "Auto Deploy Completed"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
           echo "Tag:       ${{ github.ref_name }}"
           echo "Roles:     ${{ needs.detect-changes.outputs.roles }}"
           echo "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?

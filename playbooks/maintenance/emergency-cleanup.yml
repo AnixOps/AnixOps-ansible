@@ -1,8 +1,8 @@
----
+﻿---
 # =============================================================================
 # Emergency Service Cleanup - Stop Old Cloudflared/WARP/Headscale Services
 # =============================================================================
-# 临时清理脚本 - 在迁移到 Cloudflare Mesh 之前停止所有旧网络服务
+# 涓存椂娓呯悊鑴氭湰 - 鍦ㄨ縼绉诲埌 Cloudflare Mesh 涔嬪墠鍋滄鎵€鏈夋棫缃戠粶鏈嶅姟
 # Temporary cleanup - stop all old networking services before Mesh migration
 #
 # WARNING: This will stop connectivity services. Run with caution.
@@ -49,15 +49,12 @@
     - name: Display cleanup summary
       ansible.builtin.debug:
         msg:
-          - "╔════════════════════════════════════════════════════════════════╗"
-          - "║  Service Cleanup Complete                                     ║"
-          - "╚════════════════════════════════════════════════════════════════╝"
+          - "Service Cleanup Complete"
           - ""
           - "Stopped services (if they existed):"
-          - "  • cloudflared"
-          - "  • warp-svc (old WARP Connector)"
-          - "  • headscale"
-          - "  • tailscaled"
+          - "  - cloudflared"
+          - "  - warp-svc (old WARP Connector)"
+          - "  - headscale"
+          - "  - tailscaled"
           - ""
-          - "Next step: Deploy Cloudflare Mesh"
-          - "  ansible-playbook playbooks/provision/site.yml --tags cloudflare_mesh"
+          - "Next step: continue with the remaining maintenance tasks"
