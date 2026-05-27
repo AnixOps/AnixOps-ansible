@@ -62,17 +62,13 @@
     set -euo pipefail
 
     for pid in {{ nginx_port_pids.stdout_lines | default([]) | join(' ') }}; do
-      if [ -r "/proc/$pid/cmdline" ]; then
-        cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
-        case "$cmdline" in
-          *nginx*)
-            continue
-            ;;
-          *)
-            kill "$pid" || true
-            ;;
-        esac
-      fi
+      kill -TERM "$pid" || true
+    done
+
+    sleep 2
+
+    for pid in {{ nginx_port_pids.stdout_lines | default([]) | join(' ') }}; do
+      kill -KILL "$pid" || true
     done
   args:
     executable: /bin/bash
@@ -83,15 +79,24 @@
     - nginx_stop_conflicting_services | default(true) | bool
     - nginx_port_pids.stdout_lines | default([]) | length > 0
 
-- name: Wait briefly for web ports to clear
-  ansible.builtin.wait_for:
-    port: "{{ item }}"
-    state: stopped
-    timeout: 10
-  loop:
-    - 80
-    - 443
+- name: Re-check web ports after cleanup
+  ansible.builtin.shell: |
+    ss -H -ltn '( sport = :80 or sport = :443 )' || true
+  args:
+    executable: /bin/bash
+  register: nginx_port_recheck
+  changed_when: false
+  failed_when: false
   when: nginx_stop_conflicting_services | default(true) | bool
+
+- name: Report any remaining web port listeners
+  ansible.builtin.debug:
+    msg: >-
+      Web ports still have listeners after cleanup on {{ inventory_hostname }}:
+      {{ nginx_port_recheck.stdout | default('none') | trim | default('none', true) }}
+  when:
+    - nginx_stop_conflicting_services | default(true) | bool
+    - nginx_port_recheck.stdout | default('') | trim != ''
 
 - name: Validate Nginx configuration before starting service
   ansible.builtin.command: nginx -t
@@ -275,6 +280,16 @@
 
           nginx journal tail:
           {{ nginx_journal.stdout | default('') }}
+  always:
+    - name: Check whether Nginx is active
+      ansible.builtin.command: systemctl is-active nginx
+      register: nginx_active_state
+      changed_when: false
+      failed_when: false
+
+    - name: Report Nginx active state
+      ansible.builtin.debug:
+        msg: "Nginx active state on {{ inventory_hostname }}: {{ nginx_active_state.stdout | default('unknown') }}"
 
 - name: Verify Nginx is responding
   uri:
