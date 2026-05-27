@@ -45,3 +45,12 @@ nginx_packages:
   - nginx
 nginx_config_dirs:
   - /etc/nginx
+
+# Services that may already hold ports 80/443 before Nginx is started.
+nginx_conflicting_services:
+  - nginx
+  - apache2
+  - httpd
+  - caddy
+  - traefik
+nginx_stop_conflicting_services: true

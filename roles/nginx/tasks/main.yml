@@ -34,6 +34,15 @@
     state: present
   when: ansible_os_family == "RedHat"
 
+- name: Stop services that may already bind ports 80/443
+  service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop: "{{ nginx_conflicting_services }}"
+  ignore_errors: yes
+  when: nginx_stop_conflicting_services | default(true) | bool
+
 - name: Create Nginx configuration directories
   file:
     path: "{{ item }}"
