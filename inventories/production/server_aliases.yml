@@ -39,12 +39,6 @@ server_aliases:
     location: "Japan"
     environment: "test"
 
-  jp-2:
-    alias: "日本-2"
-    description: "日本 Proxy 服务器 - PLG Stack - Churros"
-    location: "Japan"
-    environment: "production"
-
   hk-1:
     alias: "香港-1"
     description: "香港 Proxy 服务器 - PLG Stack - Zouter"

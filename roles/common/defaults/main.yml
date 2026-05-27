@@ -75,3 +75,8 @@ common_config_dirs:
   - /etc/ssh
   - /etc/chrony
   - /etc/fail2ban
+
+# ---------------------------------------------------------------------------
+# Package Cache Refresh
+# ---------------------------------------------------------------------------
+common_refresh_apt_cache: true

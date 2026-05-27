@@ -1,29 +1,28 @@
+﻿# =============================================================================
+# Common Role - 鍩虹閰嶇疆浠诲姟 | Common Role - Basic Configuration Tasks
 # =============================================================================
-# Common Role - 基础配置任务 | Common Role - Basic Configuration Tasks
-# =============================================================================
-# 此角色负责服务器的基础配置和安全加固
-# This role is responsible for basic server configuration and security hardening
+# 姝よ鑹茶礋璐ｆ湇鍔″櫒鐨勫熀纭€閰嶇疆鍜屽畨鍏ㄥ姞鍥?# This role is responsible for basic server configuration and security hardening
 #
-# 功能 | Features:
-#   - 主机名配置 | Hostname configuration
-#   - 系统包管理 | System package management
-#   - 时区和本地化 | Timezone and localization
-#   - NTP 时间同步 | NTP time synchronization
-#   - 用户管理 | User management
-#   - SSH 安全配置 | SSH security configuration
-#   - Fail2Ban 防护 | Fail2Ban protection
-#   - 系统参数优化 | System parameter optimization
+# 鍔熻兘 | Features:
+#   - 涓绘満鍚嶉厤缃?| Hostname configuration
+#   - 绯荤粺鍖呯鐞?| System package management
+#   - 鏃跺尯鍜屾湰鍦板寲 | Timezone and localization
+#   - NTP 鏃堕棿鍚屾 | NTP time synchronization
+#   - 鐢ㄦ埛绠＄悊 | User management
+#   - SSH 瀹夊叏閰嶇疆 | SSH security configuration
+#   - Fail2Ban 闃叉姢 | Fail2Ban protection
+#   - 绯荤粺鍙傛暟浼樺寲 | System parameter optimization
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# 主机名配置 | Hostname Configuration
+# 涓绘満鍚嶉厤缃?| Hostname Configuration
 # -----------------------------------------------------------------------------
-- name: Set server hostname | 设置服务器主机名
+- name: Set server hostname | 璁剧疆鏈嶅姟鍣ㄤ富鏈哄悕
   ansible.builtin.hostname:
     name: "{{ inventory_hostname }}"
   when: inventory_hostname is defined
 
-- name: Update /etc/hosts with new hostname | 更新 /etc/hosts 文件
+- name: Update /etc/hosts with new hostname | 鏇存柊 /etc/hosts 鏂囦欢
   ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^127\.0\.1\.1'
@@ -31,16 +30,21 @@
     state: present
   when: inventory_hostname is defined
 
-- name: Display hostname change | 显示主机名更改
+- name: Display hostname change | 鏄剧ず涓绘満鍚嶆洿鏀?
   ansible.builtin.debug:
-    msg: "主机名已设置为 | Hostname set to: {{ inventory_hostname }}"
+    msg: "涓绘満鍚嶅凡璁剧疆涓?| Hostname set to: {{ inventory_hostname }}"
 
 # -----------------------------------------------------------------------------
-# 更新包缓存 | Update Package Cache
+# 鏇存柊鍖呯紦瀛?| Update Package Cache
 # -----------------------------------------------------------------------------
-- name: Clean broken Grafana apt sources (Debian/Ubuntu)
+# 鏇存柊鍖呯紦瀛?| Update Package Cache
+# -----------------------------------------------------------------------------
+- name: Repair and refresh apt cache on Debian/Ubuntu | 修复并刷新 Debian/Ubuntu apt 缓存
+  when:
+    - ansible_os_family == "Debian"
+    - common_refresh_apt_cache | default(true) | bool
   block:
-    - name: Remove conflicting Grafana source files
+    - name: Remove conflicting Grafana source files | 删除冲突的 Grafana 源文件
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -49,74 +53,90 @@
         - /etc/apt/sources.list.d/grafana.list.save
       ignore_errors: yes
 
-    - name: Fix apt sources with signed-by conflicts
+    - name: Remove stale Grafana sources without signed-by | 清理缺少 signed-by 的 Grafana 源
       ansible.builtin.shell: |
-        find /etc/apt/sources.list.d -name '*.list' -exec grep -l 'apt.grafana.com' {} \; 2>/dev/null | while read f; do
-          if ! grep -q '\[signed-by=' "$f" 2>/dev/null; then
-            rm -f "$f"
-          fi
-        done
-        apt-get update 2>/dev/null || true
-      ignore_errors: yes
-  when: ansible_os_family == "Debian"
+        set -euo pipefail
 
-- name: Update apt cache (Debian/Ubuntu) | 更新 apt 缓存 (Debian/Ubuntu)
-  block:
-    - name: Refresh apt cache with retry/backoff | 重试刷新 apt 缓存
+        find /etc/apt/sources.list.d -maxdepth 1 -name '*.list' -print0 \
+          | xargs -0 -r grep -l 'apt.grafana.com' 2>/dev/null \
+          | while read -r source_file; do
+              if ! grep -q '\[signed-by=' "$source_file" 2>/dev/null; then
+                rm -f "$source_file"
+              fi
+            done
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    - name: Refresh apt cache | 刷新 apt 缓存
       ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: 3600
-        update_cache_retries: 10
-        update_cache_retry_max_delay: 30
+        update_cache_retries: 3
+        update_cache_retry_max_delay: 12
       register: apt_cache_refresh
-      retries: 3
-      delay: 10
-      until: apt_cache_refresh is succeeded
-  rescue:
+      ignore_errors: yes
+
+    - name: Retry apt cache refresh once after correction | 修复后重试一次 apt 刷新
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      register: apt_cache_refresh_recovered
+      ignore_errors: yes
+
     - name: Warn and continue when apt cache refresh fails | apt 缓存刷新失败时告警并继续
       ansible.builtin.debug:
         msg: >-
-          APT cache refresh failed on {{ inventory_hostname }} after retries;
+          APT cache refresh was corrected or skipped on {{ inventory_hostname }};
           continuing with the existing cache.
-  when: ansible_os_family == "Debian"
+      when:
+        - apt_cache_refresh is failed
+        - apt_cache_refresh_recovered is failed
 
-- name: Update yum cache (RedHat/CentOS) | 更新 yum 缓存 (RedHat/CentOS)
+- name: Skip apt cache refresh when disabled | 禁用时跳过 apt 刷新
+  ansible.builtin.debug:
+    msg: "APT cache refresh skipped on {{ inventory_hostname }} because common_refresh_apt_cache is false."
+  when:
+    - ansible_os_family == "Debian"
+    - not (common_refresh_apt_cache | default(true) | bool)
+- name: Update yum cache (RedHat/CentOS) | 鏇存柊 yum 缂撳瓨 (RedHat/CentOS)
   ansible.builtin.yum:
     update_cache: yes
   when: ansible_os_family == "RedHat"
 
 # -----------------------------------------------------------------------------
-# 安装常用软件包 | Install Common Packages
+# 瀹夎甯哥敤杞欢鍖?| Install Common Packages
 # -----------------------------------------------------------------------------
-- name: Install common packages | 安装常用软件包
+- name: Install common packages | 瀹夎甯哥敤杞欢鍖?
   ansible.builtin.package:
     name: "{{ common_packages }}"
     state: present
 
 # -----------------------------------------------------------------------------
-# 时区和本地化配置 | Timezone and Localization Configuration
+# 鏃跺尯鍜屾湰鍦板寲閰嶇疆 | Timezone and Localization Configuration
 # -----------------------------------------------------------------------------
-- name: Set timezone | 设置时区
+- name: Set timezone | 璁剧疆鏃跺尯
   ansible.builtin.timezone:
     name: "{{ timezone }}"
 
-- name: Set system locale | 设置系统区域设置
+- name: Set system locale | 璁剧疆绯荤粺鍖哄煙璁剧疆
   ansible.builtin.locale_gen:
     name: "{{ locale }}"
     state: present
   when: ansible_os_family == "Debian"
 
 # -----------------------------------------------------------------------------
-# NTP 时间同步配置 | NTP Time Synchronization Configuration
+# NTP 鏃堕棿鍚屾閰嶇疆 | NTP Time Synchronization Configuration
 # -----------------------------------------------------------------------------
-- name: Ensure chrony config directory exists | 确保 chrony 配置目录存在
+- name: Ensure chrony config directory exists | 纭繚 chrony 閰嶇疆鐩綍瀛樺湪
   ansible.builtin.file:
     path: /etc/chrony
     state: directory
     mode: '0755'
   when: ansible_os_family == "Debian"
 
-- name: Configure NTP servers (Debian/Ubuntu) | 配置 NTP 服务器 (Debian/Ubuntu)
+- name: Configure NTP servers (Debian/Ubuntu) | 閰嶇疆 NTP 鏈嶅姟鍣?(Debian/Ubuntu)
   ansible.builtin.template:
     src: chrony.conf.j2
     dest: /etc/chrony/chrony.conf
@@ -125,7 +145,7 @@
   notify: Restart chrony
   when: ansible_os_family == "Debian"
 
-- name: Configure NTP servers (RedHat/CentOS) | 配置 NTP 服务器 (RedHat/CentOS)
+- name: Configure NTP servers (RedHat/CentOS) | 閰嶇疆 NTP 鏈嶅姟鍣?(RedHat/CentOS)
   ansible.builtin.template:
     src: chrony.conf.j2
     dest: /etc/chrony.conf
@@ -134,14 +154,14 @@
   notify: Restart chrony
   when: ansible_os_family == "RedHat"
 
-- name: Ensure chrony is running (RedHat/CentOS) | 确保 chrony 运行中 (RedHat/CentOS)
+- name: Ensure chrony is running (RedHat/CentOS) | 纭繚 chrony 杩愯涓?(RedHat/CentOS)
   ansible.builtin.service:
     name: chronyd
     state: started
     enabled: yes
   when: ansible_os_family == "RedHat"
 
-- name: Ensure chrony is running (Debian/Ubuntu) | 确保 chrony 运行中 (Debian/Ubuntu)
+- name: Ensure chrony is running (Debian/Ubuntu) | 纭繚 chrony 杩愯涓?(Debian/Ubuntu)
   ansible.builtin.service:
     name: chrony
     state: started
@@ -149,9 +169,9 @@
   when: ansible_os_family == "Debian"
 
 # -----------------------------------------------------------------------------
-# 用户管理 | User Management
+# 鐢ㄦ埛绠＄悊 | User Management
 # -----------------------------------------------------------------------------
-- name: Create admin users (Debian/Ubuntu) | 创建管理员用户 (Debian/Ubuntu)
+- name: Create admin users (Debian/Ubuntu) | 鍒涘缓绠＄悊鍛樼敤鎴?(Debian/Ubuntu)
   ansible.builtin.user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"
@@ -163,7 +183,7 @@
     - admin_users is defined
     - ansible_os_family == "Debian"
 
-- name: Create admin users (RedHat/CentOS) | 创建管理员用户 (RedHat/CentOS)
+- name: Create admin users (RedHat/CentOS) | 鍒涘缓绠＄悊鍛樼敤鎴?(RedHat/CentOS)
   ansible.builtin.user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"
@@ -176,9 +196,9 @@
     - ansible_os_family == "RedHat"
 
 # -----------------------------------------------------------------------------
-# SSH 安全配置 | SSH Security Configuration
+# SSH 瀹夊叏閰嶇疆 | SSH Security Configuration
 # -----------------------------------------------------------------------------
-- name: Configure SSH | 配置 SSH
+- name: Configure SSH | 閰嶇疆 SSH
   ansible.builtin.template:
     src: sshd_config.j2
     dest: /etc/ssh/sshd_config
@@ -187,7 +207,7 @@
     validate: '/usr/sbin/sshd -t -f %s'
   notify: Restart sshd
 
-- name: Ensure SSH service is enabled and started | 确保 SSH 服务已启用并启动
+- name: Ensure SSH service is enabled and started | 纭繚 SSH 鏈嶅姟宸插惎鐢ㄥ苟鍚姩
   ansible.builtin.service:
     name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
     state: started
@@ -243,3 +263,4 @@
     - avahi-daemon
     - cups
   ignore_errors: yes
+

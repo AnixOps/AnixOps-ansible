@@ -57,7 +57,6 @@ on:
           - uk-1
           - us-w-1
           - sg-1
-          - jp-2
           - hk-1
           - uk-2
           - pl-1
@@ -140,7 +139,6 @@ jobs:
           UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
           US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
           SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
           HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
           UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
           FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
@@ -162,7 +160,6 @@ jobs:
           UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
           US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
           SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
           HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
           UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
           FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}

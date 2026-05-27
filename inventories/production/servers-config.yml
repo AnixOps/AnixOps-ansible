@@ -93,18 +93,6 @@ production_servers:
       - plg_stack
     server_environment: production
 
-  jp-2:
-    env_var: JP_2_V4_SSH
-    alias: "日本-2 | Japan-2"
-    description: "日本 Proxy 服务器 - PLG Stack - Churros | Japan Proxy Server - PLG Stack - Churros"
-    location: "Japan"
-    groups:
-      - proxy_servers
-    roles:
-      - proxy
-      - plg_stack
-    server_environment: production
-
   hk-1:
     env_var: HK_1_V4_SSH
     alias: "香港-1 | Hong Kong-1"

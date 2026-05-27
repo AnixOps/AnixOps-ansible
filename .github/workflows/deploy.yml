@@ -15,7 +15,7 @@ on:
           - maintenance/firewall-setup.yml
           - maintenance/lifecycle.yml
           - maintenance/emergency-cleanup.yml
-        default: 'provision/quick-setup.yml'
+        default: 'provision/site.yml'
 
       target_group:
         description: 'Target servers'
@@ -36,7 +36,7 @@ on:
         description: 'Test only (no changes)'
         required: false
         type: boolean
-        default: true
+        default: false
 
   push:
     tags:
