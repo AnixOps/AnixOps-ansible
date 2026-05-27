@@ -43,6 +43,72 @@
   ignore_errors: yes
   when: nginx_stop_conflicting_services | default(true) | bool
 
+- name: Inspect processes listening on ports 80 and 443
+  ansible.builtin.shell: |
+    ss -H -ltnp '( sport = :80 or sport = :443 )' | awk '{
+      if (match($0, /pid=([0-9]+)/, m)) {
+        print m[1]
+      }
+    }' | sort -u
+  args:
+    executable: /bin/bash
+  register: nginx_port_pids
+  changed_when: false
+  failed_when: false
+  when: nginx_stop_conflicting_services | default(true) | bool
+
+- name: Stop listeners bound to ports 80 and 443
+  ansible.builtin.shell: |
+    set -euo pipefail
+
+    for pid in {{ nginx_port_pids.stdout_lines | default([]) | join(' ') }}; do
+      if [ -r "/proc/$pid/cmdline" ]; then
+        cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+        case "$cmdline" in
+          *nginx*)
+            continue
+            ;;
+          *)
+            kill "$pid" || true
+            ;;
+        esac
+      fi
+    done
+  args:
+    executable: /bin/bash
+  register: nginx_port_stop_result
+  changed_when: nginx_port_stop_result.rc == 0 and (nginx_port_pids.stdout_lines | default([]) | length > 0)
+  failed_when: false
+  when:
+    - nginx_stop_conflicting_services | default(true) | bool
+    - nginx_port_pids.stdout_lines | default([]) | length > 0
+
+- name: Wait briefly for web ports to clear
+  ansible.builtin.wait_for:
+    port: "{{ item }}"
+    state: stopped
+    timeout: 10
+  loop:
+    - 80
+    - 443
+  when: nginx_stop_conflicting_services | default(true) | bool
+
+- name: Validate Nginx configuration before starting service
+  ansible.builtin.command: nginx -t
+  register: nginx_config_test
+  changed_when: false
+  failed_when: nginx_config_test.rc != 0
+
+- name: Show Nginx configuration test output
+  ansible.builtin.debug:
+    msg: |
+      nginx -t stdout:
+      {{ nginx_config_test.stdout | default('') }}
+
+      nginx -t stderr:
+      {{ nginx_config_test.stderr | default('') }}
+  when: nginx_config_test.rc != 0
+
 - name: Create Nginx configuration directories
   file:
     path: "{{ item }}"
@@ -178,10 +244,37 @@
     group: www-data
 
 - name: Ensure Nginx is enabled and running
-  service:
-    name: nginx
-    state: started
-    enabled: yes
+  block:
+    - name: Start Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+  rescue:
+    - name: Capture Nginx service status
+      ansible.builtin.shell: systemctl status nginx --no-pager -l || true
+      args:
+        executable: /bin/bash
+      register: nginx_service_status
+      changed_when: false
+      failed_when: false
+
+    - name: Capture Nginx journal output
+      ansible.builtin.shell: journalctl -xeu nginx --no-pager | tail -n 80 || true
+      args:
+        executable: /bin/bash
+      register: nginx_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Show Nginx startup diagnostics
+      ansible.builtin.debug:
+        msg: |
+          nginx service status:
+          {{ nginx_service_status.stdout | default('') }}
+
+          nginx journal tail:
+          {{ nginx_journal.stdout | default('') }}
 
 - name: Verify Nginx is responding
   uri:
