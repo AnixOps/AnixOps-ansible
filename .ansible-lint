@@ -14,11 +14,13 @@ exclude_paths:
   - observability/
   - tests/fixtures/
 
+# Order matters: the first matching pattern wins, so task-file patterns must
+# precede the playbook patterns that would otherwise swallow them.
 kinds:
-  - playbook: "playbooks/**/*.yml"
-  - playbook: "tests/integration/*.yml"
   - tasks: "playbooks/maintenance/security-patch/*.yml"
   - tasks: "roles/*/tasks/**/*.yml"
+  - playbook: "playbooks/**/*.yml"
+  - playbook: "tests/integration/*.yml"
   - vars: "inventories/**/group_vars/**/*.yml"
   - vars: "inventories/**/host_vars/**/*.yml"
 
