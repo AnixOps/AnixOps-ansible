@@ -1,8 +1,19 @@
 ---
-# Prometheus Server Handlers
+# Prometheus handlers. Order matters: on a first install the unit change
+# triggers "Reload systemd" + "Restart prometheus" and only afterwards the
+# config change triggers "Reload prometheus" (SIGHUP through ExecReload).
+# `state: reloaded` starts the unit when it is not running.
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
 
 - name: Restart prometheus
-  systemd:
-    name: prometheus
+  ansible.builtin.systemd_service:
+    name: "{{ prometheus_service_name }}"
     state: restarted
-    daemon_reload: yes
+
+- name: Reload prometheus
+  ansible.builtin.systemd_service:
+    name: "{{ prometheus_service_name }}"
+    state: reloaded

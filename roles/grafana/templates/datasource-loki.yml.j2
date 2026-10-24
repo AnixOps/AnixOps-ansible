@@ -1,10 +1,15 @@
+{{ ansible_managed | comment }}
+# Grafana datasource provisioning: Loki
+---
 apiVersion: 1
 
 datasources:
   - name: Loki
+    uid: loki
     type: loki
     access: proxy
-    url: http://localhost:3100
-    editable: true
+    url: {{ grafana_loki_url }}
+    isDefault: false
+    editable: false
     jsonData:
-      maxLines: 1000
+      maxLines: {{ grafana_loki_max_lines }}

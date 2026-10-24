@@ -1,21 +1,19 @@
 ---
 galaxy_info:
   author: AnixOps
-  description: Deploy speedtest CLI tool for node performance testing
+  description: Install the AnixOps speedtest CLI binary for node performance testing
   company: AnixOps
   license: MIT
-  min_ansible_version: "2.14"
+  min_ansible_version: "2.15"
   platforms:
-    - name: Ubuntu
-      versions:
-        - all
     - name: Debian
       versions:
-        - all
-    - name: EL
+        - bullseye
+        - bookworm
+    - name: Ubuntu
       versions:
-        - 8
-        - 9
+        - jammy
+        - noble
   galaxy_tags:
     - speedtest
     - benchmark

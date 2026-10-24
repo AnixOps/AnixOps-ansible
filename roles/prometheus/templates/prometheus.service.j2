@@ -1,23 +1,60 @@
+{{ ansible_managed | comment }}
 [Unit]
 Description=Prometheus Time Series Database
 Documentation=https://prometheus.io/docs/introduction/overview/
+Wants=network-online.target
 After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=prometheus
-Group=prometheus
-ExecStart=/usr/local/bin/prometheus \
-  --config.file=/etc/prometheus/prometheus.yml \
-  --storage.tsdb.path=/var/lib/prometheus/ \
-  --web.console.templates=/etc/prometheus/consoles \
-  --web.console.libraries=/etc/prometheus/console_libraries \
-  --web.listen-address=0.0.0.0:9090 \
-  --storage.tsdb.retention.time=15d
-
+User={{ prometheus_user }}
+Group={{ prometheus_group }}
+{% set prometheus_args = [
+  '--config.file=' ~ prometheus_config_file,
+  '--storage.tsdb.path=' ~ prometheus_data_dir,
+  '--storage.tsdb.retention.time=' ~ prometheus_retention_time,
+  '--web.listen-address=' ~ prometheus_listen_address,
+] %}
+{% if prometheus_retention_size | length > 0 %}
+{%   set _ = prometheus_args.append('--storage.tsdb.retention.size=' ~ prometheus_retention_size) %}
+{% endif %}
+{% if prometheus_external_url | length > 0 %}
+{%   set _ = prometheus_args.append('--web.external-url=' ~ prometheus_external_url) %}
+{% endif %}
+{% if prometheus_version is version('3.0.0', '<') %}
+{%   set _ = prometheus_args.append('--web.console.templates=' ~ prometheus_config_dir ~ '/consoles') %}
+{%   set _ = prometheus_args.append('--web.console.libraries=' ~ prometheus_config_dir ~ '/console_libraries') %}
+{% endif %}
+{% if prometheus_web_enable_lifecycle | bool %}
+{%   set _ = prometheus_args.append('--web.enable-lifecycle') %}
+{% endif %}
+{% for extra in prometheus_extra_args %}
+{%   set _ = prometheus_args.append(extra) %}
+{% endfor %}
+ExecStart={{ prometheus_install_dir }}/prometheus \
+  {{ prometheus_args | join(' \\\n  ') }}
 ExecReload=/bin/kill -HUP $MAINPID
+SyslogIdentifier=prometheus
 Restart=on-failure
 RestartSec=5s
+TimeoutStopSec=90s
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths={{ prometheus_data_dir }}
 
 [Install]
 WantedBy=multi-user.target

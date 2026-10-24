@@ -1,0 +1,187 @@
+---
+# =============================================================================
+# UFW configuration (Debian/Ubuntu) | UFW 配置
+# =============================================================================
+# Order matters: SSH allow -> public allows -> whitelist allows (inserted at the
+# top) -> deny rules (appended) -> default policies -> enable -> verify.
+# Rule deletions are guarded by "ufw show added" so that a second run is a no-op.
+
+- name: Install UFW | 安装 UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  register: firewall_ufw_install
+  retries: 3
+  delay: 10
+  until: firewall_ufw_install is succeeded
+
+- name: Configure IPv6 support in /etc/default/ufw | 配置 UFW IPv6 支持
+  ansible.builtin.lineinfile:
+    path: /etc/default/ufw
+    regexp: '^IPV6='
+    line: "IPV6={{ 'yes' if firewall_ipv6_enabled | bool else 'no' }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Reload ufw
+
+- name: Install the DOCKER-USER chain rules into /etc/ufw/after.rules | 写入 DOCKER-USER 链规则
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/after.rules
+    marker: "# {mark} UFW AND DOCKER"
+    block: "{{ lookup('ansible.builtin.template', 'ufw-docker-after.rules.j2') }}"
+    owner: root
+    group: root
+    mode: "0640"
+    backup: true
+  when: firewall_docker_user_chain | bool
+  notify: Reload ufw
+
+- name: Collect the rules currently added to UFW | 读取 UFW 当前已添加规则
+  ansible.builtin.command:
+    argv: [ufw, show, added]
+  register: firewall_ufw_added
+  changed_when: false
+  check_mode: false
+
+- name: Allow the SSH port before anything else (lockout protection) | 优先放行 SSH 端口（防锁死）
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    comment: "SSH (managed by Ansible)"
+  loop: "{{ firewall_ssh_ports }}"
+
+- name: Allow public ports from anywhere | 放行公开端口
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ firewall_effective_public_ports | difference(firewall_ssh_ports) }}"
+
+- name: Remove generic allow rules for restricted ports (they would bypass the whitelist) | 删除受限端口的通用放行规则
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    delete: true
+  loop: "{{ firewall_effective_restricted_ports }}"
+  when: >-
+    firewall_ufw_added.stdout_lines | default([])
+    | select('match', '^ufw allow ' ~ item ~ '/tcp( comment .*)?$') | list | length > 0
+
+- name: Allow restricted ports from whitelisted addresses (inserted above the deny rules) | 为白名单地址放行受限端口
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ item.0 }}"
+    port: "{{ item.1 }}"
+    proto: tcp
+    comment: "Monitoring access from {{ item.0 }} (managed by Ansible)"
+    insert: "{{ 0 if ':' in item.0 else 1 }}"
+    insert_relative_to: "{{ 'first-ipv6' if ':' in item.0 else 'zero' }}"
+  loop: "{{ firewall_whitelist_rules }}"
+  loop_control:
+    label: "{{ item.0 }} -> {{ item.1 }}/tcp"
+  when: firewall_whitelist_rules_enabled | bool
+
+- name: Re-read the UFW rules to check the whitelist/deny ordering | 重新读取规则以校验顺序
+  ansible.builtin.command:
+    argv: [ufw, show, added]
+  register: firewall_ufw_added_after
+  changed_when: false
+  check_mode: false
+  when: firewall_whitelist_rules_enabled | bool
+
+- name: Remove deny rules that precede a whitelist allow rule (ordering repair) | 修复排在白名单之前的拒绝规则
+  community.general.ufw:
+    rule: deny
+    port: "{{ item }}"
+    proto: tcp
+    delete: true
+  loop: "{{ firewall_effective_restricted_ports }}"
+  vars:
+    firewall_ufw_lines: "{{ firewall_ufw_added_after.stdout_lines | default([]) }}"
+    firewall_ufw_deny_line: >-
+      {{ firewall_ufw_lines | select('match', '^ufw deny ' ~ item ~ '/tcp( comment .*)?$') | first | default('') }}
+    firewall_ufw_lines_after_deny: >-
+      {{ firewall_ufw_lines[firewall_ufw_lines.index(firewall_ufw_deny_line) + 1:] if firewall_ufw_deny_line else [] }}
+  when:
+    - firewall_whitelist_rules_enabled | bool
+    - firewall_ufw_lines_after_deny | select('match', '^ufw allow from \S+ to any port ' ~ item ~ ' proto tcp') | list | length > 0
+
+- name: Deny restricted ports from everywhere else | 拒绝其他来源访问受限端口
+  community.general.ufw:
+    rule: deny
+    port: "{{ item }}"
+    proto: tcp
+    comment: "Restricted to the monitoring whitelist (managed by Ansible)"
+  loop: "{{ firewall_effective_restricted_ports }}"
+
+- name: Prune whitelist rules for addresses that left the whitelist | 清理已失效的白名单规则
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ item.split('|')[0] }}"
+    port: "{{ item.split('|')[1] }}"
+    proto: tcp
+    delete: true
+  loop: "{{ firewall_ufw_stale_whitelist_rules }}"
+  vars:
+    firewall_ufw_existing_whitelist_rules: >-
+      {{ firewall_ufw_added.stdout_lines | default([])
+         | select('match', firewall_ufw_whitelist_rule_regex)
+         | map('regex_replace', firewall_ufw_whitelist_rule_regex, '\1|\2') | list }}
+    firewall_ufw_stale_whitelist_rules: >-
+      {{ firewall_ufw_existing_whitelist_rules | difference(firewall_whitelist_rules | map('join', '|') | list) }}
+  when:
+    - firewall_prune_stale_whitelist_rules | bool
+    - firewall_whitelist_rules_enabled | bool
+
+- name: Set the default policy for incoming traffic | 设置入站默认策略
+  community.general.ufw:
+    direction: incoming
+    policy: "{{ firewall_default_incoming_policy }}"
+
+- name: Set the default policy for outgoing traffic | 设置出站默认策略
+  community.general.ufw:
+    direction: outgoing
+    policy: "{{ firewall_default_outgoing_policy }}"
+
+- name: Set the UFW logging level | 设置 UFW 日志级别
+  community.general.ufw:
+    logging: "{{ firewall_ufw_logging }}"
+
+- name: Enable UFW | 启用 UFW
+  community.general.ufw:
+    state: enabled
+
+- name: Flush handlers so that pending reloads happen before verification | 验证前先执行重载
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the UFW status | 读取 UFW 状态
+  ansible.builtin.command:
+    argv: [ufw, status, verbose]
+  register: firewall_ufw_status
+  changed_when: false
+  check_mode: false
+
+- name: Assert that UFW is active and the SSH port is allowed | 断言 UFW 已启用且 SSH 已放行
+  ansible.builtin.assert:
+    that:
+      - "'Status: active' in firewall_ufw_status.stdout"
+      - firewall_ufw_status.stdout_lines | select('match', '^' ~ item ~ '/tcp\s+ALLOW IN') | list | length > 0
+    fail_msg: >-
+      UFW verification failed on {{ inventory_hostname }}: expected "Status: active" and an "ALLOW IN" rule for
+      {{ item }}/tcp. ufw status verbose: {{ firewall_ufw_status.stdout }}
+    quiet: true
+  loop: "{{ firewall_ssh_ports }}"
+  when: not ansible_check_mode
+
+- name: Show the UFW summary | 显示 UFW 摘要
+  ansible.builtin.debug:
+    msg:
+      - "UFW active on {{ inventory_hostname }}: default incoming {{ firewall_default_incoming_policy }}, IPv6 {{ 'on' if firewall_ipv6_enabled | bool else 'off' }}, logging {{ firewall_ufw_logging }}"
+      - "SSH ports: {{ firewall_ssh_ports | join(', ') }} | public ports: {{ firewall_effective_public_ports | join(', ') }}"
+      - "Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }} | whitelist entries: {{ firewall_effective_whitelist | length }}"

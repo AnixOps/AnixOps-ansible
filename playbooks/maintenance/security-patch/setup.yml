@@ -1,26 +1,143 @@
+---
+# Setup stage | 准备阶段
+# Validate the OS, make sure Trivy (optionally a pinned release) is installed and
+# refresh its vulnerability database so that the scans themselves are fast and
+# predictable.
+
 - name: Validate supported operating systems
   ansible.builtin.fail:
     msg: "Unsupported OS family {{ ansible_os_family }} on {{ inventory_hostname }}"
   when: ansible_os_family not in ['Debian', 'RedHat']
+
+- name: Ensure Trivy cache directory exists
+  ansible.builtin.file:
+    path: "{{ security_patch_trivy_cache_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
 - name: Check whether Trivy is installed
   ansible.builtin.stat:
     path: "{{ security_patch_trivy_bin }}"
   register: security_patch_trivy_stat
 
+- name: Read the installed Trivy version
+  ansible.builtin.command:
+    argv:
+      - "{{ security_patch_trivy_bin }}"
+      - --version
+  register: security_patch_trivy_installed_version
+  changed_when: false
+  failed_when: false
+  when: security_patch_trivy_stat.stat.exists
+
+- name: Decide whether Trivy must be installed or replaced
+  ansible.builtin.set_fact:
+    security_patch_trivy_release_tag: "{{ security_patch_trivy_pin_tag }}"
+    security_patch_trivy_install_needed: >-
+      {{
+        (not security_patch_trivy_stat.stat.exists)
+        or (security_patch_trivy_installed_version.rc | default(1)) != 0
+        or (security_patch_trivy_pin_tag | length > 0
+            and security_patch_trivy_pin_tag != 'v' ~ security_patch_trivy_pin_detected)
+      }}
+  vars:
+    security_patch_trivy_pin_tag: >-
+      {{
+        ''
+        if security_patch_trivy_version | length == 0
+        else (security_patch_trivy_version
+              if security_patch_trivy_version.startswith('v')
+              else 'v' ~ security_patch_trivy_version)
+      }}
+    security_patch_trivy_pin_detected: >-
+      {{
+        (security_patch_trivy_installed_version.stdout | default('')
+         | regex_findall('Version:\s*v?([0-9][0-9.]*)'))
+        | default(['unknown'], true) | first
+      }}
+
+- name: Remove Trivy binary that does not match the pinned release
+  ansible.builtin.file:
+    path: "{{ security_patch_trivy_bin }}"
+    state: absent
+  when:
+    - security_patch_trivy_install_needed | bool
+    - security_patch_trivy_stat.stat.exists
+
 - name: Download Trivy install script
   ansible.builtin.get_url:
     url: "{{ security_patch_trivy_install_script }}"
-    dest: /tmp/trivy-install.sh
+    dest: "{{ security_patch_trivy_installer_path }}"
+    checksum: >-
+      {{ security_patch_trivy_installer_checksum
+         if security_patch_trivy_installer_checksum | length > 0 else omit }}
+    owner: root
+    group: root
     mode: "0755"
-  when: not security_patch_trivy_stat.stat.exists
+  register: security_patch_trivy_installer_download
+  retries: 3
+  delay: 5
+  until: security_patch_trivy_installer_download is succeeded
+  when: security_patch_trivy_install_needed | bool
 
-- name: Install Trivy when missing
+- name: Install Trivy
+  ansible.builtin.command:
+    # install.sh usage: install.sh [-b bindir] [-d] [tag]; the release tag is positional.
+    argv: >-
+      {{
+        [security_patch_trivy_installer_path, '-b', security_patch_trivy_bin | dirname]
+        + ([security_patch_trivy_release_tag] if security_patch_trivy_release_tag | length > 0 else [])
+      }}
+    creates: "{{ security_patch_trivy_bin }}"
+  register: security_patch_trivy_install_result
+  retries: 3
+  delay: 5
+  until: security_patch_trivy_install_result is succeeded
+  when: security_patch_trivy_install_needed | bool
+
+- name: Verify Trivy runs
   ansible.builtin.command:
     argv:
-      - /tmp/trivy-install.sh
-      - -b
-      - /usr/local/bin
-  register: security_patch_trivy_install_result
-  changed_when: security_patch_trivy_install_result.rc == 0
-  when: not security_patch_trivy_stat.stat.exists
+      - "{{ security_patch_trivy_bin }}"
+      - --version
+  register: security_patch_trivy_version_check
+  changed_when: false
+
+- name: Record the Trivy version
+  ansible.builtin.set_fact:
+    security_patch_trivy_version_detected: >-
+      {{
+        (security_patch_trivy_version_check.stdout | regex_findall('Version:\s*v?([0-9][0-9.]*)'))
+        | default(['unknown'], true) | first
+      }}
+
+- name: Refresh the Trivy vulnerability database
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [security_patch_trivy_bin, 'image', '--download-db-only', '--quiet', '--no-progress',
+         '--cache-dir', security_patch_trivy_cache_dir, '--timeout', security_patch_trivy_timeout]
+        + (['--db-repository', security_patch_trivy_db_repository]
+           if security_patch_trivy_db_repository | length > 0 else [])
+      }}
+  register: security_patch_trivy_db_update
+  retries: 3
+  delay: 10
+  until: security_patch_trivy_db_update is succeeded
+  # A DB refresh only renews the local cache; it is not a configuration change.
+  changed_when: false
+  when: security_patch_trivy_update_db | bool
+
+- name: Install dnf-utils for reboot detection on RedHat-family hosts
+  ansible.builtin.dnf:
+    name: dnf-utils
+    state: present
+  register: security_patch_dnf_utils_install
+  retries: 3
+  delay: 10
+  until: security_patch_dnf_utils_install is succeeded
+  when:
+    - ansible_os_family == 'RedHat'
+    - security_patch_install_dnf_utils | bool

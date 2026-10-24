@@ -1,13 +1,18 @@
 ---
 # =============================================================================
-# V2board Docker Installation Tasks | V2board Docker 安装任务
+# V2board Docker installation | V2board Docker 安装
 # =============================================================================
+# Docker Engine comes from the official apt repository (signed deb822 source);
+# no "curl | sh" is used. The image is pulled with community.docker so a
+# second run reports no change unless the image id differs.
 
 - name: Create v2board directories | 创建 v2board 目录
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    mode: '0755'
+    owner: root
+    group: root
+    mode: "0755"
   loop:
     - "{{ v2board_config_dir }}"
     - "{{ v2board_data_dir }}"
@@ -15,67 +20,101 @@
     - "{{ v2board_data_dir }}/frontend"
     - "{{ v2board_data_dir }}/logs"
 
-- name: Check if Docker is installed | 检查 Docker 是否已安装
-  ansible.builtin.command: docker --version
-  register: docker_check
+- name: Check whether Docker is installed | 检查 Docker 是否已安装
+  ansible.builtin.command:
+    argv:
+      - docker
+      - --version
+  register: v2board_docker_check
   changed_when: false
   failed_when: false
 
-- name: Install Docker (Debian/Ubuntu) | 安装 Docker
-  when: docker_check.rc is defined and docker_check.rc != 0
+- name: Install Docker Engine from the official apt repository | 从官方 apt 源安装 Docker
+  when:
+    - v2board_docker_install | bool
+    - v2board_docker_check.rc != 0
   block:
-    - name: Install prerequisites | 安装前置依赖
+    - name: Install apt prerequisites | 安装前置依赖
       ansible.builtin.apt:
         name:
           - ca-certificates
-          - curl
+          - gnupg
+          - python3-debian
         state: present
-        update_cache: yes
+        update_cache: true
+        cache_valid_time: 3600
+      register: v2board_apt_prereq
+      retries: 5
+      delay: 10
+      until: v2board_apt_prereq is succeeded
 
-    - name: Add Docker GPG key | 添加 Docker GPG 密钥
-      ansible.builtin.apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
+    - name: Create apt keyrings directory | 创建 keyrings 目录
+      ansible.builtin.file:
+        path: "{{ v2board_docker_apt_key_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
 
-    - name: Add Docker repository | 添加 Docker 软件源
-      ansible.builtin.apt_repository:
-        repo: "deb [arch={{ ansible_architecture }}] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
-        state: present
+    - name: Download the Docker apt signing key | 下载 Docker apt 签名密钥
+      ansible.builtin.get_url:
+        url: "{{ v2board_docker_apt_key_url }}"
+        dest: "{{ v2board_docker_apt_key_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        timeout: 30
+      register: v2board_docker_key
+      retries: 5
+      delay: 10
+      until: v2board_docker_key is succeeded
 
-    - name: Install Docker Engine | 安装 Docker 引擎
-      ansible.builtin.apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-        state: present
-        update_cache: yes
-
-    - name: Start and enable Docker | 启动并启用 Docker
-      ansible.builtin.systemd:
+    - name: Configure the Docker apt repository (deb822) | 配置 Docker apt 源
+      ansible.builtin.deb822_repository:
         name: docker
-        state: started
-        enabled: yes
+        types: [deb]
+        uris: "{{ v2board_docker_apt_repo_url }}"
+        suites: "{{ ansible_distribution_release }}"
+        components: [stable]
+        architectures: "{{ v2board_arch }}"
+        signed_by: "{{ v2board_docker_apt_key_path }}"
+        state: present
+        enabled: true
 
-- name: Check if Docker is installed (RHEL/CentOS) | 安装 Docker (RHEL/CentOS)
-  when:
-    - docker_check.rc is defined and docker_check.rc != 0
-    - ansible_os_family != "Debian"
-  block:
-    - name: Install Docker via convenience script | 通过脚本安装 Docker
-      ansible.builtin.shell:
-        cmd: curl -fsSL https://get.docker.com | sh
-        warn: false
+    - name: Install Docker Engine packages | 安装 Docker 引擎
+      ansible.builtin.apt:
+        name: "{{ v2board_docker_packages }}"
+        state: present
+        update_cache: true
+      register: v2board_docker_apt
+      retries: 5
+      delay: 10
+      until: v2board_docker_apt is succeeded
 
-- name: Pull v2board Docker image | 拉取 v2board 镜像
-  ansible.builtin.command:
-    cmd: docker pull {{ v2board_docker_image }}:{{ v2board_docker_tag }}
-  register: docker_pull_result
-  changed_when: docker_pull_result.rc == 0
+- name: Install Python libraries used by community.docker | 安装 community.docker 依赖
+  ansible.builtin.apt:
+    name: "{{ v2board_docker_python_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  register: v2board_docker_python
+  retries: 5
+  delay: 10
+  until: v2board_docker_python is succeeded
 
-- name: Verify Docker image | 验证 Docker 镜像
-  ansible.builtin.command:
-    cmd: docker image inspect {{ v2board_docker_image }}:{{ v2board_docker_tag }}
-  register: docker_inspect
-  changed_when: false
-  failed_when: docker_inspect.rc != 0
+- name: Ensure the Docker daemon is enabled and running | 确保 Docker 已启用并运行
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Pull the v2board image | 拉取 v2board 镜像
+  community.docker.docker_image:
+    name: "{{ v2board_docker_image }}"
+    tag: "{{ v2board_docker_tag }}"
+    source: pull
+    force_source: "{{ v2board_docker_tag == 'latest' and v2board_docker_pull | bool }}"
+  register: v2board_image_pull
+  retries: 3
+  delay: 10
+  until: v2board_image_pull is succeeded

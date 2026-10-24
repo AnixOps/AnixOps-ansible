@@ -1,7 +1,12 @@
 ---
 galaxy_info:
+  role_name: common
+  namespace: anixops
   author: AnixOps
-  description: Common system configuration (hostname, packages, timezone, SSH hardening, fail2ban)
+  description: >-
+    Base server configuration and hardening: hostname, packages, timezone,
+    locale, chrony NTP, admin users, sshd hardening with verified roll-out,
+    sysctl, PAM limits, fail2ban and disabling unneeded services.
   license: MIT
   min_ansible_version: "2.15"
   platforms:
@@ -13,5 +18,13 @@ galaxy_info:
       versions:
         - jammy
         - noble
-  galaxy_tags: []
+  galaxy_tags:
+    - system
+    - security
+    - hardening
+    - ssh
+    - ntp
+    - fail2ban
+    - baseline
+
 dependencies: []

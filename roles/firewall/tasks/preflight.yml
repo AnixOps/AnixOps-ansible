@@ -1,0 +1,136 @@
+---
+# =============================================================================
+# Preflight | 预检查: validate the platform and compute the effective plan.
+# =============================================================================
+# Read-only. The facts set here drive ufw.yml / firewalld.yml and are also
+# used by playbooks/maintenance/firewall-setup.yml to print the plan:
+#   firewall_ssh_ports                 SSH ports that must stay reachable
+#   firewall_effective_public_ports    public + proxy_additional + SSH ports
+#   firewall_effective_restricted_ports
+#   firewall_effective_whitelist       trimmed, split, validated addresses
+#   firewall_whitelist_rules           [address, port] pairs to allow
+#   firewall_whitelist_rules_enabled   false when the whitelist is empty
+
+- name: Assert that facts are available and the OS family is supported | 检查操作系统
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family is defined
+      - ansible_os_family in ['Debian', 'RedHat']
+    fail_msg: >-
+      The firewall role supports Debian/Ubuntu (UFW) and RedHat-family (firewalld) hosts
+      and needs gathered facts. Detected ansible_os_family={{ ansible_os_family | default('undefined') }}.
+    quiet: true
+
+- name: Compute the SSH ports that must always stay reachable | 计算必须放行的 SSH 端口
+  ansible.builtin.set_fact:
+    firewall_ssh_ports: >-
+      {{ [firewall_ssh_port, ssh_port | default(firewall_ssh_port)]
+         | map('string') | map('trim') | reject('equalto', '') | unique | list }}
+
+- name: Compute the effective port lists | 计算生效端口列表
+  ansible.builtin.set_fact:
+    firewall_effective_public_ports: >-
+      {{ (firewall_ssh_ports
+          + (firewall_public_ports | default([]))
+          + (firewall_proxy_additional_ports | default([])))
+         | map('string') | map('trim') | reject('equalto', '') | unique | list }}
+    firewall_effective_restricted_ports: >-
+      {{ (firewall_restricted_ports | default([]))
+         | map('string') | map('trim') | reject('equalto', '') | unique | list }}
+
+- name: Normalise the monitoring whitelist | 规范化监控白名单
+  ansible.builtin.set_fact:
+    firewall_effective_whitelist: >-
+      {{ ((firewall_whitelist | default([])) | select('defined') | map('string') | join(',')).split(',')
+         | map('trim') | reject('equalto', '') | reject('equalto', 'None') | unique | list }}
+
+- name: Validate port numbers | 校验端口号
+  ansible.builtin.assert:
+    that:
+      - firewall_invalid_ports | length == 0
+      - (firewall_all_ports | join(' ') | replace(':', ' ')).split() | map('int') | max <= 65535
+    fail_msg: >-
+      Invalid port specification in firewall_public_ports / proxy_additional_ports / firewall_restricted_ports:
+      {{ firewall_invalid_ports | join(', ') | default('port number above 65535', true) }}.
+      Use single ports (e.g. "443") or ranges (e.g. "6000:6010") between 1 and 65535.
+    quiet: true
+  vars:
+    firewall_all_ports: "{{ firewall_effective_public_ports + firewall_effective_restricted_ports }}"
+    firewall_invalid_ports: "{{ firewall_all_ports | reject('match', firewall_port_regex) | list }}"
+
+- name: Refuse port lists that would lock out SSH or contradict each other | 拒绝会锁死 SSH 或自相矛盾的端口配置
+  ansible.builtin.assert:
+    that:
+      - firewall_effective_public_ports | intersect(firewall_effective_restricted_ports) | length == 0
+    fail_msg: >-
+      Ports {{ firewall_effective_public_ports | intersect(firewall_effective_restricted_ports) | join(', ') }}
+      are listed as public (or are the SSH port {{ firewall_ssh_ports | join('/') }}) AND as restricted.
+      A restricted SSH port would lock you out; remove the overlap from firewall_restricted_ports
+      or firewall_public_ports / proxy_additional_ports.
+    quiet: true
+
+- name: Validate whitelist entries | 校验白名单条目
+  ansible.builtin.assert:
+    that:
+      - firewall_whitelist_invalid_entries | length == 0
+    fail_msg: >-
+      monitoring_whitelist contains entries that are not an IPv4/IPv6 address or CIDR:
+      {{ firewall_whitelist_invalid_entries | join(', ') }}.
+      Check the *_V4_SSH / GLOBAL_WHITELIST_IPS environment variables and
+      inventories/production/group_vars/all/main.yml.
+    quiet: true
+  vars:
+    firewall_whitelist_invalid_entries: >-
+      {{ firewall_effective_whitelist
+         | reject('match', firewall_ipv4_cidr_regex)
+         | reject('match', firewall_ipv6_cidr_regex) | list }}
+
+- name: Refuse IPv6 whitelist entries while UFW IPv6 support is disabled | 禁用 IPv6 时拒绝 IPv6 白名单
+  ansible.builtin.assert:
+    that:
+      - firewall_ipv6_enabled | bool or firewall_effective_whitelist | select('search', ':') | list | length == 0
+    fail_msg: >-
+      firewall_ipv6_enabled is false but the whitelist contains IPv6 entries:
+      {{ firewall_effective_whitelist | select('search', ':') | join(', ') }}.
+      Set firewall_ipv6_enabled: true or remove them.
+    quiet: true
+  when: ansible_os_family == 'Debian'
+
+- name: Build the whitelist rule set | 生成白名单规则集
+  ansible.builtin.set_fact:
+    firewall_whitelist_rules_enabled: >-
+      {{ firewall_effective_whitelist | length > 0 and firewall_effective_restricted_ports | length > 0 }}
+    firewall_whitelist_rules: "{{ firewall_effective_whitelist | product(firewall_effective_restricted_ports) | list }}"
+
+- name: Fail on an empty whitelist when firewall_fail_on_empty_whitelist is set | 白名单为空时按配置终止
+  ansible.builtin.assert:
+    that:
+      - firewall_effective_whitelist | length > 0
+    fail_msg: >-
+      firewall_restricted_ports ({{ firewall_effective_restricted_ports | join(', ') }}) are configured but the
+      monitoring whitelist is empty and firewall_fail_on_empty_whitelist is true. Populate monitoring_whitelist
+      (GLOBAL_WHITELIST_IPS / *_V4_SSH) or set firewall_fail_on_empty_whitelist: false.
+    quiet: true
+  when:
+    - firewall_fail_on_empty_whitelist | bool
+    - firewall_effective_restricted_ports | length > 0
+
+- name: Warn about an empty whitelist | 白名单为空时告警
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: monitoring whitelist is empty. Restricted ports
+      ({{ firewall_effective_restricted_ports | join(', ') }}) will be denied for everyone; no whitelist
+      allow rules are added and existing whitelist rules are left untouched. Set firewall_fail_on_empty_whitelist:
+      true to fail instead.
+  when:
+    - firewall_effective_restricted_ports | length > 0
+    - firewall_effective_whitelist | length == 0
+
+- name: Show the effective firewall plan | 显示防火墙生效计划
+  ansible.builtin.debug:
+    msg:
+      - "Backend: {{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }}, default incoming: {{ firewall_default_incoming_policy }}"
+      - "SSH ports (always allowed): {{ firewall_ssh_ports | join(', ') }}"
+      - "Public ports: {{ firewall_effective_public_ports | join(', ') }}"
+      - "Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }}"
+      - "Whitelist entries: {{ firewall_effective_whitelist | length }} ({{ firewall_effective_whitelist | join(', ') | default('none', true) }})"

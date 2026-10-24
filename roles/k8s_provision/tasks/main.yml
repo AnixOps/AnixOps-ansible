@@ -1,45 +1,47 @@
 ---
 # =============================================================================
-# K8s Provision Role - Main Tasks
+# k8s_provision - main entry point | 主入口
 # =============================================================================
+# prerequisites -> provider-specific provisioning (kind | k3s) -> verification
 
-- name: Display environment information
+- name: Validate provider and host architecture
+  ansible.builtin.assert:
+    that:
+      - k8s_provision_provider in ['kind', 'k3s']
+      - ansible_architecture in k8s_provision_arch_map
+    fail_msg: >-
+      k8s_provision_provider must be 'kind' or 'k3s' (got '{{ k8s_provision_provider }}') and the host
+      architecture must be one of {{ k8s_provision_arch_map.keys() | list | join(', ') }}
+      (got '{{ ansible_architecture }}').
+    quiet: true
+
+- name: Show provisioning context
   ansible.builtin.debug:
     msg:
-      - "🔧 K8s Provisioning Started"
-      - "Environment: {{ environment | default('unknown') }}"
-      - "K8s Provider: {{ k8s_provider }}"
-      - "Host: {{ inventory_hostname }}"
+      - "Host: {{ inventory_hostname }} (environment: {{ server_environment | default('unknown') }})"
+      - "Provider: {{ k8s_provision_provider }}, role: {{ k8s_provision_role }}, arch: {{ k8s_provision_arch }}"
+      - >-
+        Pins: k3s {{ k8s_provision_k3s_version }}, kind {{ k8s_provision_kind_version }},
+        kubectl {{ k8s_provision_kubectl_version }}
 
 - name: Include prerequisite checks
   ansible.builtin.include_tasks: prerequisites.yml
   tags:
     - prerequisites
-    - validation
 
-- name: Include kind provisioning tasks (for local environment)
+- name: Include kind provisioning tasks
   ansible.builtin.include_tasks: provision_kind.yml
-  when: k8s_provider == 'kind'
+  when: k8s_provision_provider == 'kind'
   tags:
     - kind
-    - local
 
-- name: Include k3s provisioning tasks (for production environment)
+- name: Include k3s provisioning tasks
   ansible.builtin.include_tasks: provision_k3s.yml
-  when: k8s_provider == 'k3s'
+  when: k8s_provision_provider == 'k3s'
   tags:
     - k3s
-    - production
 
-- name: Verify K8s cluster is ready
+- name: Include cluster verification tasks
   ansible.builtin.include_tasks: verify.yml
   tags:
     - verification
-    - always
-
-- name: Display completion message
-  ansible.builtin.debug:
-    msg:
-      - "✅ K8s Provisioning Completed"
-      - "Cluster is ready for deployments"
-      - "Use kubectl to interact with the cluster"

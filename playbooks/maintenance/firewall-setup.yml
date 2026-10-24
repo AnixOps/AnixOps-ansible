@@ -1,123 +1,103 @@
 # =============================================================================
-# 防火墙设置 Playbook | Firewall Setup Playbook
+# Firewall setup | 防火墙设置
 # =============================================================================
-# 统一配置所有服务器的防火墙规则和监控白名单
-# Unified configuration of firewall rules and monitoring whitelist for all servers
+# Applies the lockout-proof host firewall (roles/firewall) to every server:
+#   - the SSH port (ansible_port / ssh_port) is always allowed first
+#   - public ports (firewall_public_ports + proxy_additional_ports) are open
+#   - restricted ports (firewall_restricted_ports) are reachable only from
+#     monitoring_whitelist and denied for everyone else
 #
-# Scope: all servers (serial: 30%, max_fail: 25%)
-# Rollback: Manual — SSH to server and run `ufw reset` or restore rules
-# Risk Level: MEDIUM (firewall changes can block access)
-# Pre-flight: Yes (fact gathering + whitelist validation)
-# Post-check: Yes (UFW/firewalld status verification)
+# Scope: all servers, serial 30%, max_fail_percentage 25
+# Risk: MEDIUM (firewall changes); mitigated by the SSH-first rule ordering and
+#       the post-enable verification inside the role
+# Rollback: `ufw disable` (Debian) / `systemctl stop firewalld` (RedHat), or
+#       restore the /etc/ufw backups created by the role (see roles/firewall/README.md)
 #
-# 功能 | Features:
-# - 配置公开端口（22, 80, 443）无白名单访问
-#   Configure public ports (22, 80, 443) without whitelist access
-# - 配置监控端口（9100, 9080, 9090, 3100, 3000）白名单访问
-#   Configure monitoring ports (9100, 9080, 9090, 3100, 3000) with whitelist access
-# - 统一管理所有服务器的 IP 白名单
-#   Unified management of IP whitelist for all servers
+# Usage | 使用方法:
+#   ansible-playbook playbooks/maintenance/firewall-setup.yml
+#   ansible-playbook playbooks/maintenance/firewall-setup.yml --limit web_servers
+#   ansible-playbook playbooks/maintenance/firewall-setup.yml --check --diff
 #
-# 使用方法 | Usage:
-#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/firewall-setup.yml
-#
-# 限制特定主机 | Limit to specific hosts:
-#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/firewall-setup.yml --limit web_servers
+# Knobs | 可调参数:
+#   firewall_require_whitelist=true   fail before touching a host when restricted
+#                                     ports are configured and the whitelist is empty
+#   firewall_default_incoming_policy  allow (default) | deny | reject
 # =============================================================================
 
 - name: Configure firewall rules and monitoring whitelist | 配置防火墙规则和监控白名单
   hosts: all
+  become: true
+  gather_facts: true
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  gather_facts: yes
+  any_errors_fatal: false
+  tags: [firewall]
 
   pre_tasks:
-    - name: Display firewall configuration | 显示防火墙配置
-      debug:
-        msg: |
-          ═══════════════════════════════════════════════════════════
-          防火墙配置 | Firewall Configuration
-          ═══════════════════════════════════════════════════════════
-          目标主机 | Target Host: {{ inventory_hostname }}
-          操作系统 | OS Family: {{ ansible_os_family }}
+    - name: Compute the effective firewall plan | 计算防火墙生效计划
+      ansible.builtin.include_role:
+        name: firewall
+        tasks_from: preflight
+      when: firewall_enabled | default(true) | bool
 
-          公开端口（无白名单）| Public Ports (No whitelist):
-            {{ firewall_public_ports | join(', ') }}
+    - name: Show the effective firewall plan | 显示防火墙生效计划
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }} ({{ ansible_os_family }}), default incoming policy: {{ firewall_default_incoming_policy | default('allow') }}"
+          - "SSH ports kept open: {{ firewall_ssh_ports | join(', ') }}"
+          - "Public ports: {{ firewall_effective_public_ports | join(', ') }}"
+          - "Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }}"
+          - "Whitelist entries: {{ firewall_effective_whitelist | length }}"
+      when: firewall_enabled | default(true) | bool
 
-          受限端口（仅白名单）| Restricted Ports (Whitelist only):
-            {{ firewall_restricted_ports | join(', ') }}
-
-          监控白名单 IP | Monitoring Whitelist IPs:
-            {{ monitoring_whitelist | join('\n  ') if monitoring_whitelist | length > 0 else 'None configured' }}
-          ═══════════════════════════════════════════════════════════
-
-    - name: Verify whitelist is not empty | 验证白名单不为空
-      fail:
-        msg: |
-          错误：监控白名单为空！
-          Error: Monitoring whitelist is empty!
-
-          请在以下位置配置 monitoring_allowed_ips：
-          Please configure monitoring_allowed_ips in:
-          inventories/production/group_vars/all/main.yml
-
-          或设置环境变量（或 | or set environment variables:
-          DE_1_V4_SSH, PL_1_V4_SSH, etc.)
-      when: monitoring_whitelist | length == 0
+    - name: Require a non-empty monitoring whitelist | 要求监控白名单非空
+      ansible.builtin.assert:
+        that:
+          - firewall_effective_whitelist | length > 0
+        fail_msg: >-
+          Monitoring whitelist is empty while restricted ports
+          ({{ firewall_effective_restricted_ports | join(', ') }}) are configured. Set GLOBAL_WHITELIST_IPS /
+          *_V4_SSH (see monitoring_allowed_ips in inventories/production/group_vars/all/main.yml) or run with
+          -e firewall_require_whitelist=false to apply the deny rules without any whitelist.
+        quiet: true
+      when:
+        - firewall_enabled | default(true) | bool
+        - firewall_require_whitelist | default(true) | bool
+        - firewall_effective_restricted_ports | length > 0
 
   roles:
-    - firewall
+    - role: firewall
 
   post_tasks:
-    - name: Verify firewall is active (UFW) | 验证防火墙状态 (UFW)
-      command: ufw status
-      register: ufw_status
+    - name: Read the UFW status | 读取 UFW 状态
+      ansible.builtin.command:
+        argv: [ufw, status, verbose]
+      register: firewall_setup_ufw_status
       changed_when: false
-      failed_when: false
-      when: ansible_os_family == "Debian"
-
-    - name: Display UFW status | 显示 UFW 状态
-      debug:
-        msg: "{{ ufw_status.stdout_lines }}"
+      check_mode: false
       when:
-        - ansible_os_family == "Debian"
-        - ufw_status.stdout_lines is defined
+        - firewall_enabled | default(true) | bool
+        - ansible_os_family == 'Debian'
 
-    - name: Verify firewall is active (firewalld) | 验证防火墙状态 (firewalld)
-      command: firewall-cmd --list-all
-      register: firewalld_status
+    - name: Read the firewalld zone configuration | 读取 firewalld 区域配置
+      ansible.builtin.command:
+        argv: [firewall-cmd, --list-all]
+      register: firewall_setup_firewalld_status
       changed_when: false
-      failed_when: false
-      when: ansible_os_family == "RedHat"
-
-    - name: Display firewalld status | 显示 firewalld 状态
-      debug:
-        msg: "{{ firewalld_status.stdout_lines }}"
+      check_mode: false
       when:
-        - ansible_os_family == "RedHat"
-        - firewalld_status.stdout_lines is defined
+        - firewall_enabled | default(true) | bool
+        - ansible_os_family == 'RedHat'
+
+    - name: Show the active firewall configuration | 显示当前防火墙配置
+      ansible.builtin.debug:
+        msg: "{{ (firewall_setup_ufw_status if ansible_os_family == 'Debian' else firewall_setup_firewalld_status).stdout_lines | default([]) }}"
+      when: firewall_enabled | default(true) | bool
 
     - name: Firewall setup summary | 防火墙设置摘要
-      debug:
-        msg: |
-          ═══════════════════════════════════════════════════════════
-          ✓ 防火墙设置成功完成 | Firewall Setup Completed Successfully
-          ═══════════════════════════════════════════════════════════
-          主机 | Host: {{ inventory_hostname }}
-
-          已应用配置 | Configuration Applied:
-          ✓ 公开服务（SSH, HTTP, HTTPS）可从任何地方访问
-            Public services (SSH, HTTP, HTTPS) are accessible from anywhere
-          ✓ 监控服务限制为 {{ monitoring_whitelist | length }} 个白名单 IP
-            Monitoring services restricted to {{ monitoring_whitelist | length }} whitelisted IPs
-          ✓ 受限端口应用默认拒绝策略
-            Default deny policy applied for restricted ports
-
-          下一步 | Next Steps:
-          1. 测试公开服务访问 | Test public service access:
-             curl http://{{ ansible_host }}
-          2. 从白名单服务器测试监控 | Test monitoring from whitelisted server:
-             curl http://{{ ansible_host }}:9100/metrics
-          3. 验证非白名单 IP 被阻止 | Verify blocked access from non-whitelisted IPs
-          ═══════════════════════════════════════════════════════════
+      ansible.builtin.debug:
+        msg:
+          - "{{ inventory_hostname }}: firewall {{ 'configured' if firewall_enabled | default(true) | bool else 'skipped (firewall_enabled=false)' }}"
+          - "Public: {{ firewall_effective_public_ports | default([]) | join(', ') | default('n/a', true) }}"
+          - "Restricted: {{ firewall_effective_restricted_ports | default([]) | join(', ') | default('none', true) }} -> {{ firewall_effective_whitelist | default([]) | length }} whitelisted address(es)"
+          - "Verify from a whitelisted host: curl -s http://{{ ansible_host | default(inventory_hostname) }}:9100/metrics | head -1"

@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# Loki - service | 服务
+# =============================================================================
+
+- name: Apply pending loki handlers | 立即执行待处理的 handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start loki | 启用并启动 loki
+  ansible.builtin.systemd_service:
+    name: "{{ loki_service_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true

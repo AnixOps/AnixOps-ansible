@@ -1,25 +1,101 @@
 ---
 # =============================================================================
-# V2board Verification Tasks | V2board 验证任务
+# V2board verification | V2board 验证
 # =============================================================================
-- name: Check v2board API health | 检查 v2board API 健康状态
-  ansible.builtin.uri:
-    url: "http://localhost:{{ v2board_api_port }}{{ v2board_health_url }}"
-    method: GET
-    status_code: 200
-    timeout: 10
-  register: v2board_health_check
-  retries: 3
-  delay: 5
-  until: "v2board_health_check.status == 200"
-  ignore_errors: yes
+# Wait for the API with retries. On failure: collect logs, restore the previous
+# config.yaml (backup produced by the template task), restart and fail loudly.
 
-- name: Display health check result | 显示健康检查结果
+- name: Verify v2board health | 校验 v2board 健康状态
+  block:
+    - name: Wait for the v2board API to answer | 等待 v2board API 响应
+      ansible.builtin.uri:
+        url: "{{ v2board_health_url }}"
+        method: GET
+        status_code: "{{ v2board_health_status_codes }}"
+        timeout: "{{ v2board_health_timeout }}"
+      register: v2board_health_check
+      retries: "{{ v2board_health_retries }}"
+      delay: "{{ v2board_health_delay }}"
+      until: v2board_health_check.status in v2board_health_status_codes
+  rescue:
+    - name: Collect container logs | 收集容器日志
+      ansible.builtin.command:
+        argv:
+          - docker
+          - logs
+          - --tail
+          - "{{ v2board_docker_log_tail }}"
+          - "{{ v2board_docker_container_name }}"
+      register: v2board_container_logs
+      changed_when: false
+      failed_when: false
+      when: v2board_deploy_method == 'docker'
+
+    - name: Collect service journal | 收集服务日志
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ v2board_service_name }}"
+          - -n
+          - "100"
+          - --no-pager
+          - --no-hostname
+      register: v2board_journal
+      changed_when: false
+      failed_when: false
+      when: v2board_deploy_method == 'binary'
+
+    - name: Restore the previous config.yaml | 恢复上一版配置
+      ansible.builtin.copy:
+        src: "{{ v2board_config_result.backup_file }}"
+        dest: "{{ v2board_config_dir }}/config.yaml"
+        remote_src: true
+        owner: root
+        group: "{{ (v2board_deploy_method == 'binary') | ternary(v2board_service_group, 'root') }}"
+        mode: "0640"
+      register: v2board_config_restored
+      no_log: true
+      when:
+        - v2board_config_result is changed
+        - v2board_config_result.backup_file is defined
+
+    - name: Restart the container with the restored configuration | 使用恢复的配置重启容器
+      community.docker.docker_container:
+        name: "{{ v2board_docker_container_name }}"
+        state: started
+        restart: true
+      register: v2board_restore_restart_container
+      failed_when: false
+      when:
+        - v2board_deploy_method == 'docker'
+        - v2board_config_restored is changed
+
+    - name: Restart the service with the restored configuration | 使用恢复的配置重启服务
+      ansible.builtin.systemd:
+        name: "{{ v2board_service_name }}"
+        state: restarted
+      register: v2board_restore_restart_service
+      failed_when: false
+      when:
+        - v2board_deploy_method == 'binary'
+        - v2board_config_restored is changed
+
+    - name: Fail with diagnostics | 输出诊断信息并失败
+      ansible.builtin.fail:
+        msg: |
+          v2board did not become healthy at {{ v2board_health_url }} on {{ inventory_hostname }}
+          (last status: {{ v2board_health_check.status | default('no response') }}).
+          Previous config.yaml restored: {{ v2board_config_restored is changed }}.
+          Last log lines:
+          {{ (v2board_container_logs.stderr | default('') ~ v2board_container_logs.stdout | default('')) if v2board_deploy_method == 'docker' else v2board_journal.stdout | default('') }}
+
+- name: Show deployment summary | 显示部署摘要
   ansible.builtin.debug:
-    msg: |
-      API Health Check: {{ v2board_health_check.status | default('N/A') }}
-      {% if v2board_health_check.status == 200 %}
-      ✓ v2board API is responding
-      {% else %}
-      ⚠ v2board API may not be ready yet
-      {% endif %}
+    msg: >-
+      v2board ({{ v2board_deploy_method }}) healthy on {{ inventory_hostname }}:
+      {{ v2board_health_url }} -> HTTP {{ v2board_health_check.status }};
+      ports api={{ v2board_api_port }} frontend={{ v2board_frontend_port }}
+      grpc={{ v2board_grpc_port }} nodex={{ v2board_nodex_port }}; db={{ v2board_db_type }};
+      {{ 'image=' ~ v2board_docker_image ~ ':' ~ v2board_docker_tag if v2board_deploy_method == 'docker'
+         else 'binary=' ~ v2board_install_dir ~ '/' ~ v2board_bin_name }}

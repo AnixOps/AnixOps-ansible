@@ -1,26 +1,24 @@
+---
 # =============================================================================
-# Common Role Handlers - 通用角色处理器 | Common Role Handlers
-# =============================================================================
-# 定义服务重启和重载的处理器
-# Define handlers for service restart and reload operations
+# Common role handlers | common 角色处理器
 # =============================================================================
 
 - name: Restart sshd
-  service:
-    name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
+  ansible.builtin.service:
+    name: "{{ common_ssh_service_name | default(common_service_name) }}"
     state: restarted
 
 - name: Reload sshd
-  service:
-    name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
+  ansible.builtin.service:
+    name: "{{ common_ssh_service_name | default(common_service_name) }}"
     state: reloaded
 
 - name: Restart chrony
-  service:
-    name: "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'chrony' }}"
+  ansible.builtin.service:
+    name: "{{ common_chrony_service_name }}"
     state: restarted
 
 - name: Restart fail2ban
-  service:
+  ansible.builtin.service:
     name: fail2ban
     state: restarted

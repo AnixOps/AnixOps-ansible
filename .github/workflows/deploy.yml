@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       playbook:
-        description: 'Select playbook'
+        description: 'Playbook to run'
         required: true
         type: choice
         options:
@@ -18,7 +18,7 @@ on:
         default: 'provision/site.yml'
 
       target_group:
-        description: 'Target servers'
+        description: 'Target group (bounds the blast radius; limit_hosts must be members of it)'
         required: true
         type: choice
         options:
@@ -29,321 +29,329 @@ on:
           - dev_servers
           - v2bx_servers
           - v2board_servers
+          - postgres_servers
         default: 'all'
 
+      limit_hosts:
+        description: 'Optional comma-separated host names inside target_group (e.g. jp-1,uk-1)'
+        required: false
+        type: string
+        default: ''
+
+      tags:
+        description: 'Optional comma-separated play tags (e.g. nginx,firewall)'
+        required: false
+        type: string
+        default: ''
+
       dry_run:
-        description: 'Test only (no changes)'
+        description: 'Check mode with diff (no changes)'
         required: false
         type: boolean
         default: false
+
+      verbosity:
+        description: 'Ansible verbosity'
+        required: false
+        type: choice
+        options:
+          - v
+          - vv
+          - vvv
+        default: 'v'
+
+      confirm:
+        description: 'Type "deploy" to confirm a real (non dry-run) deploy to target_group=all'
+        required: false
+        type: string
+        default: ''
 
   push:
     tags:
       - 'v*'
 
-  pull_request:
-    branches: [main]
+permissions:
+  contents: read
+
+# One deploy at a time per environment + target; a running deploy is never cancelled.
+concurrency:
+  group: deploy-NodeX-${{ github.event.inputs.target_group || 'all' }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   lint:
     name: Code Quality Check
-    uses: ./.github/workflows/reusable-lint.yml
-    if: github.event_name == 'pull_request'
-
-  detect-changes:
-    name: Detect Changed Roles
-    runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
-    outputs:
-      roles: ${{ steps.detect.outputs.roles }}
-      has_changes: ${{ steps.detect.outputs.has_changes }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Detect changed roles
-        id: detect
-        run: |
-          echo "Detecting roles to deploy for tag ${{ github.ref_name }}"
-          echo "roles=nginx,prometheus,grafana,loki,promtail,node_exporter,v2board,v2bx,speedtest" >> $GITHUB_OUTPUT
-          echo "has_changes=true" >> $GITHUB_OUTPUT
+    uses: ./.github/workflows/reusable-lint.yml
+    permissions:
+      contents: read
 
   deploy-manual:
-    name: Deploy (${{ github.event.inputs.target_group }})
-    runs-on: ubuntu-latest
+    name: Deploy ${{ inputs.playbook }} to ${{ inputs.target_group }}
     if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: NodeX
+    env:
+      PLAYBOOK: ${{ inputs.playbook }}
+      TARGET_GROUP: ${{ inputs.target_group }}
+      LIMIT_HOSTS: ${{ inputs.limit_hosts }}
+      PLAY_TAGS: ${{ inputs.tags }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      VERBOSITY: ${{ inputs.verbosity }}
+      CONFIRM: ${{ inputs.confirm }}
+
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if [[ "${DRY_RUN}" != "true" && "${TARGET_GROUP}" == "all" && "${CONFIRM}" != "deploy" ]]; then
+            echo "::error::A real deploy to target_group=all requires confirm=deploy (or enable dry_run)"
+            exit 1
+          fi
+          if [[ -n "${LIMIT_HOSTS}" && ! "${LIMIT_HOSTS}" =~ ^[A-Za-z0-9_.,-]+$ ]]; then
+            echo "::error::limit_hosts must be a comma-separated list of host names"
+            exit 1
+          fi
+          if [[ -n "${PLAY_TAGS}" && ! "${PLAY_TAGS}" =~ ^[A-Za-z0-9_,-]+$ ]]; then
+            echo "::error::tags must be a comma-separated list of tag names"
+            exit 1
+          fi
+          case "${VERBOSITY}" in
+            v|vv|vvv) ;;
+            *)
+              echo "::error::verbosity must be one of v, vv, vvv"
+              exit 1
+              ;;
+          esac
+          echo "Inputs OK: playbook=${PLAYBOOK} target_group=${TARGET_GROUP} limit_hosts=${LIMIT_HOSTS:-<none>} tags=${PLAY_TAGS:-<all>} dry_run=${DRY_RUN}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Export allow-listed secrets
+        uses: ./.github/actions/export-secrets
+        with:
+          secrets-json: ${{ toJSON(secrets) }}
+
+      - name: Set up Ansible toolchain
+        uses: ./.github/actions/setup-ansible
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Resolve target hosts
+        run: |
+          set -euo pipefail
+          mapfile -t members < <(ansible "${TARGET_GROUP}" --list-hosts | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d')
+          if (( ${#members[@]} == 0 )); then
+            echo "::error::Target group '${TARGET_GROUP}' has no hosts in the generated inventory"
+            exit 1
+          fi
+          member_of() {
+            local candidate
+            for candidate in "${members[@]}"; do
+              if [[ "${candidate}" == "$1" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+          limit="${TARGET_GROUP}"
+          if [[ -n "${LIMIT_HOSTS}" ]]; then
+            IFS=',' read -ra wanted <<< "${LIMIT_HOSTS}"
+            for host in "${wanted[@]}"; do
+              if ! member_of "${host}"; then
+                echo "::error::Host '${host}' is not a member of '${TARGET_GROUP}' (members: ${members[*]})"
+                exit 1
+              fi
+            done
+            limit="${LIMIT_HOSTS}"
+          fi
+          echo "LIMIT=${limit}" >> "${GITHUB_ENV}"
+          echo "Deploy limit: ${limit} (group members: ${members[*]})"
+
+      - name: Syntax-check the selected playbook
+        run: |
+          set -euo pipefail
+          ansible-playbook --syntax-check "playbooks/${PLAYBOOK}"
+
+      - name: Verify connectivity
+        run: |
+          set -euo pipefail
+          ansible "${LIMIT}" -m ansible.builtin.ping -o
+
+      - name: Run Ansible playbook
+        run: |
+          set -euo pipefail
+          args=("playbooks/${PLAYBOOK}" --limit "${LIMIT}" "-${VERBOSITY}")
+          if [[ -n "${PLAY_TAGS}" ]]; then
+            args+=(--tags "${PLAY_TAGS}")
+          fi
+          if [[ "${DRY_RUN}" == "true" ]]; then
+            args+=(--check --diff)
+            echo "Dry run: check mode with diff, no changes will be made"
+          fi
+          printf 'Executing: ansible-playbook'
+          printf ' %q' "${args[@]}"
+          printf '\n'
+          ansible-playbook "${args[@]}"
+
+      - name: Post-deploy health check
+        if: success() && !inputs.dry_run && inputs.playbook != 'maintenance/health-check.yml'
+        run: |
+          set -euo pipefail
+          ansible-playbook playbooks/maintenance/health-check.yml --limit "${LIMIT}" "-${VERBOSITY}"
+
+      - name: Remove SSH key material
+        if: always()
+        run: |
+          set -euo pipefail
+          key_dir="${RUNNER_TEMP}/ssh"
+          if [[ -d "${key_dir}" ]]; then
+            find "${key_dir}" -type f -exec shred -u {} +
+            rm -rf "${key_dir}"
+          fi
+
+      - name: Write deployment summary
+        if: always()
+        uses: ./.github/actions/job-summary
+        with:
+          title: Deployment summary
+          status: ${{ job.status }}
+          fields: |
+            Playbook: `${{ inputs.playbook }}`
+            Target group: `${{ inputs.target_group }}`
+            Limit: `${{ env.LIMIT || inputs.target_group }}`
+            Tags: `${{ inputs.tags || 'all' }}`
+            Dry run: ${{ inputs.dry_run }}
+            Verbosity: -${{ inputs.verbosity }}
+
+  deploy-tag:
+    name: Deploy ${{ matrix.tag }} (tag ${{ github.ref_name }})
+    needs: lint
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: NodeX
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        # One entry per site.yml play tag, in dependency order (common first, database before panel).
+        tag:
+          - common
+          - node_exporter
+          - promtail
+          - firewall
+          - nginx
+          - prometheus
+          - loki
+          - grafana
+          - postgresql
+          - v2board
+          - v2bx
+          - speedtest
+    env:
+      SITE_TAG: ${{ matrix.tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Export allow-listed secrets
+        uses: ./.github/actions/export-secrets
+        with:
+          secrets-json: ${{ toJSON(secrets) }}
+
+      - name: Set up Ansible toolchain
+        uses: ./.github/actions/setup-ansible
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Syntax-check site.yml
+        run: |
+          set -euo pipefail
+          ansible-playbook --syntax-check playbooks/provision/site.yml
+
+      - name: Deploy site.yml play
+        run: |
+          set -euo pipefail
+          args=(playbooks/provision/site.yml --tags "${SITE_TAG}" -v)
+          printf 'Executing: ansible-playbook'
+          printf ' %q' "${args[@]}"
+          printf '\n'
+          ansible-playbook "${args[@]}"
+
+      - name: Remove SSH key material
+        if: always()
+        run: |
+          set -euo pipefail
+          key_dir="${RUNNER_TEMP}/ssh"
+          if [[ -d "${key_dir}" ]]; then
+            find "${key_dir}" -type f -exec shred -u {} +
+            rm -rf "${key_dir}"
+          fi
+
+      - name: Write deployment summary
+        if: always()
+        uses: ./.github/actions/job-summary
+        with:
+          title: Tag deployment (${{ matrix.tag }})
+          status: ${{ job.status }}
+          fields: |
+            Playbook: `playbooks/provision/site.yml`
+            Tag: `${{ matrix.tag }}`
+            Release: `${{ github.ref_name }}`
+            Dry run: false
+
+  health-check-tag:
+    name: Post-deploy health check (tag ${{ github.ref_name }})
+    needs: deploy-tag
+    if: github.ref_type == 'tag' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: NodeX
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Export allow-listed secrets
+        uses: ./.github/actions/export-secrets
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          secrets-json: ${{ toJSON(secrets) }}
 
-      - name: Install Ansible and dependencies
+      - name: Set up Ansible toolchain
+        uses: ./.github/actions/setup-ansible
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Run health check
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          ansible-galaxy install -r requirements.yml
+          set -euo pipefail
+          ansible-playbook playbooks/maintenance/health-check.yml -v
 
-      - name: Setup SSH Key
+      - name: Remove SSH key material
+        if: always()
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Create inventory from config
-        run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          echo "Generating inventory from servers-config.yml..."
-          python3 tools/generate_inventory.py github-actions --output "$inventory_path"
-          echo "Inventory generated"
-
-      - name: Display Deployment Configuration
-        run: |
-          echo "-------------------------------------------------------"
-          echo "DEPLOYMENT CONFIGURATION"
-          echo "-------------------------------------------------------"
-          echo "Playbook:        ${{ github.event.inputs.playbook }}"
-          echo "Target Group:    ${{ github.event.inputs.target_group }}"
-          echo "Dry Run:         ${{ github.event.inputs.dry_run }}"
-          echo "Triggered by:    ${{ github.actor }}"
-          echo "Branch:          ${{ github.ref_name }}"
-          echo "-------------------------------------------------------"
-
-      - name: Verify Connectivity
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
-          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
-          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
-          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
-          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
-          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
-          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-        run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          ansible ${{ github.event.inputs.target_group }} \
-            -i "$inventory_path" \
-            -m ping -v
-
-      - name: Run Ansible Playbook
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          ANSIBLE_FORCE_COLOR: 'True'
-          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
-          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
-          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
-          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
-          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
-          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
-          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          V2BX_CORE: ${{ secrets.V2BX_CORE }}
-          V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
-          V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
-          V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
-          V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
-          V2BX_CERT_DOMAIN: ${{ secrets.V2BX_CERT_DOMAIN }}
-          V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}
-          V2BOARD_DB_TYPE: ${{ secrets.V2BOARD_DB_TYPE }}
-          V2BOARD_PG_PASSWORD: ${{ secrets.V2BOARD_PG_PASSWORD }}
-          V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
-          V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
-          V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
-          V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
-          V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
-          V2BOARD_FRONTEND_PORT: ${{ secrets.V2BOARD_FRONTEND_PORT }}
-          V2BOARD_API_PORT: ${{ secrets.V2BOARD_API_PORT }}
-          V2BOARD_GRPC_PORT: ${{ secrets.V2BOARD_GRPC_PORT }}
-          V2BOARD_NODEX_PORT: ${{ secrets.V2BOARD_NODEX_PORT }}
-          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
-          LOKI_URL: ${{ secrets.LOKI_URL }}
-          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
-          OBSERVABILITY_SSL_ENABLED: ${{ secrets.OBSERVABILITY_SSL_ENABLED }}
-          OBSERVABILITY_SSL_METHOD: ${{ secrets.OBSERVABILITY_SSL_METHOD }}
-          GRAFANA_DOMAIN: ${{ secrets.GRAFANA_DOMAIN }}
-          PROMETHEUS_DOMAIN: ${{ secrets.PROMETHEUS_DOMAIN }}
-          LOKI_DOMAIN: ${{ secrets.LOKI_DOMAIN }}
-          SSL_CERTIFICATE_PEM: ${{ secrets.SSL_CERTIFICATE_PEM }}
-          SSL_CERTIFICATE_KEY_PEM: ${{ secrets.SSL_CERTIFICATE_KEY_PEM }}
-          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
-          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          FIREWALL_WHITELIST_IPS: ${{ secrets.FIREWALL_WHITELIST_IPS }}
-        run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          CMD="ansible-playbook playbooks/${{ github.event.inputs.playbook }}"
-          CMD="$CMD -i \"$inventory_path\""
-          CMD="$CMD --limit ${{ github.event.inputs.target_group }}"
-          CMD="$CMD -v"
-
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            CMD="$CMD --check --diff"
-            echo "Running in DRY RUN mode (no changes will be made)"
+          set -euo pipefail
+          key_dir="${RUNNER_TEMP}/ssh"
+          if [[ -d "${key_dir}" ]]; then
+            find "${key_dir}" -type f -exec shred -u {} +
+            rm -rf "${key_dir}"
           fi
 
-          echo "Executing: $CMD"
-          eval $CMD
-
-      - name: Run Health Check
-        if: success() && github.event.inputs.dry_run != 'true'
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
-          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
-          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
-          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
-          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
-          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
-          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-        run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          ansible ${{ github.event.inputs.target_group }} \
-            -i "$inventory_path" \
-            -m shell \
-            -a "uptime && df -h / && free -h" || true
-
-      - name: Cleanup SSH keys
+      - name: Write health check summary
         if: always()
-        run: |
-          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
-
-      - name: Deployment Summary
-        if: always()
-        run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            STATUS="SUCCESS"
-          else
-            STATUS="FAILED"
-          fi
-          echo "-------------------------------------------------------"
-          echo "DEPLOYMENT $STATUS"
-          echo "-------------------------------------------------------"
-          echo "Playbook:  ${{ github.event.inputs.playbook }}"
-          echo "Target:    ${{ github.event.inputs.target_group }}"
-          echo "Dry Run:   ${{ github.event.inputs.dry_run }}"
-          echo "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "-------------------------------------------------------"
-
-  deploy-tag:
-    name: Deploy Changed Roles (Tag ${{ github.ref_name }})
-    needs: detect-changes
-    if: github.ref_type == 'tag' && needs.detect-changes.outputs.has_changes == 'true'
-    runs-on: ubuntu-latest
-    environment: NodeX
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: ./.github/actions/job-summary
         with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install Ansible and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          ansible-galaxy install -r requirements.yml
-
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Create inventory from config
-        run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          python3 tools/generate_inventory.py github-actions --output "$inventory_path"
-
-      - name: Deploy roles
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          ANSIBLE_FORCE_COLOR: 'True'
-          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
-          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
-          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
-          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          JP_2_V4_SSH: ${{ secrets.JP_2_V4_SSH }}
-          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
-          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
-          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          V2BX_CORE: ${{ secrets.V2BX_CORE }}
-          V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
-          V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
-          V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
-          V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
-          V2BX_CERT_DOMAIN: ${{ secrets.V2BX_CERT_DOMAIN }}
-          V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}
-          V2BOARD_DB_TYPE: ${{ secrets.V2BOARD_DB_TYPE }}
-          V2BOARD_PG_PASSWORD: ${{ secrets.V2BOARD_PG_PASSWORD }}
-          V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
-          V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
-          V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
-          V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
-          V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
-        run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          ROLES="${{ needs.detect-changes.outputs.roles }}"
-          echo "Tag release: deploying all roles"
-          echo "Roles: $ROLES"
-
-          for ROLE in $(echo $ROLES | tr ',' ' '); do
-            echo "Deploying: $ROLE"
-
-            TARGET="all"
-            case $ROLE in
-              nginx) TARGET="web_servers" ;;
-              v2board) TARGET="v2board_servers" ;;
-              v2bx) TARGET="v2bx_servers" ;;
-            esac
-
-            ansible-playbook playbooks/provision/site.yml \
-              -i "$inventory_path" \
-              --limit $TARGET \
-              --tags $ROLE \
-              -v
-          done
-
-      - name: Cleanup SSH keys
-        if: always()
-        run: |
-          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
-
-      - name: Deploy Summary
-        if: always()
-        run: |
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-          echo "Auto Deploy Completed"
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-          echo "Tag:       ${{ github.ref_name }}"
-          echo "Roles:     ${{ needs.detect-changes.outputs.roles }}"
-          echo "Completed: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+          title: Post-deploy health check
+          status: ${{ job.status }}
+          fields: |
+            Playbook: `playbooks/maintenance/health-check.yml`
+            Release: `${{ github.ref_name }}`
+            Deploy result: ${{ needs.deploy-tag.result }}

@@ -166,8 +166,98 @@ def test_nginx_dynamic_site_template_supports_ssl_vhosts():
     assert "{% if item.http2 | default(false) %} http2{% endif %}" in site_template
     assert "ssl_certificate {{ item.ssl.cert }};" in site_template
     assert "item.enabled | default(true) | bool" in nginx_tasks
-    assert "notify: reload nginx" in nginx_tasks
-    assert "- name: reload nginx" in nginx_handlers
+    assert "notify: Reload nginx" in nginx_tasks
+    assert "- name: Reload nginx" in nginx_handlers
     assert "- name: Enable default site" in nginx_tasks
     assert "- name: Disable default site" in nginx_tasks
     assert "path: /etc/nginx/sites-enabled/default" in nginx_tasks
+
+
+def test_node_platform_role_is_hardened():
+    role = ROOT / "roles/anixops_node_platform"
+    defaults_text = (role / "defaults/main.yml").read_text(encoding="utf-8")
+    main_text = (role / "tasks/main.yml").read_text(encoding="utf-8")
+    configure_text = (role / "tasks/configure.yml").read_text(encoding="utf-8")
+    install_text = (role / "tasks/install-docker.yml").read_text(encoding="utf-8")
+    firewall_text = (role / "tasks/firewall.yml").read_text(encoding="utf-8")
+    tls_text = (role / "tasks/tls.yml").read_text(encoding="utf-8")
+
+    for task_file in sorted((role / "tasks").glob("*.yml")):
+        task_text = task_file.read_text(encoding="utf-8")
+        assert "ignore_errors" not in task_text, task_file
+        assert "ansible.builtin.ufw" not in task_text, task_file
+        assert "curl -fsSL" not in task_text, task_file
+
+    # Compose project is managed by the collection module, not `docker compose up` in a shell.
+    assert "community.docker.docker_compose_v2" in configure_text
+    assert "state: present" in configure_text
+    assert "remove_orphans: true" in configure_text
+    assert 'pull: "{{ anixops_node_platform_compose_pull }}"' in configure_text
+    assert "wait_timeout:" in configure_text
+    assert "no_log: true" in configure_text
+
+    # Docker comes from the official apt repository with a downloaded key.
+    assert "ansible.builtin.deb822_repository" in install_text
+    assert "ansible.builtin.get_url" in install_text
+    assert "ansible.builtin.apt_key" not in install_text
+    assert "until: anixops_node_platform_apt_docker is succeeded" in install_text
+
+    # UFW rules are probed before deletion; SSH is allowed before UFW is enabled.
+    assert "community.general.ufw" in firewall_text
+    assert "register: anixops_node_platform_ufw_status" in firewall_text
+    assert "SSH (lockout protection)" in firewall_text
+    assert "firewall_default_incoming_policy" in firewall_text
+
+    # TLS fallback runs once and secret PEMs stay out of the logs.
+    assert 'creates: "{{ anixops_node_platform_ssl_key }}"' in tls_text
+    assert "no_log: true" in tls_text
+    assert "openssl x509 -noout -in %s" in tls_text
+
+    # Failures are routed to a rescue block with compose diagnostics.
+    assert "rescue:" in main_text
+    assert "- ps" in main_text
+    assert "- logs" in main_text
+    assert '- "100"' in main_text
+
+    for key in (
+        "anixops_node_platform_compose_pull: \"missing\"",
+        "anixops_node_platform_healthcheck_retries: 20",
+        "anixops_node_platform_healthcheck_delay: 6",
+        "anixops_node_platform_force_https:",
+        "anixops_node_platform_port:",
+        "anixops_node_platform_health_url:",
+        "anixops_node_platform_backup_files:",
+        "anixops_node_platform_config_dirs:",
+        "anixops_node_platform_packages: []",
+        "anixops_node_platform_service_name: \"docker\"",
+    ):
+        assert key in defaults_text, key
+
+
+def test_node_platform_playbook_is_tagged_and_verifies_the_edge():
+    playbook_path = ROOT / "playbooks/provision/node-platform.yml"
+    playbook_text = playbook_path.read_text(encoding="utf-8")
+    play = yaml.safe_load(playbook_text)[0]
+
+    assert play["tags"] == ["node_platform"]
+    assert play["become"] is True
+    assert play["gather_facts"] is True
+    assert play["any_errors_fatal"] is False
+    assert "serial" in play and "max_fail_percentage" in play
+    assert "ignore_unreachable" not in play
+    assert "pre_tasks" in play and "post_tasks" in play
+    assert "follow_redirects: none" in playbook_text
+    assert "status_code: [200, 301, 302]" in playbook_text
+    assert 'url: "http://127.0.0.1/"' in playbook_text
+
+
+def test_node_platform_actions_inventory_uses_the_shared_ssh_key_path():
+    inventory_text = (ROOT / "inventories/production/node-platform.actions.yml").read_text(encoding="utf-8")
+    group_vars_text = (
+        ROOT / "inventories/production/group_vars/anixops_node_platform_servers/main.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "ansible_ssh_common_args" not in inventory_text
+    assert "lookup('env', 'SSH_KEY_PATH') | default('~/.ssh/id_rsa', true)" in inventory_text
+    assert "anixops_node_platform_force_https" in group_vars_text
+    assert "return 301 https://$host$request_uri;" in group_vars_text

@@ -1,6 +1,13 @@
 ---
 # =============================================================================
-# Speedtest Main Tasks | Speedtest 主任务
+# Speedtest role | Speedtest 角色
 # =============================================================================
-- name: Include installation tasks | 包含安装任务
+# install -> download to a temporary file, sanity check, atomic copy
+# verify  -> `speedtest --version`
+# =============================================================================
+
+- name: Install speedtest | 安装 speedtest
   ansible.builtin.include_tasks: install.yml
+
+- name: Verify speedtest | 验证 speedtest
+  ansible.builtin.include_tasks: verify.yml

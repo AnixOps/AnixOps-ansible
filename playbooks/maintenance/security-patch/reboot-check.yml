@@ -1,0 +1,31 @@
+---
+# Reboot detection | 重启检测
+# Debian/Ubuntu: /var/run/reboot-required is created by update-notifier/dpkg hooks.
+# RedHat family: `needs-restarting -r` (dnf-utils) exits 1 when a reboot is needed,
+# 0 when not; any other code (tool missing, error) is treated as "no reboot known".
+
+- name: Check whether a reboot is required on Debian or Ubuntu
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: security_patch_reboot_required_file
+  when: ansible_os_family == 'Debian'
+
+- name: Check whether a reboot is required on RedHat-family hosts
+  ansible.builtin.command:
+    argv:
+      - needs-restarting
+      - -r
+  register: security_patch_needs_restarting
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == 'RedHat'
+
+- name: Set reboot flag for Debian or Ubuntu
+  ansible.builtin.set_fact:
+    security_patch_reboot_required: "{{ security_patch_reboot_required_file.stat.exists | default(false) | bool }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Set reboot flag for RedHat-family hosts
+  ansible.builtin.set_fact:
+    security_patch_reboot_required: "{{ (security_patch_needs_restarting.rc | default(0) | int) == 1 }}"
+  when: ansible_os_family == 'RedHat'

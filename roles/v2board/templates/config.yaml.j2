@@ -1,8 +1,11 @@
-# V2board Configuration | V2board 配置文件
+# =============================================================================
+# V2board configuration | V2board 配置文件
+# Managed by Ansible (role: v2board) - do not edit manually, changes are
+# overwritten on the next run. | 由 Ansible 管理，请勿手动编辑。
 # =============================================================================
 # Bootstrap rules:
-# - backend reads this file on startup
-# - runtime backend selection from forward_runtime below
+# - the backend reads this file on startup
+# - the forwarding runtime backend is selected under forward_runtime below
 # =============================================================================
 
 env: "{{ v2board_env | default('production') }}"
@@ -26,7 +29,7 @@ database:
   host: "{{ v2board_pg_host }}"
   port: {{ v2board_pg_port }}
   username: "{{ v2board_pg_user }}"
-  password: "{{ v2board_pg_password }}"
+  password: {{ v2board_pg_password | to_json }}
   database: "{{ v2board_pg_database }}"
   log_level: "info"
   max_idle_conns: 10
@@ -43,7 +46,7 @@ cache:
   redis_host: "{{ v2board_redis_host }}"
   redis_port: {{ v2board_redis_port }}
 {% if v2board_redis_password != '' %}
-  redis_password: "{{ v2board_redis_password }}"
+  redis_password: {{ v2board_redis_password | to_json }}
 {% endif %}
   redis_db: 0
 {% else %}
@@ -59,7 +62,7 @@ log:
   max_age: 7
 
 jwt:
-  secret: "{{ v2board_jwt_secret }}"
+  secret: {{ v2board_jwt_secret | to_json }}
   expire: 86400
 
 auth:
@@ -72,13 +75,13 @@ auth:
 app:
   name: "V2Board"
   version: "2.0.1"
-  api_token: "{{ v2board_api_token }}"
+  api_token: {{ v2board_api_token | to_json }}
   traffic_log_enable: true
   subscribe_path: "s"
 
 admin:
-  email: "{{ v2board_admin_email }}"
-  password: "{{ v2board_admin_password }}"
+  email: {{ v2board_admin_email | to_json }}
+  password: {{ v2board_admin_password | to_json }}
 
 tls:
   enable: false
@@ -87,7 +90,7 @@ tls:
   domain: ""
 
 # =============================================================================
-# Forward Runtime Configuration | 转发运行时配置
+# Forward runtime | 转发运行时
 # =============================================================================
 # NodeX mode for V2bX integration
 forward_runtime:
@@ -95,7 +98,7 @@ forward_runtime:
 
   nodex:
     base_url: "http://127.0.0.1:{{ v2board_nodex_port }}"
-    token: "{{ v2board_api_token }}"
+    token: {{ v2board_api_token | to_json }}
     timeout_seconds: 15
 
   jobs:

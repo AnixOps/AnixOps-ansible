@@ -1,181 +1,102 @@
 ---
 # =============================================================================
-# Force Apply SSH Configuration Playbook
-# 强制应用 SSH 配置 Playbook
+# Force apply SSH configuration | 强制应用 SSH 配置
 # =============================================================================
-# 此 playbook 强制重新应用 SSH 配置并立即重启服务
-# This playbook forces re-application of SSH configuration and immediately restarts the service
+# Re-applies the SSH configuration through the common role (which validates
+# the rendered sshd_config and rolls back on failure), then restarts sshd
+# unconditionally and waits for the port to come back from the controller.
 #
-# ⚠️  警告 | WARNING:
-#   此操作会立即重启 SSH 服务，可能导致当前 SSH 连接断开
-#   This will immediately restart SSH service and may disconnect current SSH sessions
+# WARNING: sshd is restarted on every host, one host at a time. Established
+# sessions normally survive, but keep a second session open while running it.
 #
-# 使用方法 | Usage:
-#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-force-apply.yml
+#   ansible-playbook playbooks/maintenance/ssh-config-force-apply.yml
+#   ansible-playbook playbooks/maintenance/ssh-config-force-apply.yml --limit jp-1
+#   ansible-playbook playbooks/maintenance/ssh-config-force-apply.yml -e ssh_force_apply_no_pause=true
 #
-# 限制到特定主机 | Limit to specific hosts:
-#   ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-force-apply.yml --limit server_name
+# Variables:
+#   ssh_force_apply_no_pause  false  skip the 3 second pause before each restart
+#   ssh_port                  22     port expected to answer after the restart
+#
+# Play tags: ssh
+# Scope: all servers, serial 1, max_fail_percentage 0 (first failure stops the run)
+# Rollback: ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=common"
+# Risk: HIGH (SSH lockout if the configuration or firewall is wrong)
 # =============================================================================
 
-- name: Force Apply SSH Configuration | 强制应用 SSH 配置
+- name: Force apply SSH configuration | 强制应用 SSH 配置
   hosts: all
-  become: yes
-  gather_facts: yes
-  serial: 1  # 一次只处理一台服务器 | Process one server at a time
-  max_fail_percentage: 0  # SSH 配置零容忍失败 | Zero tolerance for SSH config failure
+  become: true
+  gather_facts: true
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: false
+  tags: [ssh]
 
   tasks:
-    # -------------------------------------------------------------------------
-    # 备份当前配置 | Backup Current Configuration
-    # -------------------------------------------------------------------------
-    - name: Create timestamped backup of current SSH config | 创建当前 SSH 配置的时间戳备份
-      copy:
-        src: /etc/ssh/sshd_config
-        dest: "/etc/ssh/sshd_config.backup.{{ ansible_date_time.epoch }}"
-        remote_src: yes
-        mode: '0600'
-      when: not ansible_check_mode
+    - name: Apply the SSH configuration through the common role | 通过 common 角色应用 SSH 配置
+      ansible.builtin.include_role:
+        name: common
+        tasks_from: ssh.yml
 
-    # -------------------------------------------------------------------------
-    # 显示当前配置 | Display Current Configuration
-    # -------------------------------------------------------------------------
-    - name: Display current SSH authentication settings | 显示当前 SSH 认证设置
-      shell: |
-        echo "=== Current SSH Configuration ==="
-        grep -E "^(Port|PasswordAuthentication|PubkeyAuthentication|PermitRootLogin|UsePAM)" /etc/ssh/sshd_config || true
-        echo ""
-        echo "=== Expected Configuration ==="
-        echo "Port: {{ ssh_port | default(22) }}"
-        echo "PasswordAuthentication: {{ 'yes' if ssh_password_authentication else 'no' }}"
-        echo "PubkeyAuthentication: {{ 'yes' if ssh_pubkey_authentication else 'no' }}"
-        echo "PermitRootLogin: {{ 'yes' if ssh_allow_root else 'prohibit-password' }}"
-      register: ssh_config_comparison
-      changed_when: false
+    - name: Run the handlers notified by the role | 执行角色触发的处理程序
+      ansible.builtin.meta: flush_handlers
 
-    - name: Show configuration comparison | 显示配置比较
-      debug:
-        var: ssh_config_comparison.stdout_lines
+    - name: Determine the SSH service unit | 确定 SSH 服务单元
+      ansible.builtin.set_fact:
+        ssh_force_apply_unit: "{{ 'sshd' if ansible_facts['os_family'] == 'RedHat' else 'ssh' }}"
+        ssh_force_apply_port: "{{ ssh_port | default(ansible_port | default(22)) | int }}"
 
-    # -------------------------------------------------------------------------
-    # 强制应用新配置 | Force Apply New Configuration
-    # -------------------------------------------------------------------------
-    - name: Force deploy SSH configuration | 强制部署 SSH 配置
-      template:
-        src: ../roles/common/templates/sshd_config.j2
-        dest: /etc/ssh/sshd_config
-        mode: '0600'
-        owner: root
-        group: root
-        backup: yes
-        validate: '/usr/sbin/sshd -t -f %s'
-      register: ssh_config_deployed
-
-    - name: Configuration deployment status | 配置部署状态
-      debug:
-        msg: "SSH configuration {{ 'was updated' if ssh_config_deployed.changed else 'unchanged' }}"
-
-    # -------------------------------------------------------------------------
-    # 验证新配置 | Verify New Configuration
-    # -------------------------------------------------------------------------
-    - name: Test new SSH configuration syntax | 测试新 SSH 配置语法
-      command: /usr/sbin/sshd -t
-      register: sshd_test
-      changed_when: false
-      failed_when: sshd_test.rc != 0
-
-    - name: Display test results | 显示测试结果
-      debug:
-        msg: "SSH configuration syntax is VALID ✓"
-      when: sshd_test.rc == 0
-
-    # -------------------------------------------------------------------------
-    # 显示新配置内容 | Display New Configuration
-    # -------------------------------------------------------------------------
-    - name: Display new SSH authentication settings | 显示新 SSH 认证设置
-      shell: grep -E "^(Port|PasswordAuthentication|PubkeyAuthentication|PermitRootLogin|UsePAM)" /etc/ssh/sshd_config
-      register: new_ssh_config
-      changed_when: false
-
-    - name: Show new configuration | 显示新配置
-      debug:
-        msg:
-          - "=== New SSH Configuration Applied ==="
-          - "{{ new_ssh_config.stdout_lines }}"
-
-    # -------------------------------------------------------------------------
-    # 重启 SSH 服务 | Restart SSH Service
-    # -------------------------------------------------------------------------
-    - name: Determine SSH service name | 确定 SSH 服务名称
-      set_fact:
-        ssh_service_name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
-
-    - name: Display warning before restart | 重启前显示警告
-      debug:
-        msg:
-          - "⚠️  WARNING: About to restart SSH service!"
-          - "⚠️  警告：即将重启 SSH 服务！"
-          - "Service name: {{ ssh_service_name }}"
-          - "This may disconnect your current session."
-          - "这可能会断开你当前的会话。"
-
-    - name: Pause before restart (safety) | 重启前暂停（安全措施）
-      pause:
+    - name: Pause before restarting SSH | 重启 SSH 前暂停
+      ansible.builtin.pause:
         seconds: 3
-        prompt: "Restarting SSH in 3 seconds... Press Ctrl+C to abort."
-      when: not ansible_check_mode
+        prompt: "Restarting {{ ssh_force_apply_unit }} on {{ inventory_hostname }} in 3 seconds (Ctrl+C to abort)"
+      when:
+        - not ansible_check_mode
+        - not (ssh_force_apply_no_pause | default(false) | bool)
 
-    - name: Restart SSH service | 重启 SSH 服务
-      service:
-        name: "{{ ssh_service_name }}"
+    - name: Restart the SSH service | 重启 SSH 服务
+      ansible.builtin.systemd_service:
+        name: "{{ ssh_force_apply_unit }}"
         state: restarted
-      async: 1
-      poll: 0
-      register: ssh_restart
 
-    - name: Wait for SSH to become available | 等待 SSH 变为可用
-      wait_for:
-        port: "{{ ssh_port | default(22) }}"
+    - name: Wait for the SSH port to accept connections | 等待 SSH 端口可连接
+      ansible.builtin.wait_for:
         host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: "{{ ssh_force_apply_port | int }}"
         delay: 2
-        timeout: 30
+        timeout: 60
         state: started
       delegate_to: localhost
-      become: no
+      become: false
+      when: not ansible_check_mode
 
-    # -------------------------------------------------------------------------
-    # 验证服务状态 | Verify Service Status
-    # -------------------------------------------------------------------------
-    - name: Verify SSH service is running | 验证 SSH 服务正在运行
-      service:
-        name: "{{ ssh_service_name }}"
-        state: started
-      register: ssh_status
+    - name: Collect service facts | 收集服务状态
+      ansible.builtin.service_facts:
 
-    - name: Check SSH service status | 检查 SSH 服务状态
-      command: systemctl status {{ ssh_service_name }} --no-pager -l
-      register: ssh_service_status
+    - name: Assert the SSH service is running | 断言 SSH 服务正在运行
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['services'][ssh_force_apply_unit ~ '.service']['state'] | default('absent') == 'running'
+        fail_msg: >-
+          {{ inventory_hostname }}: {{ ssh_force_apply_unit }}.service is
+          {{ ansible_facts['services'][ssh_force_apply_unit ~ '.service']['state'] | default('absent') }}
+          after the restart
+        quiet: true
+      when: not ansible_check_mode
+
+    - name: Read the effective sshd settings | 读取生效的 sshd 设置
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+      register: ssh_force_apply_effective
       changed_when: false
-      failed_when: false
+      check_mode: false
 
-    - name: Display SSH service status | 显示 SSH 服务状态
-      debug:
-        var: ssh_service_status.stdout_lines
-
-    # -------------------------------------------------------------------------
-    # 最终验证 | Final Verification
-    # -------------------------------------------------------------------------
-    - name: Final verification | 最终验证
-      debug:
-        msg:
-          - "================================================================"
-          - "✓ SSH configuration successfully applied and service restarted"
-          - "✓ SSH 配置已成功应用并重启服务"
-          - ""
-          - "Current settings:"
-          - "当前设置："
-          - "{{ new_ssh_config.stdout_lines }}"
-          - ""
-          - "To verify from another terminal:"
-          - "从另一个终端验证："
-          - "  ssh -p {{ ssh_port | default(22) }} user@{{ inventory_hostname }}"
-          - "================================================================"
+    - name: Show the SSH force apply summary | 显示 SSH 强制应用摘要
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: {{ ssh_force_apply_unit }} restarted, port {{ ssh_force_apply_port }} answering;
+          {{ ssh_force_apply_effective.stdout_lines | default([])
+             | select('match', '^(port|passwordauthentication|pubkeyauthentication|permitrootlogin|usepam) ')
+             | join(', ') }}

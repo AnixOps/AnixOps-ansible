@@ -1,5 +1,15 @@
 ---
-# Minimal inventory example for the AnixOps node platform web stack.
+# =============================================================================
+# Minimal inventory example for the AnixOps node platform web stack
+# 节点平台最小清单示例
+# =============================================================================
+# Copy this file, uncomment the host entry and run:
+#   ansible-playbook -i inventories/production/node-platform.yml \
+#     playbooks/provision/node-platform.yml
+#
+# Group variables (public domain, TLS, Nginx vhosts) live in
+# inventories/production/group_vars/anixops_node_platform_servers/main.yml.
+# =============================================================================
 
 all:
   children:
@@ -7,5 +17,13 @@ all:
       hosts:
         # anixops-node-platform-1:
         #   ansible_host: "{{ lookup('env', 'ANIXOPS_NODE_PLATFORM_1_V4_SSH') }}"
+        #   server_alias: node-platform-1
+        #   location: cloud
+        #   server_environment: production
+        #   description: AnixOps node platform web stack
       vars:
         server_role: node_platform_web
+  vars:
+    ansible_user: "{{ lookup('env', 'ANSIBLE_USER') | default('root', true) }}"
+    ansible_port: "{{ lookup('env', 'ANSIBLE_PORT') | default('22', true) | int }}"
+    ansible_ssh_private_key_file: "{{ lookup('env', 'SSH_KEY_PATH') | default('~/.ssh/id_rsa', true) }}"

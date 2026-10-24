@@ -1,0 +1,16 @@
+---
+# =============================================================================
+# Prometheus - service | 服务
+# =============================================================================
+# Handlers are flushed first so that a changed unit is daemon-reloaded and a
+# changed configuration is reloaded/restarted BEFORE the health check runs.
+
+- name: Apply pending prometheus handlers | 立即执行待处理的 handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start prometheus | 启用并启动 prometheus
+  ansible.builtin.systemd_service:
+    name: "{{ prometheus_service_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true

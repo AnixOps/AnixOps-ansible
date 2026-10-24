@@ -1,28 +1,53 @@
 ---
 # =============================================================================
-# Speedtest Installation Tasks | Speedtest 安装任务
+# Speedtest - install | 安装
 # =============================================================================
-- name: Download speedtest binary | 下载 speedtest 二进制文件
-  ansible.builtin.get_url:
-    url: "https://github.com/{{ speedtest_repo_owner }}/{{ speedtest_repo_name }}/releases/latest/download/speedtest-linux-{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
-    dest: "{{ speedtest_install_dir }}/{{ speedtest_bin_name }}"
-    mode: '0755'
-    timeout: 60
 
-- name: Verify speedtest installation | 验证 speedtest 安装
-  ansible.builtin.command: "{{ speedtest_install_dir }}/{{ speedtest_bin_name }} --version"
-  register: speedtest_version
-  changed_when: false
+- name: Check for an existing speedtest binary | 检查已安装的二进制文件
+  ansible.builtin.stat:
+    path: "{{ speedtest_install_dir }}/{{ speedtest_bin_name }}"
+  register: speedtest_binary_stat
 
-- name: Display speedtest installation summary | 显示 speedtest 安装摘要
-  ansible.builtin.debug:
-    msg: |
-      ═══════════════════════════════════════════════════════════
-      ✓ Speedtest 安装成功 | Speedtest Installed
-      ═══════════════════════════════════════════════════════════
-      主机 | Host: {{ inventory_hostname }}
-      安装路径 | Path: {{ speedtest_install_dir }}/{{ speedtest_bin_name }}
+- name: Download and install speedtest | 下载并安装 speedtest
+  when: (not speedtest_binary_stat.stat.exists) or (speedtest_force_update | bool)
+  block:
+    - name: Create temporary download directory | 创建临时下载目录
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: speedtest
+      register: speedtest_tmpdir
 
-      使用方法 | Usage:
-      {{ speedtest_install_dir }}/{{ speedtest_bin_name }} --help
-      ═══════════════════════════════════════════════════════════
+    - name: Download speedtest binary | 下载 speedtest 二进制文件
+      ansible.builtin.get_url:
+        url: "{{ speedtest_download_url | trim }}"
+        dest: "{{ speedtest_tmpdir.path }}/{{ speedtest_bin_name }}"
+        checksum: "{{ speedtest_checksum if speedtest_checksum | length > 0 else omit }}"
+        timeout: "{{ speedtest_download_timeout }}"
+        mode: "0755"
+      register: speedtest_download
+      retries: "{{ speedtest_download_retries }}"
+      delay: "{{ speedtest_download_delay }}"
+      until: speedtest_download is succeeded
+
+    - name: Check that the downloaded binary runs | 检查下载的二进制文件可运行
+      ansible.builtin.command:
+        argv:
+          - "{{ speedtest_tmpdir.path }}/{{ speedtest_bin_name }}"
+          - --version
+      register: speedtest_download_probe
+      changed_when: false
+
+    - name: Install speedtest binary | 安装 speedtest 二进制文件
+      ansible.builtin.copy:
+        src: "{{ speedtest_tmpdir.path }}/{{ speedtest_bin_name }}"
+        dest: "{{ speedtest_install_dir }}/{{ speedtest_bin_name }}"
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+  always:
+    - name: Remove temporary download directory | 删除临时下载目录
+      ansible.builtin.file:
+        path: "{{ speedtest_tmpdir.path }}"
+        state: absent
+      when: speedtest_tmpdir.path is defined

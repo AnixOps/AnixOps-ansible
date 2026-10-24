@@ -1,74 +1,38 @@
 ---
 # =============================================================================
-# V2board Docker Configuration Tasks | V2board Docker 閰嶇疆浠诲姟
+# V2board Docker configuration | V2board Docker 配置
 # =============================================================================
+# Render config.yaml -> (re)create the container idempotently -> flush handlers
+# so a changed configuration restarts the container before verification.
 
-- name: Generate config.yaml | 鐢熸垚 config.yaml
+- name: Render config.yaml | 渲染 config.yaml
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ v2board_config_dir }}/config.yaml"
-    mode: '0640'
-  notify: Restart v2board service | 閲嶅惎 v2board 鏈嶅姟
+    owner: root
+    group: root
+    mode: "0640"
+    backup: true
+  register: v2board_config_result
+  no_log: true
+  notify: Restart v2board
 
-- name: Check if v2board container exists | 妫€鏌?v2board 瀹瑰櫒鏄惁瀛樺湪
-  ansible.builtin.command:
-    cmd: docker ps -a --filter "name={{ v2board_docker_container_name }}" --format "{{ '{{' }}.Names{{ '}}' }}"
-  register: container_exists
-  changed_when: false
-  failed_when: false
+- name: Start the v2board container | 启动 v2board 容器
+  community.docker.docker_container:
+    name: "{{ v2board_docker_container_name }}"
+    image: "{{ v2board_docker_image }}:{{ v2board_docker_tag }}"
+    state: started
+    pull: false
+    restart_policy: "{{ v2board_docker_restart_policy }}"
+    network_mode: "{{ v2board_docker_network }}"
+    volumes: "{{ v2board_docker_volumes }}"
+    container_default_behavior: no_defaults
+    comparisons:
+      image: strict
+      volumes: strict
+      network_mode: strict
+      restart_policy: strict
+  register: v2board_container_result
 
-- name: Stop and remove existing container | 鍋滄骞剁Щ闄ょ幇鏈夊鍣?
-  ansible.builtin.command:
-  when: v2board_docker_container_name in container_exists.stdout
-  changed_when: true
-  failed_when: false
-
-- name: Start v2board container | 鍚姩 v2board 瀹瑰櫒
-  ansible.builtin.command:
-    cmd: >
-      docker run -d
-      --name {{ v2board_docker_container_name }}
-      --network {{ v2board_docker_network }}
-      --restart unless-stopped
-      -v {{ v2board_config_dir }}/config.yaml:/etc/v2board/config.yaml:ro
-      -v {{ v2board_data_dir }}/frontend:/var/lib/v2board/frontend
-      -v {{ v2board_data_dir }}/logs:/var/lib/v2board/logs
-      -v {{ v2board_data_dir }}/data:/var/lib/v2board/data
-      {{ v2board_docker_image }}:{{ v2board_docker_tag }}
-  register: docker_run_result
-
-- name: Wait for v2board to start | 绛夊緟 v2board 鍚姩
-  ansible.builtin.pause:
-    seconds: 30
-
-- name: Verify v2board container is running
-  ansible.builtin.command:
-    cmd: docker inspect --format='{{ '{{' }}.State.Status{{ '}}' }}' {{ v2board_docker_container_name }}
-  register: container_status
-  changed_when: false
-  failed_when: container_status.stdout.strip() != 'running'
-- name: Display v2board deployment summary | 鏄剧ず閮ㄧ讲鎽樿
-  ansible.builtin.debug:
-    msg: |
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?      鉁?V2board 鎺у埗闈㈡澘閮ㄧ讲鎴愬姛 | V2board Panel Deployed
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?      涓绘満 | Host: {{ inventory_hostname }}
-
-      绔彛 | Ports:
-      - API: {{ v2board_api_port }}
-      - Frontend: {{ v2board_frontend_port }}
-      - gRPC: {{ v2board_grpc_port }}
-      - NodeX: {{ v2board_nodex_port }}
-
-      鏁版嵁搴?| Database: {{ v2board_db_type }}
-
-      閮ㄧ讲鏂瑰紡 | Deployment: Docker
-      - Image: {{ v2board_docker_image }}:{{ v2board_docker_tag }}
-      - Container: {{ v2board_docker_container_name }}
-      - Config: {{ v2board_config_dir }}/config.yaml
-
-      鐘舵€?| Status: running
-
-      涓嬩竴姝?| Next Steps:
-      1. 璁块棶闈㈡澘 | Access panel: http://{{ inventory_hostname }}:{{ v2board_api_port }}
-      2. 閰嶇疆鑺傜偣 | Configure nodes in admin panel
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+- name: Apply pending handlers before verification | 在验证前执行挂起的处理器
+  ansible.builtin.meta: flush_handlers

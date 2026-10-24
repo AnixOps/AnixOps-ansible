@@ -1,0 +1,109 @@
+---
+# =============================================================================
+# Timezone, locale and chrony NTP | 时区、区域设置与 chrony 时间同步
+# =============================================================================
+
+- name: Set the system timezone | 设置系统时区
+  community.general.timezone:
+    name: "{{ common_timezone }}"
+
+- name: Install locale support (Debian/Ubuntu) | 安装区域设置支持
+  ansible.builtin.apt:
+    name: "{{ common_locale_packages }}"
+    state: present
+    lock_timeout: "{{ common_apt_lock_timeout | int }}"
+  register: common_locale_install
+  retries: "{{ common_package_retries | int }}"
+  delay: "{{ common_package_retry_delay | int }}"
+  until: common_locale_install is succeeded
+  when:
+    - ansible_os_family == 'Debian'
+    - common_locale_packages | length > 0
+
+- name: Generate the system locale (Debian/Ubuntu) | 生成系统区域设置
+  community.general.locale_gen:
+    name: "{{ common_locale }}"
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install chrony | 安装 chrony
+  ansible.builtin.package:
+    name: "{{ common_chrony_package }}"
+    state: present
+  register: common_chrony_install
+  retries: "{{ common_package_retries | int }}"
+  delay: "{{ common_package_retry_delay | int }}"
+  until: common_chrony_install is succeeded
+
+- name: Ensure the chrony configuration directory exists | 确保 chrony 配置目录存在
+  ansible.builtin.file:
+    path: "{{ common_chrony_conf_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Roll out chrony configuration with verification | 下发 chrony 配置并验证
+  block:
+    - name: Deploy chrony.conf | 部署 chrony.conf
+      ansible.builtin.template:
+        src: chrony.conf.j2
+        dest: "{{ common_chrony_conf_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+        validate: "{{ common_chrony_validate_cmd | default(omit, true) }}"
+      register: common_chrony_conf
+      notify: Restart chrony
+
+    - name: Ensure chrony is enabled and running | 确保 chrony 已启用并运行
+      ansible.builtin.service:
+        name: "{{ common_chrony_service_name }}"
+        state: started
+        enabled: true
+
+    - name: Apply pending chrony restart | 应用待处理的 chrony 重启
+      ansible.builtin.meta: flush_handlers
+
+    - name: Verify chronyd answers | 验证 chronyd 可响应
+      ansible.builtin.command:
+        argv:
+          - chronyc
+          - -n
+          - tracking
+      register: common_chrony_tracking
+      retries: 5
+      delay: 3
+      until: common_chrony_tracking.rc == 0
+      changed_when: false
+
+  rescue:
+    - name: Restore the previous chrony.conf | 恢复之前的 chrony.conf
+      ansible.builtin.copy:
+        src: "{{ common_chrony_conf.backup_file }}"
+        dest: "{{ common_chrony_conf_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      when:
+        - common_chrony_conf.backup_file is defined
+        - common_chrony_conf.backup_file | length > 0
+
+    - name: Restart chrony with the restored configuration | 使用恢复的配置重启 chrony
+      ansible.builtin.service:
+        name: "{{ common_chrony_service_name }}"
+        state: restarted
+      when:
+        - common_chrony_conf.backup_file is defined
+        - common_chrony_conf.backup_file | length > 0
+
+    - name: Fail after chrony rollback | chrony 回滚后报错
+      ansible.builtin.fail:
+        msg: >-
+          chrony verification failed on {{ inventory_hostname }}.
+          {{ 'Previous configuration restored from ' ~ common_chrony_conf.backup_file ~ ' and chrony restarted.'
+             if (common_chrony_conf.backup_file | default('') | length > 0)
+             else 'Nothing to restore (configuration was unchanged).' }}
+          Error: {{ ansible_failed_result.msg | default('see the failed task above') }}

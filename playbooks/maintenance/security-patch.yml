@@ -1,25 +1,114 @@
 ---
-# Weekly security patch workflow.
-# Scan OS packages for HIGH/CRITICAL vulnerabilities, install available updates,
-# and write a JSON report that GitHub Actions can turn into a notification.
+# Weekly security patch workflow | 每周安全补丁流程
+#
+# For every target host (one at a time):
+#   setup        -> install/verify Trivy, refresh its vulnerability DB
+#   scan-before  -> Trivy scan of OS packages (HIGH/CRITICAL by default)
+#   remediate    -> apply OS updates (apt dist-upgrade / dnf security update),
+#                   detect whether a reboot is pending, optionally reboot
+#   scan-after   -> rescan to confirm what was fixed
+#   summary      -> build the per-host summary dictionary
+#   failure      -> (rescue) record a `scan_failed` summary with the error
+#   cleanup      -> (always) remove the temporary installer
+# Then, on localhost: report -> aggregate every host summary into a JSON report
+# plus a Markdown summary that GitHub Actions turns into an issue / step summary.
+#
+# Scan-only mode:   -e security_patch_apply_updates=false
+# Allow reboots:    -e security_patch_allow_reboot=true
+# See docs/SECURITY_PATCHING.md for the full variable reference and runbook.
 
 - name: Weekly security vulnerability scan and remediation
   hosts: all:!localhost
   serial: 1
-  become: yes
-  gather_facts: yes
-  ignore_unreachable: yes
+  become: true
+  gather_facts: true
+  # The run must visit every host and report on all of them, so a failing host must
+  # never stop the batch. Per-host failures are caught by the block/rescue below.
+  max_fail_percentage: 100
+  any_errors_fatal: false
+  # ignore_unreachable is the ONE sanctioned exception to the "fail loudly" rule:
+  # report.yml emits a placeholder `scan_failed` summary (and counts it in
+  # `unreachable_count`) for every target host that produced no summary, so an
+  # unreachable host still shows up in the JSON report and the GitHub issue instead
+  # of silently dropping out of the run.
+  ignore_unreachable: true
+  tags: [security_patch]
 
   vars:
+    # --- Behaviour knobs ---------------------------------------------------------
+    # false = scan-only: report findings but never install packages or reboot.
+    security_patch_apply_updates: true
+    # true = reboot the host (ansible.builtin.reboot) when updates were applied and
+    # the OS reports that a reboot is required.
+    security_patch_allow_reboot: false
+    security_patch_reboot_timeout: 600
+    # Trivy severities to report on (comma separated, Trivy syntax).
+    security_patch_severity: "HIGH,CRITICAL"
+    # How many post-remediation findings are embedded per host in the report.
+    security_patch_max_findings_in_report: 10
+    # Seconds to wait for the dpkg/apt lock (unattended-upgrades may hold it).
+    security_patch_apt_lock_timeout: 300
+    # RedHat family: true = only security errata (dnf --security), false = all updates.
+    security_patch_dnf_security_only: true
+    # RedHat family: install dnf-utils so `needs-restarting -r` can detect pending reboots.
+    security_patch_install_dnf_utils: true
+
+    # --- Trivy -------------------------------------------------------------------
+    # Release tag to install, e.g. "v0.56.2" (empty = latest release). When the installed
+    # Trivy does not match the pin it is reinstalled.
+    security_patch_trivy_version: ""
     security_patch_trivy_install_script: "https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh"
+    # Optional checksum for the installer script, e.g. "sha256:<hex>" (empty = no check).
+    security_patch_trivy_installer_checksum: ""
+    security_patch_trivy_installer_path: "/tmp/trivy-install.sh"
     security_patch_trivy_bin: "/usr/local/bin/trivy"
+    security_patch_trivy_cache_dir: "/var/cache/trivy"
+    # Refresh the vulnerability DB once before scanning (predictable scan time); the
+    # scans then run with --skip-db-update.
+    security_patch_trivy_update_db: true
+    # Optional alternative DB registry (Trivy --db-repository), e.g. a mirror.
+    security_patch_trivy_db_repository: ""
     security_patch_trivy_timeout: "15m"
+    # Directories excluded from the filesystem walk (container layers, snaps, the cache).
+    security_patch_trivy_skip_dirs:
+      - /var/lib/docker
+      - /var/lib/containerd
+      - /snap
+      - "{{ security_patch_trivy_cache_dir }}"
     security_patch_trivy_summarizer: "{{ playbook_dir }}/../../scripts/summarize_trivy.py"
+    # Shared scan command line; scan-before/scan-after append the target path.
+    security_patch_trivy_scan_argv:
+      - "{{ security_patch_trivy_bin }}"
+      - fs
+      - --quiet
+      - --no-progress
+      - --cache-dir
+      - "{{ security_patch_trivy_cache_dir }}"
+      - --format
+      - json
+      - --exit-code
+      - "0"
+      - --timeout
+      - "{{ security_patch_trivy_timeout }}"
+      - --severity
+      - "{{ security_patch_severity }}"
+      - --pkg-types
+      - os
+      - --scanners
+      - vuln
+    security_patch_trivy_optional_argv: >-
+      {{
+        (['--skip-db-update'] if security_patch_trivy_update_db | bool else [])
+        + (['--db-repository', security_patch_trivy_db_repository]
+           if security_patch_trivy_db_repository | length > 0 else [])
+        + (['--skip-dirs', security_patch_trivy_skip_dirs | join(',')]
+           if security_patch_trivy_skip_dirs | length > 0 else [])
+      }}
 
   pre_tasks:
     - name: Initialize security patch facts
       ansible.builtin.set_fact:
-        security_patch_trivy_installed: false
+        security_patch_trivy_version_detected: "unknown"
         security_patch_findings_before: []
         security_patch_findings_after: []
         security_patch_before_patchable_count: 0
@@ -27,13 +116,15 @@
         security_patch_after_patchable_count: 0
         security_patch_after_unpatchable_count: 0
         security_patch_reboot_required: false
+        security_patch_rebooted: false
         security_patch_update_result:
           rc: 0
+          changed: false
           stdout: ""
           stderr: ""
         security_patch_summary:
           host: "{{ inventory_hostname }}"
-          os_family: "{{ ansible_os_family }}"
+          os_family: "{{ ansible_os_family | default('unknown') }}"
           pkg_mgr: "{{ ansible_pkg_mgr | default('unknown') }}"
           status: "pending"
           alert_reason: ""
@@ -45,10 +136,16 @@
           after_unpatchable_count: 0
           update_rc: 0
           reboot_required: false
+          rebooted: false
+          apply_updates: "{{ security_patch_apply_updates | bool }}"
+          severity: "{{ security_patch_severity }}"
+          trivy_version: "unknown"
+          placeholder: false
           findings: []
 
   tasks:
-    - block:
+    - name: Scan, remediate and summarize the host
+      block:
         - name: Run security patch setup tasks
           ansible.builtin.include_tasks: "{{ playbook_dir }}/security-patch/setup.yml"
 
@@ -75,7 +172,20 @@
 - name: Publish security patch report
   hosts: localhost
   connection: local
-  gather_facts: no
+  become: false
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: false
+  tags: [security_patch, report]
+
+  vars:
+    # Mirrors of the host-play defaults that the report records. Extra-vars (-e)
+    # override both plays at once; keep these in sync with the host play above.
+    security_patch_apply_updates: true
+    security_patch_severity: "HIGH,CRITICAL"
+    security_patch_report_path: "{{ playbook_dir }}/../../security-patch-report.json"
+    security_patch_report_markdown_path: "{{ security_patch_report_path | regex_replace('\\.json$', '') ~ '.md' }}"
 
   tasks:
     - name: Assemble security patch report

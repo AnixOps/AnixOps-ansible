@@ -1,266 +1,80 @@
+---
 # =============================================================================
-# Common Role - 鍩虹閰嶇疆浠诲姟 | Common Role - Basic Configuration Tasks
+# Common role - base configuration and hardening | 基础配置与安全加固
 # =============================================================================
-# 姝よ鑹茶礋璐ｆ湇鍔″櫒鐨勫熀纭€閰嶇疆鍜屽畨鍏ㄥ姞鍥?# This role is responsible for basic server configuration and security hardening
-#
-# 鍔熻兘 | Features:
-#   - 涓绘満鍚嶉厤缃?| Hostname configuration
-#   - 绯荤粺鍖呯鐞?| System package management
-#   - 鏃跺尯鍜屾湰鍦板寲 | Timezone and localization
-#   - NTP 鏃堕棿鍚屾 | NTP time synchronization
-#   - 鐢ㄦ埛绠＄悊 | User management
-#   - SSH 瀹夊叏閰嶇疆 | SSH security configuration
-#   - Fail2Ban 闃叉姢 | Fail2Ban protection
-#   - 绯荤粺鍙傛暟浼樺寲 | System parameter optimization
+# Task files run in this order; each optional stage has a `common_manage_*`
+# toggle in defaults/main.yml.
+#   preflight -> packages -> hostname -> time -> users -> ssh -> sysctl
+#   -> limits -> fail2ban -> services
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# 涓绘満鍚嶉厤缃?| Hostname Configuration
-# -----------------------------------------------------------------------------
-- name: Set server hostname | 璁剧疆鏈嶅姟鍣ㄤ富鏈哄悕
-  ansible.builtin.hostname:
-    name: "{{ inventory_hostname }}"
-  when: inventory_hostname is defined
+- name: Run preflight checks | 预检
+  ansible.builtin.import_tasks: preflight.yml
+  tags:
+    - common
+    - common_preflight
 
-- name: Update /etc/hosts with new hostname | 鏇存柊 /etc/hosts 鏂囦欢
-  ansible.builtin.lineinfile:
-    path: /etc/hosts
-    regexp: '^127\.0\.1\.1'
-    line: "127.0.1.1 {{ inventory_hostname }}"
-    state: present
-  when: inventory_hostname is defined
+- name: Manage base packages | 管理基础软件包
+  ansible.builtin.import_tasks: packages.yml
+  when: common_manage_packages | bool
+  tags:
+    - common
+    - common_packages
 
-- name: Display hostname change | 鏄剧ず涓绘満鍚嶆洿鏀?
-  ansible.builtin.debug:
-    msg: "涓绘満鍚嶅凡璁剧疆涓?| Hostname set to: {{ inventory_hostname }}"
+- name: Manage hostname | 管理主机名
+  ansible.builtin.import_tasks: hostname.yml
+  when: common_manage_hostname | bool
+  tags:
+    - common
+    - common_hostname
 
-# -----------------------------------------------------------------------------
-# 鏇存柊鍖呯紦瀛?| Update Package Cache
-# -----------------------------------------------------------------------------
-# 鏇存柊鍖呯紦瀛?| Update Package Cache
-# -----------------------------------------------------------------------------
-- name: Repair and refresh apt cache on Debian/Ubuntu | 修复并刷新 Debian/Ubuntu apt 缓存
+- name: Manage timezone, locale and NTP | 管理时区、区域设置与 NTP
+  ansible.builtin.import_tasks: time.yml
+  when: common_manage_time | bool
+  tags:
+    - common
+    - common_time
+
+- name: Manage admin users | 管理管理员用户
+  ansible.builtin.import_tasks: users.yml
+  when: common_manage_users | bool
+  tags:
+    - common
+    - common_users
+
+- name: Manage SSH daemon | 管理 SSH 服务
+  ansible.builtin.import_tasks: ssh.yml
+  when: common_manage_ssh | bool
+  tags:
+    - common
+    - common_ssh
+
+- name: Manage kernel parameters | 管理内核参数
+  ansible.builtin.import_tasks: sysctl.yml
+  when: common_manage_sysctl | bool
+  tags:
+    - common
+    - common_sysctl
+
+- name: Manage PAM resource limits | 管理 PAM 资源限制
+  ansible.builtin.import_tasks: limits.yml
+  when: common_manage_limits | bool
+  tags:
+    - common
+    - common_limits
+
+- name: Manage fail2ban | 管理 fail2ban
+  ansible.builtin.import_tasks: fail2ban.yml
   when:
-    - ansible_os_family == "Debian"
-    - common_refresh_apt_cache | default(true) | bool
-  block:
-    - name: Remove conflicting Grafana source files | 删除冲突的 Grafana 源文件
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/apt/sources.list.d/grafana.list
-        - /etc/apt/sources.list.d/grafana.list.save
-      ignore_errors: yes
+    - common_manage_fail2ban | bool
+    - common_fail2ban_enabled | bool
+  tags:
+    - common
+    - common_fail2ban
 
-    - name: Remove stale Grafana sources without signed-by | 清理缺少 signed-by 的 Grafana 源
-      ansible.builtin.shell: |
-        set -euo pipefail
-
-        find /etc/apt/sources.list.d -maxdepth 1 -name '*.list' -print0 \
-          | xargs -0 -r grep -l 'apt.grafana.com' 2>/dev/null \
-          | while read -r source_file; do
-              if ! grep -q '\[signed-by=' "$source_file" 2>/dev/null; then
-                rm -f "$source_file"
-              fi
-            done
-      args:
-        executable: /bin/bash
-      changed_when: false
-      failed_when: false
-
-    - name: Refresh apt cache | 刷新 apt 缓存
-      ansible.builtin.apt:
-        update_cache: yes
-        cache_valid_time: 3600
-        update_cache_retries: 3
-        update_cache_retry_max_delay: 12
-      register: apt_cache_refresh
-      ignore_errors: yes
-
-    - name: Retry apt cache refresh once after correction | 修复后重试一次 apt 刷新
-      ansible.builtin.apt:
-        update_cache: yes
-        cache_valid_time: 3600
-      register: apt_cache_refresh_recovered
-      ignore_errors: yes
-
-    - name: Warn and continue when apt cache refresh fails | apt 缓存刷新失败时告警并继续
-      ansible.builtin.debug:
-        msg: >-
-          APT cache refresh was corrected or skipped on {{ inventory_hostname }};
-          continuing with the existing cache.
-      when:
-        - apt_cache_refresh is failed
-        - apt_cache_refresh_recovered is failed
-
-- name: Skip apt cache refresh when disabled | 禁用时跳过 apt 刷新
-  ansible.builtin.debug:
-    msg: "APT cache refresh skipped on {{ inventory_hostname }} because common_refresh_apt_cache is false."
-  when:
-    - ansible_os_family == "Debian"
-    - not (common_refresh_apt_cache | default(true) | bool)
-- name: Update yum cache (RedHat/CentOS) | 鏇存柊 yum 缂撳瓨 (RedHat/CentOS)
-  ansible.builtin.yum:
-    update_cache: yes
-  when: ansible_os_family == "RedHat"
-
-# -----------------------------------------------------------------------------
-# 瀹夎甯哥敤杞欢鍖?| Install Common Packages
-# -----------------------------------------------------------------------------
-- name: Install common packages | 瀹夎甯哥敤杞欢鍖?
-  ansible.builtin.package:
-    name: "{{ common_packages }}"
-    state: present
-
-# -----------------------------------------------------------------------------
-# 鏃跺尯鍜屾湰鍦板寲閰嶇疆 | Timezone and Localization Configuration
-# -----------------------------------------------------------------------------
-- name: Set timezone | 璁剧疆鏃跺尯
-  ansible.builtin.timezone:
-    name: "{{ timezone }}"
-
-- name: Set system locale | 璁剧疆绯荤粺鍖哄煙璁剧疆
-  ansible.builtin.locale_gen:
-    name: "{{ locale }}"
-    state: present
-  when: ansible_os_family == "Debian"
-
-# -----------------------------------------------------------------------------
-# NTP 鏃堕棿鍚屾閰嶇疆 | NTP Time Synchronization Configuration
-# -----------------------------------------------------------------------------
-- name: Ensure chrony config directory exists | 纭繚 chrony 閰嶇疆鐩綍瀛樺湪
-  ansible.builtin.file:
-    path: /etc/chrony
-    state: directory
-    mode: '0755'
-  when: ansible_os_family == "Debian"
-
-- name: Configure NTP servers (Debian/Ubuntu) | 閰嶇疆 NTP 鏈嶅姟鍣?(Debian/Ubuntu)
-  ansible.builtin.template:
-    src: chrony.conf.j2
-    dest: /etc/chrony/chrony.conf
-    mode: '0644'
-    backup: yes
-  notify: Restart chrony
-  when: ansible_os_family == "Debian"
-
-- name: Configure NTP servers (RedHat/CentOS) | 閰嶇疆 NTP 鏈嶅姟鍣?(RedHat/CentOS)
-  ansible.builtin.template:
-    src: chrony.conf.j2
-    dest: /etc/chrony.conf
-    mode: '0644'
-    backup: yes
-  notify: Restart chrony
-  when: ansible_os_family == "RedHat"
-
-- name: Ensure chrony is running (RedHat/CentOS) | 纭繚 chrony 杩愯涓?(RedHat/CentOS)
-  ansible.builtin.service:
-    name: chronyd
-    state: started
-    enabled: yes
-  when: ansible_os_family == "RedHat"
-
-- name: Ensure chrony is running (Debian/Ubuntu) | 纭繚 chrony 杩愯涓?(Debian/Ubuntu)
-  ansible.builtin.service:
-    name: chrony
-    state: started
-    enabled: yes
-  when: ansible_os_family == "Debian"
-
-# -----------------------------------------------------------------------------
-# 鐢ㄦ埛绠＄悊 | User Management
-# -----------------------------------------------------------------------------
-- name: Create admin users (Debian/Ubuntu) | 鍒涘缓绠＄悊鍛樼敤鎴?(Debian/Ubuntu)
-  ansible.builtin.user:
-    name: "{{ item.name }}"
-    shell: "{{ item.shell }}"
-    groups: sudo
-    state: "{{ item.state }}"
-    create_home: yes
-  loop: "{{ admin_users }}"
-  when:
-    - admin_users is defined
-    - ansible_os_family == "Debian"
-
-- name: Create admin users (RedHat/CentOS) | 鍒涘缓绠＄悊鍛樼敤鎴?(RedHat/CentOS)
-  ansible.builtin.user:
-    name: "{{ item.name }}"
-    shell: "{{ item.shell }}"
-    groups: wheel
-    state: "{{ item.state }}"
-    create_home: yes
-  loop: "{{ admin_users }}"
-  when:
-    - admin_users is defined
-    - ansible_os_family == "RedHat"
-
-# -----------------------------------------------------------------------------
-# SSH 瀹夊叏閰嶇疆 | SSH Security Configuration
-# -----------------------------------------------------------------------------
-- name: Configure SSH | 閰嶇疆 SSH
-  ansible.builtin.template:
-    src: sshd_config.j2
-    dest: /etc/ssh/sshd_config
-    mode: '0600'
-    backup: yes
-    validate: '/usr/sbin/sshd -t -f %s'
-  notify: Restart sshd
-
-- name: Ensure SSH service is enabled and started | 纭繚 SSH 鏈嶅姟宸插惎鐢ㄥ苟鍚姩
-  ansible.builtin.service:
-    name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
-    state: started
-    enabled: yes
-
-- name: Apply sysctl parameters
-  ansible.posix.sysctl:
-    name: "{{ item.key }}"
-    value: "{{ item.value }}"
-    state: present
-    reload: yes
-    ignoreerrors: yes
-  loop: "{{ sysctl_config | dict2items }}"
-  when: sysctl_config is defined
-
-- name: Configure system limits
-  ansible.builtin.pam_limits:
-    domain: "{{ item.domain }}"
-    limit_type: "{{ item.limit_type }}"
-    limit_item: "{{ item.limit_item }}"
-    value: "{{ item.value }}"
-  loop: "{{ security.limits }}"
-  when: security.limits is defined
-
-- name: Install fail2ban
-  ansible.builtin.package:
-    name: fail2ban
-    state: present
-  when: security.fail2ban_enabled | default(false)
-
-- name: Configure fail2ban
-  ansible.builtin.template:
-    src: jail.local.j2
-    dest: /etc/fail2ban/jail.local
-    mode: '0644'
-    backup: yes
-  notify: Restart fail2ban
-  when: security.fail2ban_enabled | default(false)
-
-- name: Ensure fail2ban is running
-  ansible.builtin.service:
-    name: fail2ban
-    state: started
-    enabled: yes
-  when: security.fail2ban_enabled | default(false)
-
-- name: Disable unnecessary services
-  ansible.builtin.service:
-    name: "{{ item }}"
-    state: stopped
-    enabled: no
-  loop:
-    - avahi-daemon
-    - cups
-  ignore_errors: yes
-
+- name: Disable unneeded services | 禁用不需要的服务
+  ansible.builtin.import_tasks: services.yml
+  when: common_manage_services | bool
+  tags:
+    - common
+    - common_services

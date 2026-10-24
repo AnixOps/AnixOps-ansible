@@ -1,18 +1,38 @@
 ---
+# TLS material for the HTTPS vhost: operator-provided PEM (base64 from Actions
+# secrets) or a self-signed fallback so Nginx can route by server_name.
+# HTTPS 证书：优先使用密钥提供的 PEM，否则生成自签名回退证书。
+
 - name: Ensure OpenSSL is installed for node platform TLS fallback
   ansible.builtin.apt:
     name: openssl
     state: present
-    update_cache: yes
+    update_cache: true
+    cache_valid_time: 3600
+  register: anixops_node_platform_apt_openssl
+  retries: 3
+  delay: 10
+  until: anixops_node_platform_apt_openssl is succeeded
   when: ansible_os_family == "Debian"
+
+- name: Validate that certificate and key secrets are provided together
+  ansible.builtin.assert:
+    that:
+      - >-
+        (anixops_node_platform_ssl_certificate_pem | default('', true) | string | length > 0)
+        == (anixops_node_platform_ssl_certificate_key_pem | default('', true) | string | length > 0)
+    fail_msg: >-
+      ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_PEM and ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_KEY_PEM
+      must be set together (both base64-encoded PEM) or both left empty.
+    quiet: true
 
 - name: Ensure node platform TLS directories exist
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    mode: '0700'
     owner: root
     group: root
+    mode: "0700"
   loop:
     - "{{ anixops_node_platform_ssl_cert | dirname }}"
     - "{{ anixops_node_platform_ssl_key | dirname }}"
@@ -21,9 +41,10 @@
   ansible.builtin.copy:
     content: "{{ anixops_node_platform_ssl_certificate_pem | b64decode }}"
     dest: "{{ anixops_node_platform_ssl_cert }}"
-    mode: '0644'
     owner: root
     group: root
+    mode: "0644"
+    validate: "openssl x509 -noout -in %s"
   when:
     - anixops_node_platform_ssl_certificate_pem | default('', true) | string | length > 0
     - anixops_node_platform_ssl_certificate_key_pem | default('', true) | string | length > 0
@@ -33,9 +54,10 @@
   ansible.builtin.copy:
     content: "{{ anixops_node_platform_ssl_certificate_key_pem | b64decode }}"
     dest: "{{ anixops_node_platform_ssl_key }}"
-    mode: '0600'
     owner: root
     group: root
+    mode: "0600"
+    validate: "openssl pkey -noout -in %s"
   when:
     - anixops_node_platform_ssl_certificate_pem | default('', true) | string | length > 0
     - anixops_node_platform_ssl_certificate_key_pem | default('', true) | string | length > 0
@@ -51,6 +73,13 @@
     path: "{{ anixops_node_platform_ssl_key }}"
   register: anixops_node_platform_ssl_key_stat
 
+- name: Refuse to continue with an orphaned certificate or key
+  ansible.builtin.fail:
+    msg: >-
+      Exactly one of {{ anixops_node_platform_ssl_cert }} / {{ anixops_node_platform_ssl_key }} exists.
+      Provide both PEM secrets or remove the orphaned file so a matching self-signed pair can be created.
+  when: anixops_node_platform_ssl_cert_stat.stat.exists != anixops_node_platform_ssl_key_stat.stat.exists
+
 - name: Create self-signed node platform TLS certificate when missing
   ansible.builtin.command:
     argv:
@@ -60,8 +89,9 @@
       - -nodes
       - -newkey
       - rsa:2048
+      - -sha256
       - -days
-      - "825"
+      - "{{ anixops_node_platform_ssl_self_signed_days | int }}"
       - -keyout
       - "{{ anixops_node_platform_ssl_key }}"
       - -out
@@ -70,13 +100,12 @@
       - "/CN={{ anixops_node_platform_server_name }}"
       - -addext
       - "subjectAltName=DNS:{{ anixops_node_platform_server_name }}"
-  when: not anixops_node_platform_ssl_cert_stat.stat.exists or not anixops_node_platform_ssl_key_stat.stat.exists
-  no_log: true
+    creates: "{{ anixops_node_platform_ssl_key }}"
+  when: not anixops_node_platform_ssl_cert_stat.stat.exists
 
 - name: Restrict node platform TLS key permissions
   ansible.builtin.file:
     path: "{{ anixops_node_platform_ssl_key }}"
-    mode: '0600'
     owner: root
     group: root
-  when: anixops_node_platform_ssl_key is defined
+    mode: "0600"

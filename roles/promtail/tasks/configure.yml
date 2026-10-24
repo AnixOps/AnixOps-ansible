@@ -1,0 +1,95 @@
+---
+# =============================================================================
+# promtail - configure | 配置用户、目录、配置文件与 systemd 单元
+# =============================================================================
+
+- name: Create the promtail system group
+  ansible.builtin.group:
+    name: "{{ promtail_group }}"
+    system: true
+    state: present
+
+- name: Check whether the systemd-journal group exists
+  ansible.builtin.getent:
+    database: group
+    key: systemd-journal
+    fail_key: false
+
+- name: Determine the supplementary groups that grant log access
+  ansible.builtin.set_fact:
+    promtail_effective_log_groups: >-
+      {{ (promtail_log_groups
+          + (['systemd-journal'] if ansible_facts.getent_group['systemd-journal'] is not none else []))
+         | unique | list }}
+
+- name: Create the promtail system user with log read access
+  ansible.builtin.user:
+    name: "{{ promtail_user }}"
+    group: "{{ promtail_group }}"
+    groups: "{{ promtail_effective_log_groups }}"
+    append: true
+    system: true
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
+    state: present
+
+- name: Create the promtail configuration directory
+  ansible.builtin.file:
+    path: "{{ promtail_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ promtail_group }}"
+    mode: "0750"
+
+- name: Create the promtail positions directory
+  ansible.builtin.file:
+    path: "{{ promtail_positions_dir }}"
+    state: directory
+    owner: "{{ promtail_user }}"
+    group: "{{ promtail_group }}"
+    mode: "0750"
+
+- name: Detect whether the installed promtail supports -check-syntax
+  ansible.builtin.command:
+    argv:
+      - "{{ promtail_install_path }}"
+      - -help
+  register: promtail_help
+  changed_when: false
+  failed_when: false
+  when: promtail_config_validate | bool
+
+- name: Decide how the promtail configuration is validated
+  ansible.builtin.set_fact:
+    promtail_config_validate_cmd: >-
+      {{ (promtail_install_path ~ ' -config.file=%s -check-syntax')
+         if (promtail_config_validate | bool
+             and 'check-syntax' in ((promtail_help.stdout | default('')) ~ (promtail_help.stderr | default(''))))
+         else '' }}
+
+- name: Deploy the promtail configuration
+  ansible.builtin.template:
+    src: promtail-config.yml.j2
+    dest: "{{ promtail_config_path }}"
+    owner: root
+    group: "{{ promtail_group }}"
+    mode: "0640"
+    backup: true
+    validate: "{{ promtail_config_validate_cmd | default(omit, true) }}"
+  register: promtail_config_result
+  no_log: "{{ promtail_loki_basic_auth_password | length > 0 }}"
+  notify: Restart promtail
+
+- name: Deploy the promtail systemd unit
+  ansible.builtin.template:
+    src: promtail.service.j2
+    dest: "{{ promtail_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  register: promtail_unit_result
+  notify:
+    - Reload systemd
+    - Restart promtail

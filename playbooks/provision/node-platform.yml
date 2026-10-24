@@ -1,30 +1,125 @@
 ---
-- name: Deploy AnixOps node platform web stack
+# =============================================================================
+# AnixOps node platform deployment | AnixOps 节点平台部署
+# =============================================================================
+# Deploys the compose-based node platform stack and the Nginx public edge.
+#
+# Scope: anixops_node_platform_servers (serial: 30%, max_fail: 25%)
+# Rollback: set ANIXOPS_NODE_PLATFORM_REPO_VERSION to the previous tag/sha and
+#           re-run; previous .env / compose files are kept as *.backup files.
+# Pre-flight: OS family, free disk space, existing Docker daemon
+# Post-check: Nginx edge answers on 80 (and 443 when SSL is enabled)
+# =============================================================================
+
+- name: Deploy AnixOps node platform web stack | 部署 AnixOps 节点平台
   hosts: anixops_node_platform_servers
+  become: true
+  gather_facts: true
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  gather_facts: yes
-  ignore_unreachable: yes
+  any_errors_fatal: false
+  tags:
+    - node_platform
+
+  pre_tasks:
+    - name: Preflight - check the operating system is supported | 预检 - 操作系统
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == "Debian"
+          - ansible_distribution in ["Debian", "Ubuntu"]
+          - ansible_architecture in ["x86_64", "aarch64"]
+        fail_msg: >-
+          anixops_node_platform supports Debian/Ubuntu on x86_64 or aarch64 only
+          (detected {{ ansible_distribution | default('?') }} {{ ansible_distribution_release | default('') }}
+          {{ ansible_architecture | default('?') }}).
+        quiet: true
+
+    - name: Preflight - locate the filesystem holding the deployment directory | 预检 - 磁盘
+      ansible.builtin.set_fact:
+        anixops_node_platform_preflight_mount: >-
+          {{
+            ansible_mounts
+            | selectattr('mount', 'in', anixops_node_platform_deploy_dir | default('/opt/anixops-node-platform'))
+            | sort(attribute='mount')
+            | last
+          }}
+      when: ansible_mounts | default([]) | length > 0
+
+    - name: Preflight - check free disk space | 预检 - 剩余空间
+      ansible.builtin.assert:
+        that:
+          - >-
+            (anixops_node_platform_preflight_mount.size_available | int)
+            >= (anixops_node_platform_min_free_disk_gb | default(5) | int) * 1073741824
+        fail_msg: >-
+          Only {{ (anixops_node_platform_preflight_mount.size_available | int / 1073741824) | round(1) }} GiB
+          free on {{ anixops_node_platform_preflight_mount.mount }}; at least
+          {{ anixops_node_platform_min_free_disk_gb | default(5) }} GiB is required for images and builds.
+        quiet: true
+      when: anixops_node_platform_preflight_mount is defined
+
+    - name: Preflight - probe for an existing Docker daemon | 预检 - Docker
+      ansible.builtin.command:
+        argv:
+          - docker
+          - info
+          - --format
+          - "{{ '{{' }}.ServerVersion{{ '}}' }}"
+      register: anixops_node_platform_preflight_docker
+      changed_when: false
+      failed_when: false
+
+    - name: Preflight - summary | 预检 - 摘要
+      ansible.builtin.debug:
+        msg: >-
+          {{ ansible_distribution }} {{ ansible_distribution_release }} ({{ ansible_architecture }}),
+          free={{ (anixops_node_platform_preflight_mount.size_available | default(0) | int / 1073741824)
+                 | round(1) }} GiB,
+          docker={{ (anixops_node_platform_preflight_docker.rc | default(1) == 0)
+                    | ternary('running ' ~ (anixops_node_platform_preflight_docker.stdout | default('') | trim),
+                              'not running (the role installs and starts it)') }}
 
   roles:
     - anixops_node_platform
     - nginx
 
   post_tasks:
-    - name: Verify the Nginx edge responds locally
+    # The HTTP vhost may answer 200 (proxy) or 301/302 (anixops_node_platform_force_https).
+    - name: Verify the Nginx edge answers on HTTP | 验证 Nginx HTTP 入口
       ansible.builtin.uri:
-        url: "http://localhost"
-        status_code: 200
-      register: anixops_node_platform_edge_check
+        url: "http://127.0.0.1/"
+        headers:
+          Host: "{{ anixops_node_platform_server_name }}"
+        follow_redirects: none
+        status_code: [200, 301, 302]
+      register: anixops_node_platform_edge_http
+      retries: 5
+      delay: 5
+      until: anixops_node_platform_edge_http is succeeded
 
-    - name: Display node platform deployment summary
+    # validate_certs is off because the role may have installed a self-signed fallback;
+    # the Host header still selects the node platform vhost.
+    - name: Verify the Nginx edge answers on HTTPS | 验证 Nginx HTTPS 入口
+      ansible.builtin.uri:
+        url: "https://127.0.0.1/"
+        headers:
+          Host: "{{ anixops_node_platform_server_name }}"
+        validate_certs: false
+        follow_redirects: none
+        status_code: [200, 301, 302]
+      register: anixops_node_platform_edge_https
+      retries: 5
+      delay: 5
+      until: anixops_node_platform_edge_https is succeeded
+      when: anixops_node_platform_ssl_enabled | default(false) | bool
+
+    - name: Display node platform deployment summary | 部署摘要
       ansible.builtin.debug:
         msg: |
-          AnixOps node platform web stack deployed successfully
-          - Host: {{ inventory_hostname }}
+          AnixOps node platform deployed on {{ inventory_hostname }}
           - Edge domain: {{ anixops_node_platform_server_name }}
           - Public URL: {{ anixops_node_platform_public_url }}
           - Nginx upstream: http://127.0.0.1:{{ anixops_node_platform_frontend_port }}
           - Direct inbound blocked: {{ anixops_node_platform_block_direct_public_ports | join(', ') }}
-          - Edge status: {{ anixops_node_platform_edge_check.status }}
+          - Edge HTTP status: {{ anixops_node_platform_edge_http.status }}
+          - Edge HTTPS status: {{ anixops_node_platform_edge_https.status | default('disabled') }}

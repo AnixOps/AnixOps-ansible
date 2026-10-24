@@ -1,0 +1,75 @@
+---
+# =============================================================================
+# Loki - verify | 验证
+# =============================================================================
+# /ready returns 503 for about 15 seconds after start while the ingester warms
+# up, hence 12 retries x 5s. On failure: journal tail, restore backups,
+# restart, fail.
+
+- name: Verify loki readiness | 验证 loki 就绪状态
+  block:
+    - name: Wait for loki /ready | 等待 /ready
+      ansible.builtin.uri:
+        url: "{{ loki_health_url }}"
+        status_code: 200
+        timeout: 10
+      register: loki_ready
+      retries: "{{ loki_verify_retries }}"
+      delay: "{{ loki_verify_delay }}"
+      until: loki_ready.status == 200
+  rescue:
+    - name: Collect loki journal tail | 收集 loki 日志尾部
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ loki_service_name }}"
+          - -n
+          - "50"
+          - --no-pager
+      register: loki_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Show loki journal tail | 显示 loki 日志尾部
+      ansible.builtin.debug:
+        msg: "{{ loki_journal.stdout_lines | default([]) }}"
+
+    - name: Restore previous loki-config.yml | 恢复之前的 loki-config.yml
+      ansible.builtin.copy:
+        src: "{{ loki_config_result.backup_file }}"
+        dest: "{{ loki_config_file }}"
+        owner: root
+        group: "{{ loki_group }}"
+        mode: "0640"
+        remote_src: true
+      when: loki_config_result.backup_file is defined
+
+    - name: Restore previous loki unit | 恢复之前的 loki 单元文件
+      ansible.builtin.copy:
+        src: "{{ loki_unit_result.backup_file }}"
+        dest: "{{ loki_unit_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when: loki_unit_result.backup_file is defined
+
+    - name: Restart loki with the restored configuration | 使用恢复的配置重启 loki
+      ansible.builtin.systemd_service:
+        name: "{{ loki_service_name }}"
+        state: restarted
+        daemon_reload: true
+      when: >-
+        loki_config_result.backup_file is defined or
+        loki_unit_result.backup_file is defined
+
+    - name: Fail because loki did not become ready | loki 未能就绪，任务失败
+      ansible.builtin.fail:
+        msg: >-
+          Loki did not answer 200 on {{ loki_health_url }} within
+          {{ loki_verify_retries * loki_verify_delay }}s.
+          {% if loki_config_result.backup_file is defined or loki_unit_result.backup_file is defined %}
+          The previous configuration was restored and the service restarted.
+          {% endif %}
+          Inspect `journalctl -u {{ loki_service_name }}` on {{ inventory_hostname }}.

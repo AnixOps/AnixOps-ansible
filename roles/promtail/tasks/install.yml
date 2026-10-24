@@ -1,0 +1,86 @@
+---
+# =============================================================================
+# promtail - install | 安装二进制文件
+# =============================================================================
+# Downloads the release archive only when the binary is missing or its
+# version differs from promtail_version (upgrades and downgrades alike).
+# =============================================================================
+
+- name: Check whether the promtail binary exists
+  ansible.builtin.stat:
+    path: "{{ promtail_install_path }}"
+  register: promtail_binary_stat
+
+- name: Read the installed promtail version
+  ansible.builtin.command:
+    argv:
+      - "{{ promtail_install_path }}"
+      - --version
+  register: promtail_version_probe
+  changed_when: false
+  failed_when: false
+  when: promtail_binary_stat.stat.exists
+
+- name: Determine the installed promtail version
+  ansible.builtin.set_fact:
+    promtail_installed_version: >-
+      {{ ((promtail_version_probe.stdout | default('')) ~ ' ' ~ (promtail_version_probe.stderr | default('')))
+         | regex_search('(?<=version )[0-9]+\.[0-9]+\.[0-9]+') | default('', true) }}
+
+- name: Show promtail version status
+  ansible.builtin.debug:
+    msg: >-
+      promtail installed={{ promtail_installed_version | default('none', true) }}
+      desired={{ promtail_version }} arch={{ promtail_arch }}
+
+- name: Download and install promtail
+  when: promtail_installed_version != (promtail_version | string)
+  block:
+    - name: Ensure unzip is available to extract the promtail archive
+      ansible.builtin.package:
+        name: unzip
+        state: present
+      register: promtail_unzip_install
+      retries: 3
+      delay: 5
+      until: promtail_unzip_install is succeeded
+
+    - name: Create a temporary download directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: promtail.
+      register: promtail_tmpdir
+
+    - name: Download the promtail release archive
+      ansible.builtin.get_url:
+        url: "{{ promtail_archive_url }}"
+        dest: "{{ promtail_tmpdir.path }}/{{ promtail_archive }}"
+        checksum: "{{ promtail_checksum | default(omit, true) }}"
+        mode: "0644"
+        timeout: 60
+      register: promtail_download
+      retries: 5
+      delay: 10
+      until: promtail_download is succeeded
+
+    - name: Extract the promtail release archive
+      ansible.builtin.unarchive:
+        src: "{{ promtail_tmpdir.path }}/{{ promtail_archive }}"
+        dest: "{{ promtail_tmpdir.path }}"
+        remote_src: true
+
+    - name: Install the promtail binary
+      ansible.builtin.copy:
+        src: "{{ promtail_tmpdir.path }}/promtail-linux-{{ promtail_arch }}"
+        dest: "{{ promtail_install_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      notify: Restart promtail
+  always:
+    - name: Remove the temporary download directory
+      ansible.builtin.file:
+        path: "{{ promtail_tmpdir.path }}"
+        state: absent
+      when: promtail_tmpdir.path is defined

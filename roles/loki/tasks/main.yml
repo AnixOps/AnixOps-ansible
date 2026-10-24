@@ -1,97 +1,28 @@
 ---
-# Loki Server Installation Tasks
+# =============================================================================
+# Loki server role | Loki 日志服务端角色
+# =============================================================================
+# install   -> user, directories, architecture/version aware binary install
+# configure -> loki-config.yml (validated with `loki -verify-config`), unit
+# service   -> flush handlers, enable + start
+# verify    -> /ready with retries, rollback on failure
+# =============================================================================
 
-- name: Create loki system group
-  ansible.builtin.group:
-    name: loki
-    state: present
-    system: yes
+- name: Install Loki | 安装 Loki
+  ansible.builtin.include_tasks: install.yml
 
-- name: Create loki system user
-  ansible.builtin.user:
-    name: loki
-    group: loki
-    shell: /sbin/nologin
-    system: yes
-    create_home: no
+- name: Configure Loki | 配置 Loki
+  ansible.builtin.include_tasks: configure.yml
 
-- name: Create loki directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: loki
-    group: loki
-    mode: '0755'
-  loop:
-    - /etc/loki
-    - /var/lib/loki
+- name: Manage Loki service | 管理 Loki 服务
+  ansible.builtin.include_tasks: service.yml
 
-- name: Download and install Loki
-  block:
-    - name: Check if Loki is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/loki
-      register: loki_bin
+- name: Verify Loki | 验证 Loki
+  ansible.builtin.include_tasks: verify.yml
 
-    - name: Download Loki binary
-      ansible.builtin.get_url:
-        url: "https://github.com/grafana/loki/releases/download/v{{ loki_version }}/loki-linux-amd64.zip"
-        dest: /tmp/loki.zip
-        mode: '0644'
-      when: not loki_bin.stat.exists
-
-    - name: Install unzip
-      ansible.builtin.package:
-        name: unzip
-        state: present
-      when: not loki_bin.stat.exists
-
-    - name: Extract Loki
-      ansible.builtin.unarchive:
-        src: /tmp/loki.zip
-        dest: /tmp
-        remote_src: yes
-      when: not loki_bin.stat.exists
-
-    - name: Copy Loki binary
-      ansible.builtin.copy:
-        src: /tmp/loki-linux-amd64
-        dest: /usr/local/bin/loki
-        owner: loki
-        group: loki
-        mode: '0755'
-        remote_src: yes
-      when: not loki_bin.stat.exists
-
-- name: Configure Loki
-  ansible.builtin.template:
-    src: loki-config.yml.j2
-    dest: /etc/loki/loki-config.yml
-    owner: loki
-    group: loki
-    mode: '0644'
-    backup: yes
-  notify: restart loki
-
-- name: Create Loki systemd service
-  ansible.builtin.template:
-    src: loki.service.j2
-    dest: /etc/systemd/system/loki.service
-    mode: '0644'
-    backup: yes
-  notify: restart loki
-
-- name: Enable and start Loki service
-  ansible.builtin.systemd:
-    name: loki
-    state: started
-    enabled: yes
-    daemon_reload: yes
-
-- name: Display Loki info
+- name: Show Loki summary | 显示 Loki 摘要
   ansible.builtin.debug:
-    msg: |
-      Loki installed successfully
-      Access: http://{{ ansible_host }}:3100
-      Config: /etc/loki/loki-config.yml
-      Data: /var/lib/loki
+    msg: >-
+      Loki {{ loki_version }} ready on {{ loki_listen_address }}:{{ loki_port }}
+      (gRPC {{ loki_grpc_port }}, config {{ loki_config_file }}, data {{ loki_data_dir }},
+      retention {{ loki_retention_period if loki_retention_enabled | bool else 'disabled' }})

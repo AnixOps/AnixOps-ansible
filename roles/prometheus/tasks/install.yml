@@ -1,0 +1,136 @@
+---
+# =============================================================================
+# Prometheus - install | 安装
+# =============================================================================
+
+- name: Create prometheus system group | 创建 prometheus 系统组
+  ansible.builtin.group:
+    name: "{{ prometheus_group }}"
+    system: true
+    state: present
+
+- name: Create prometheus system user | 创建 prometheus 系统用户
+  ansible.builtin.user:
+    name: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: false
+    state: present
+
+- name: Create prometheus configuration directories | 创建配置目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ prometheus_group }}"
+    mode: "0755"
+  loop:
+    - "{{ prometheus_config_dir }}"
+    - "{{ prometheus_rules_dir }}"
+
+- name: Create prometheus data directory | 创建数据目录
+  ansible.builtin.file:
+    path: "{{ prometheus_data_dir }}"
+    state: directory
+    owner: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    mode: "0750"
+
+# -----------------------------------------------------------------------------
+# Version detection | 版本检测
+# -----------------------------------------------------------------------------
+- name: Check for an existing prometheus binary | 检查已安装的二进制文件
+  ansible.builtin.stat:
+    path: "{{ prometheus_install_dir }}/prometheus"
+  register: prometheus_binary_stat
+
+- name: Read installed prometheus version | 读取已安装版本
+  ansible.builtin.command:
+    argv:
+      - "{{ prometheus_install_dir }}/prometheus"
+      - --version
+  register: prometheus_version_probe
+  changed_when: false
+  failed_when: false
+  when: prometheus_binary_stat.stat.exists
+
+- name: Determine whether an install or upgrade is required | 判断是否需要安装或升级
+  ansible.builtin.set_fact:
+    prometheus_installed_version: >-
+      {{ ((prometheus_version_probe.stdout | default('')) ~ ' ' ~ (prometheus_version_probe.stderr | default('')))
+         | regex_search('[0-9]+\.[0-9]+\.[0-9]+') | default('', true) }}
+
+- name: Set install flag | 设置安装标志
+  ansible.builtin.set_fact:
+    prometheus_install_required: >-
+      {{ (not prometheus_binary_stat.stat.exists) or (prometheus_installed_version | trim != prometheus_version) }}
+
+# -----------------------------------------------------------------------------
+# Download and install | 下载并安装
+# -----------------------------------------------------------------------------
+- name: Download and install prometheus | 下载并安装 prometheus
+  when: prometheus_install_required | bool
+  block:
+    - name: Create temporary download directory | 创建临时下载目录
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: prometheus
+      register: prometheus_tmpdir
+
+    - name: Download prometheus release tarball | 下载 prometheus 发布包
+      ansible.builtin.get_url:
+        url: "{{ prometheus_download_url }}/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}.tar.gz"
+        dest: "{{ prometheus_tmpdir.path }}/prometheus.tar.gz"
+        checksum: "{{ prometheus_checksum if prometheus_checksum | length > 0 else omit }}"
+        timeout: "{{ prometheus_download_timeout }}"
+        mode: "0644"
+      register: prometheus_download
+      retries: "{{ prometheus_download_retries }}"
+      delay: "{{ prometheus_download_delay }}"
+      until: prometheus_download is succeeded
+
+    - name: Extract prometheus release tarball | 解压 prometheus 发布包
+      ansible.builtin.unarchive:
+        src: "{{ prometheus_tmpdir.path }}/prometheus.tar.gz"
+        dest: "{{ prometheus_tmpdir.path }}"
+        remote_src: true
+
+    - name: Install prometheus and promtool binaries | 安装 prometheus 与 promtool
+      ansible.builtin.copy:
+        src: "{{ prometheus_tmpdir.path }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}/{{ item }}"
+        dest: "{{ prometheus_install_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      loop:
+        - prometheus
+        - promtool
+      notify: Restart prometheus
+
+    # Console templates were dropped from the release tarball in Prometheus 3.x.
+    - name: Check for console templates in the release | 检查发布包中的控制台模板
+      ansible.builtin.stat:
+        path: "{{ prometheus_tmpdir.path }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}/consoles"
+      register: prometheus_consoles_stat
+
+    - name: Install console templates and libraries | 安装控制台模板与库
+      ansible.builtin.copy:
+        src: "{{ prometheus_tmpdir.path }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}/{{ item }}/"
+        dest: "{{ prometheus_config_dir }}/{{ item }}/"
+        owner: root
+        group: "{{ prometheus_group }}"
+        mode: "0644"
+        directory_mode: "0755"
+        remote_src: true
+      loop:
+        - consoles
+        - console_libraries
+      when: prometheus_consoles_stat.stat.exists
+  always:
+    - name: Remove temporary download directory | 删除临时下载目录
+      ansible.builtin.file:
+        path: "{{ prometheus_tmpdir.path }}"
+        state: absent
+      when: prometheus_tmpdir.path is defined

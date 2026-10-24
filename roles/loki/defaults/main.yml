@@ -1,17 +1,113 @@
 ---
-# Loki Server Default Variables
-
-loki_version: "2.9.0"
-
 # =============================================================================
-# Lifecycle Configuration | 生命周期配置
+# Loki server role - defaults | Loki 日志服务端角色默认变量
 # =============================================================================
-loki_port: 3100
-loki_health_url: "http://localhost:3100/ready"
+# Every variable is prefixed with `loki_`. The global `loki` dict from
+# group_vars/all (`loki.version`, `loki.port`) and `_target_arch` are consumed
+# through fallbacks so existing inventories keep working unchanged.
+
+# -----------------------------------------------------------------------------
+# Version and download | 版本与下载
+# -----------------------------------------------------------------------------
+loki_version: "{{ (loki | default({})).version | default('2.9.0') }}"
+loki_download_url: "https://github.com/grafana/loki/releases/download"
+loki_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+  armv7l: arm
+loki_arch: "{{ _target_arch | default(loki_arch_map[ansible_architecture] | default('amd64')) }}"
+# Optional checksum of the zip, e.g. "sha256:<hex>" or
+# "sha256:https://github.com/grafana/loki/releases/download/v2.9.0/SHA256SUMS".
+loki_checksum: ""
+loki_download_timeout: 120
+loki_download_retries: 5
+loki_download_delay: 10
+# unarchive needs unzip on the target for .zip releases.
+loki_dependency_packages:
+  - unzip
+
+# -----------------------------------------------------------------------------
+# Paths, user and group | 路径、用户与用户组
+# -----------------------------------------------------------------------------
+loki_user: loki
+loki_group: loki
+loki_install_dir: /usr/local/bin
+loki_config_dir: /etc/loki
+loki_config_file: "{{ loki_config_dir }}/loki-config.yml"
+loki_data_dir: /var/lib/loki
+loki_unit_file: /etc/systemd/system/loki.service
+
+# -----------------------------------------------------------------------------
+# Server | 服务端
+# -----------------------------------------------------------------------------
+loki_port: "{{ (loki | default({})).port | default(3100) }}"
+loki_grpc_port: 9096
+loki_listen_address: 0.0.0.0
+loki_log_level: info
+# Additional raw command line flags appended to ExecStart.
+loki_extra_args: []
+
+# -----------------------------------------------------------------------------
+# Storage schema | 存储 schema
+# -----------------------------------------------------------------------------
+# Existing deployments store data with boltdb-shipper / v11; never edit an
+# existing period. To move to TSDB append a new entry with a FUTURE `from`
+# date, for example:
+#   - from: "2026-12-01"
+#     store: tsdb
+#     object_store: filesystem
+#     schema: v13
+#     index:
+#       prefix: tsdb_index_
+#       period: 24h
+loki_schema_configs:
+  - from: "2020-10-24"
+    store: boltdb-shipper
+    object_store: filesystem
+    schema: v11
+    index:
+      prefix: index_
+      period: 24h
+
+# -----------------------------------------------------------------------------
+# Retention (compactor) | 保留策略
+# -----------------------------------------------------------------------------
+# Retention is enforced by the compactor (part of the single binary). Chunks
+# older than loki_retention_period are deleted retention_delete_delay after
+# they are marked. Minimum period is 24h; "0s" keeps data forever.
+loki_retention_enabled: true
+loki_retention_period: 30d
+loki_retention_delete_delay: 2h
+loki_compaction_interval: 10m
+
+# -----------------------------------------------------------------------------
+# Limits | 限制
+# -----------------------------------------------------------------------------
+loki_reject_old_samples: true
+loki_reject_old_samples_max_age: 168h
+loki_ingestion_rate_mb: 8
+loki_ingestion_burst_size_mb: 16
+loki_max_query_series: 5000
+
+# Ruler: Alertmanager URL used by Loki alerting rules (optional).
+loki_alertmanager_url: ""
+
+# -----------------------------------------------------------------------------
+# Verification | 验证
+# -----------------------------------------------------------------------------
+# Loki answers 503 on /ready for ~15s after start (ingester warm-up).
+loki_verify_retries: 12
+loki_verify_delay: 5
+
+# -----------------------------------------------------------------------------
+# Lifecycle contract | 生命周期契约 (roles/lifecycle, rollback.yml)
+# -----------------------------------------------------------------------------
+loki_service_name: loki
+loki_health_url: "http://localhost:{{ loki_port }}/ready"
 loki_backup_files:
-  - /etc/loki/loki-config.yml
-  - /etc/systemd/system/loki.service
+  - "{{ loki_config_file }}"
+  - "{{ loki_unit_file }}"
 loki_packages: []
 loki_config_dirs:
-  - /etc/loki
-  - /var/lib/loki
+  - "{{ loki_config_dir }}"
+  - "{{ loki_data_dir }}"

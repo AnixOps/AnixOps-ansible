@@ -1,12 +1,14 @@
 # =============================================================================
-# 全局变量配置文件 | Global Variables Configuration
+# Global variables | 全局变量配置
 # =============================================================================
-# 此文件定义适用于所有主机组的通用变量
-# This file defines common variables applicable to all host groups
+# Applied to every host of the production inventory. Roles consume these
+# operator-facing keys through prefixed defaults with fallbacks, e.g.
+# `common_timezone: "{{ timezone | default('Asia/Shanghai') }}"`, so the key
+# names below are a stable contract — do not rename them.
 #
-# 安全提示 | Security Note:
-#   所有敏感信息应存储在 GitHub Secrets 或环境变量中
-#   All sensitive information should be stored in GitHub Secrets or environment variables
+# Security note | 安全提示:
+#   Secrets never live in this file. They come from the environment (.env
+#   locally, repository secrets in GitHub Actions) via lookup('env', ...).
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -15,16 +17,14 @@
 _target_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
 
 # -----------------------------------------------------------------------------
-# 时区和本地化配置 | Timezone and Localization Configuration
+# Timezone and locale | 时区和本地化
 # -----------------------------------------------------------------------------
 timezone: "Asia/Shanghai"
 locale: "en_US.UTF-8"
 
 # -----------------------------------------------------------------------------
-# 常用软件包 | Common Packages
+# Common packages installed on every server | 基础软件包
 # -----------------------------------------------------------------------------
-# 所有服务器默认安装的基础工具
-# Basic tools installed by default on all servers
 common_packages:
   - curl
   - wget
@@ -37,97 +37,99 @@ common_packages:
   - tar
   - python3
   - python3-pip
-  - chrony  # NTP 时间同步服务 | NTP time synchronization service
+  - chrony  # NTP time synchronisation | NTP 时间同步
 
 # -----------------------------------------------------------------------------
-# NTP 服务器配置 | NTP Server Configuration
+# NTP servers | NTP 服务器
 # -----------------------------------------------------------------------------
-# 用于时间同步的 NTP 服务器列表
-# NTP server list for time synchronization
 ntp_servers:
   - "ntp.aliyun.com"
   - "pool.ntp.org"
 
 # -----------------------------------------------------------------------------
-# SSH 配置 | SSH Configuration
+# SSH | SSH 配置
 # -----------------------------------------------------------------------------
+# Key-only access: password authentication is disabled fleet-wide. Root login
+# stays enabled because every host is managed as root over SSH keys
+# (ANSIBLE_USER defaults to root, see .env.example). Switch ssh_allow_root to
+# false only after a sudo-capable admin user (admin_users) has been rolled out
+# and ANSIBLE_USER points at it — otherwise Ansible locks itself out.
 ssh_port: 22
-ssh_allow_root: true  # 生产环境建议设为 false | Recommended to set to false in production
-ssh_password_authentication: true
+ssh_allow_root: true
+ssh_password_authentication: false
 ssh_pubkey_authentication: true
 
 # -----------------------------------------------------------------------------
-# 防火墙配置 | Firewall Configuration
+# Firewall (UFW) | 防火墙
 # -----------------------------------------------------------------------------
 firewall_enabled: true
 
-# 公开访问端口（无需白名单）| Public access ports (no whitelist required)
+# Default policy for incoming traffic. `allow` preserves today's behaviour
+# (only the restricted ports below are actively filtered). Set it to `deny`
+# once every port a host really needs is listed in firewall_public_ports /
+# proxy_additional_ports / the role-specific port variables — the SSH port is
+# always allowed before UFW is enabled, so a `deny` policy cannot lock you out.
+firewall_default_incoming_policy: allow
+
+# Publicly reachable ports (no whitelist) | 公开端口（无需白名单）
 firewall_public_ports:
   - 22     # SSH
   - 80     # HTTP
   - 443    # HTTPS
 
-# 基础防火墙允许端口 | Basic firewall allowed ports
+# Legacy alias kept for roles that still read it | 兼容旧变量名
 firewall_allowed_ports:
   - 80     # HTTP
   - 443    # HTTPS
 
-# 受限访问端口（需要白名单，仅监控服务器可访问）
-# Restricted access ports (whitelist required, accessible only to monitoring servers)
+# Restricted ports: reachable only from monitoring_whitelist | 受限端口（仅白名单可访问）
 firewall_restricted_ports:
-  - 9100   # Prometheus Node Exporter
+  - 9100   # Prometheus node_exporter
   - 9080   # Promtail (Loki agent)
-  - 9090   # Prometheus Server
-  - 3100   # Loki Server
+  - 9090   # Prometheus server
+  - 3100   # Loki server
   - 3000   # Grafana
-  - 5432   # PostgreSQL
+  - 5432   # PostgreSQL — only runs on pl-1 and listens on 127.0.0.1; kept here so
+           # that, should it ever bind publicly, access stays whitelist-only.
 
-# 监控服务白名单 IP 列表 | Monitoring service whitelist IP list
-# 从环境变量读取服务器 IP，自动添加到白名单
-# Read server IPs from environment variables, automatically added to whitelist
-# 包含所有服务器的 IP 段 | Contains IP ranges of all servers
+# Server addresses that must always reach the restricted ports: the
+# observability host (Prometheus scrapes node_exporter/promtail on every server).
+# Add further entries as "{{ lookup('env', 'OTHER_V4_SSH') | default('', true) }}".
 monitoring_allowed_ips:
-  # 全局白名单 IP（从环境变量读取，支持逗号分隔的多个 IP/CIDR）
-  # Global whitelist IPs (from env vars, supports comma-separated IPs/CIDRs)
-  - "{{ lookup('env', 'GLOBAL_WHITELIST_IPS') | default('') }}"
-  # 德国测试服务器 | Germany test server
-  - "{{ lookup('env', 'DE_1_V4_SSH') | default('') }}"
-  # 波兰测试服务器（可观测性）| Poland test server (observability)
-  - "{{ lookup('env', 'PL_1_V4_SSH') | default('') }}"
-  # 可以继续添加更多服务器 IP | Can continue to add more server IPs
-  # - "{{ lookup('env', 'YOUR_SERVER_IP') | default('') }}"
+  - "{{ lookup('env', 'PL_1_V4_SSH') | default('', true) }}"  # pl-1 observability
 
-# 处理全局白名单（支持逗号分隔的多个 IP）
-# Process global whitelist (supports comma-separated multiple IPs)
-global_whitelist_raw: "{{ lookup('env', 'GLOBAL_WHITELIST_IPS') | default('') }}"
-global_whitelist_split: "{{ global_whitelist_raw.split(',') if global_whitelist_raw else [] }}"
-global_whitelist_cleaned: "{{ global_whitelist_split | map('trim') | select('string') | reject('equalto', '') | list }}"
+# Extra whitelist from the environment: GLOBAL_WHITELIST_IPS="1.2.3.4,10.0.0.0/24"
+# (comma separated IPs or CIDRs; empty or unset is fine).
+global_whitelist_raw: "{{ lookup('env', 'GLOBAL_WHITELIST_IPS') | default('', true) }}"
+global_whitelist_split: "{{ global_whitelist_raw.split(',') if (global_whitelist_raw | length > 0) else [] }}"
+global_whitelist_cleaned: "{{ global_whitelist_split | map('trim') | reject('equalto', '') | list }}"
 
-# 过滤掉空值的白名单列表，合并全局白名单和服务器 IP
-# Whitelist with empty values filtered out, merging global whitelist and server IPs
-monitoring_whitelist: "{{ (monitoring_allowed_ips + global_whitelist_cleaned) | select('string') | reject('equalto', '') | unique | list }}"
+# Final whitelist consumed by roles/firewall: env whitelist + server addresses,
+# empty strings dropped, duplicates removed. Safe when every source is empty.
+monitoring_whitelist: >-
+  {{ ((global_whitelist_cleaned | list) + (monitoring_allowed_ips | map('trim') | list))
+     | reject('equalto', '') | unique | list }}
 
 # -----------------------------------------------------------------------------
-# 用户管理 | User Management
+# User management | 用户管理
 # -----------------------------------------------------------------------------
-# 注意：用户组会根据操作系统自动设置 | Note: User groups are set automatically based on OS
-# - Debian/Ubuntu: sudo 组 | sudo group
-# - RedHat/CentOS: wheel 组 | wheel group
+# The admin group is chosen per OS family by roles/common (sudo on Debian/Ubuntu,
+# wheel on RedHat).
 admin_users:
   - name: ansible
     shell: /bin/bash
     state: present
 
 # -----------------------------------------------------------------------------
-# 安全配置 | Security Configuration
+# Security | 安全配置
 # -----------------------------------------------------------------------------
 security:
-  # Fail2Ban 配置 | Fail2Ban configuration
+  # Fail2Ban
   fail2ban_enabled: true
   fail2ban_max_retry: 5
-  fail2ban_ban_time: 3600  # 秒 | seconds
+  fail2ban_ban_time: 3600  # seconds | 秒
 
-  # 系统限制 | System limits
+  # System limits | 系统限制
   limits:
     - domain: '*'
       limit_type: soft
@@ -139,7 +141,7 @@ security:
       value: 65535
 
 # -----------------------------------------------------------------------------
-# 系统内核参数优化 | System Kernel Parameter Optimization
+# Kernel parameters | 内核参数优化
 # -----------------------------------------------------------------------------
 sysctl_config:
   net.ipv4.tcp_tw_reuse: 1
@@ -154,7 +156,7 @@ sysctl_config:
   net.ipv4.tcp_max_syn_backlog: 2048
 
 # -----------------------------------------------------------------------------
-# Prometheus 监控配置 | Prometheus Monitoring Configuration
+# Prometheus | Prometheus 监控配置
 # -----------------------------------------------------------------------------
 prometheus:
   version: "2.45.0"
@@ -163,13 +165,11 @@ prometheus:
     version: "1.7.0"
     port: 9100
     download_url: "https://github.com/prometheus/node_exporter/releases/download"
-
-  # Prometheus 服务器地址 (从环境变量读取)
-  # Prometheus server URL (read from environment variables)
-  server_url: "{{ lookup('env', 'PROMETHEUS_URL') | default('http://localhost:9090') }}"
+  # Prometheus server URL (PROMETHEUS_URL) | Prometheus 服务器地址
+  server_url: "{{ lookup('env', 'PROMETHEUS_URL') | default('http://localhost:9090', true) }}"
 
 # -----------------------------------------------------------------------------
-# Loki 日志配置 | Loki Logging Configuration
+# Loki | Loki 日志配置
 # -----------------------------------------------------------------------------
 loki:
   version: "2.9.0"
@@ -178,21 +178,21 @@ loki:
     version: "2.9.3"
     port: 9080
     download_url: "https://github.com/grafana/loki/releases/download"
-
-  # Loki 服务器地址 (从环境变量读取)
-  # Loki server URL (read from environment variables)
-  server_url: "{{ lookup('env', 'LOKI_URL') | default('http://localhost:3100') }}"
+  # Loki server URL (LOKI_URL) | Loki 服务器地址
+  server_url: "{{ lookup('env', 'LOKI_URL') | default('http://localhost:3100', true) }}"
 
 # -----------------------------------------------------------------------------
-# Grafana 配置 | Grafana Configuration
+# Grafana | Grafana 配置
 # -----------------------------------------------------------------------------
 grafana:
-  # Grafana 访问地址 (从环境变量读取)
-  # Grafana access URL (read from environment variables)
-  url: "{{ lookup('env', 'GRAFANA_URL') | default('http://localhost:3000') }}"
+  # Grafana URL (GRAFANA_URL) | Grafana 访问地址
+  url: "{{ lookup('env', 'GRAFANA_URL') | default('http://localhost:3000', true) }}"
+
+# Grafana admin credentials are read by roles/grafana from GRAFANA_ADMIN_USER /
+# GRAFANA_ADMIN_PASSWORD (roles/grafana/defaults/main.yml); set them in .env.
 
 # -----------------------------------------------------------------------------
-# Nginx 配置 | Nginx Configuration
+# Nginx | Nginx 配置
 # -----------------------------------------------------------------------------
 nginx:
   version: "latest"
@@ -202,7 +202,7 @@ nginx:
   keepalive_timeout: 65
 
 # -----------------------------------------------------------------------------
-# 应用通用配置 | Application Common Configuration
+# Application defaults | 应用通用配置
 # -----------------------------------------------------------------------------
 app:
   deploy_dir: /opt/apps

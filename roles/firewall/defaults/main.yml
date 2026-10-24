@@ -1,33 +1,84 @@
 ---
 # =============================================================================
-# Monitoring Firewall Role - Default Variables
+# Firewall role defaults | 防火墙角色默认变量
 # =============================================================================
+# Operator knobs live in inventories/production/group_vars/all/main.yml
+# (firewall_enabled, firewall_public_ports, firewall_restricted_ports,
+# monitoring_whitelist, proxy_additional_ports). The role reads them through
+# the prefixed variables below; inventory values always win over these defaults.
 
+# Master switch. false = the role does nothing (it never disables a firewall).
 firewall_enabled: true
 
+# TCP ports reachable from anywhere. The SSH port is always added automatically.
 firewall_public_ports:
   - "22"
   - "80"
   - "443"
 
+# TCP ports reachable only from the monitoring whitelist, denied for everyone else.
 firewall_restricted_ports:
-  - "9100"
-  - "9090"
-  - "3100"
-  - "3000"
+  - "9100"  # node_exporter
+  - "9080"  # promtail
+  - "9090"  # prometheus
+  - "3100"  # loki
+  - "3000"  # grafana
 
-monitoring_whitelist: []
-proxy_additional_ports: []
+# Extra public ports, usually set per group or host (proxy_servers, us-w-1).
+firewall_proxy_additional_ports: "{{ proxy_additional_ports | default([]) }}"
 
-# =============================================================================
-# Lifecycle Configuration | 生命周期配置
-# =============================================================================
+# Source addresses (IPv4/IPv6, optional CIDR) allowed to reach the restricted
+# ports. Entries are trimmed, comma-split, de-duplicated and validated.
+firewall_whitelist: "{{ monitoring_whitelist | default([]) }}"
+
+# SSH port that must stay reachable: the port Ansible is connected on, falling
+# back to the configured ssh_port, then 22. ssh_port itself is also allowed when
+# it differs (e.g. while the common role is moving sshd to a new port).
+firewall_ssh_port: "{{ ansible_port | default(ssh_port | default(22)) }}"
+
+# Default policies. "allow" keeps the historical behaviour; "deny" turns the
+# host into allow-list mode (the SSH rule is always added before enabling).
+firewall_default_incoming_policy: allow  # allow | deny | reject
+firewall_default_outgoing_policy: allow
+
+# Restricted ports configured but whitelist empty: fail (true) or print a
+# warning and skip the whitelist allow rules (false). Deny rules still apply.
+firewall_fail_on_empty_whitelist: false
+
+# Delete whitelist allow rules created by this role whose address left the
+# whitelist. Only runs when the whitelist is non-empty.
+firewall_prune_stale_whitelist_rules: true
+
+# -----------------------------------------------------------------------------
+# UFW (Debian/Ubuntu)
+# -----------------------------------------------------------------------------
+firewall_ufw_logging: low  # on | off | low | medium | high | full
+firewall_ipv6_enabled: true  # IPV6=yes|no in /etc/default/ufw
+
+# Append the standard ufw-docker DOCKER-USER rules to /etc/ufw/after.rules so
+# that Docker-published ports are no longer exposed behind UFW's back.
+# Read the "Docker" section of README.md before enabling.
+firewall_docker_user_chain: false
+
+# -----------------------------------------------------------------------------
+# firewalld (RedHat family)
+# -----------------------------------------------------------------------------
+firewall_firewalld_zone: public
+# Map firewall_default_incoming_policy onto the zone target
+# (allow=ACCEPT, deny=DROP, reject=%%REJECT%%). Off by default: firewalld's
+# default zone target already rejects unopened ports.
+firewall_firewalld_manage_target: false
+
+# -----------------------------------------------------------------------------
+# Lifecycle contract | 生命周期约定 (consumed by roles/lifecycle)
+# -----------------------------------------------------------------------------
 firewall_port: 0
 firewall_health_url: ""
-firewall_backup_files:
-  - /etc/ufw/ufw.conf
-  - /etc/default/ufw
-firewall_packages:
-  - ufw
-firewall_config_dirs:
-  - /etc/ufw
+firewall_service_name: "{{ 'firewalld' if ansible_os_family | default('Debian') == 'RedHat' else 'ufw' }}"
+firewall_packages: "{{ ['firewalld'] if ansible_os_family | default('Debian') == 'RedHat' else ['ufw'] }}"
+firewall_backup_files: >-
+  {{ ['/etc/firewalld/firewalld.conf', '/etc/firewalld/zones/public.xml']
+     if ansible_os_family | default('Debian') == 'RedHat'
+     else ['/etc/default/ufw', '/etc/ufw/ufw.conf', '/etc/ufw/user.rules',
+           '/etc/ufw/user6.rules', '/etc/ufw/after.rules'] }}
+firewall_config_dirs: "{{ ['/etc/firewalld'] if ansible_os_family | default('Debian') == 'RedHat' else ['/etc/ufw'] }}"

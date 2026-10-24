@@ -1,29 +1,129 @@
 ---
 # =============================================================================
-# K8s Provision Role - Default Variables
+# k8s_provision role defaults | k8s_provision 角色默认变量
 # =============================================================================
+# Operator-facing knobs keep their historical names (k8s_provider, k8s_role,
+# k3s_version, k3s_server_args, kubeconfig_remote_path, kind_cluster_name,
+# cluster_name, kubeconfig_path ...) so existing inventories and playbooks
+# keep working. The role only reads the prefixed variables below, which fall
+# back to those names.
+# 角色只读取带 k8s_provision_ 前缀的变量；旧变量名通过 default() 兼容。
 
-# K8s 提供商 | K8s provider (kind or k3s)
-k8s_provider: "kind"
+# --- Provider selection | 提供商选择 -----------------------------------------
+# "kind" (local Docker-based cluster) or "k3s" (single-binary production cluster)
+k8s_provision_provider: "{{ k8s_provider | default('kind') }}"
+# master|server -> k3s server, worker|agent -> k3s agent (k3s only)
+k8s_provision_role: "{{ k8s_role | default('master') }}"
+k8s_provision_k3s_role: "{{ 'agent' if k8s_provision_role in ['worker', 'agent'] else 'server' }}"
 
-# Kind 版本 | Kind version
-kind_version: "0.20.0"
+# --- Version pins | 版本锁定 ---------------------------------------------------
+k8s_provision_k3s_version: "{{ k3s_version | default('v1.31.5+k3s1') }}"
+k8s_provision_kind_version: "{{ kind_version | default('v0.26.0') }}"
+k8s_provision_kubectl_version: "{{ kubectl_version | default('v1.31.5') }}"
+k8s_provision_helm_version: "{{ helm_version | default('v3.16.4') }}"
 
-# Kind 配置 | Kind configuration
-kind_cluster_name: "anixops-dev"
-kind_cluster_config: "/tmp/kind-config.yaml"
-kind_api_server_port: 6443
+# --- Binary locations | 二进制文件位置 ---------------------------------------
+k8s_provision_bin_dir: /usr/local/bin
+k8s_provision_kubectl_bin: "{{ k8s_provision_bin_dir }}/kubectl"
+k8s_provision_kind_bin: "{{ k8s_provision_bin_dir }}/kind"
+k8s_provision_helm_bin: "{{ k8s_provision_bin_dir }}/helm"
+k8s_provision_k3s_bin: "{{ k8s_provision_bin_dir }}/k3s"
 
-# K3s 配置 | K3s configuration
-k3s_version: "v1.28.5+k3s1"
-k3s_server_options: "--disable traefik --write-kubeconfig-mode 644"
-k3s_install_script: "https://get.k3s.io"
-k3s_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+# Architecture mapping for release URLs (ansible_architecture -> Go arch)
+k8s_provision_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+  armv7l: arm
+k8s_provision_arch: "{{ k8s_provision_arch_map[ansible_architecture] | default('amd64') }}"
 
-# Kubeconfig 路径 | Kubeconfig path
-kubeconfig_path: "{{ k3s_kubeconfig_path if k8s_provider == 'k3s' else ansible_env.HOME + '/.kube/config' }}"
+# --- Download sources and checksums | 下载源与校验和 -------------------------
+# Checksums use get_url's "sha256:<hex>" or "sha256:<url>" syntax. The defaults
+# point at the upstream sidecar files; override with a literal hash to pin, or
+# set to "" to skip verification.
+k8s_provision_download_retries: 5
+k8s_provision_download_delay: 10
 
-# 检查工具 | Check tools
-required_tools:
-  - kubectl
-  - helm
+k8s_provision_k3s_install_script_url: "https://get.k3s.io"
+k8s_provision_k3s_install_script_checksum: ""
+
+# kind release number without the leading "v" (kind prints "kind version 0.26.0")
+k8s_provision_kind_version_number: "{{ k8s_provision_kind_version | regex_replace('^v', '') }}"
+k8s_provision_kind_url: >-
+  https://kind.sigs.k8s.io/dl/v{{ k8s_provision_kind_version_number }}/kind-linux-{{ k8s_provision_arch }}
+k8s_provision_kind_checksum: "sha256:{{ k8s_provision_kind_url }}.sha256sum"
+
+k8s_provision_kubectl_url: >-
+  https://dl.k8s.io/release/{{ k8s_provision_kubectl_version }}/bin/linux/{{ k8s_provision_arch }}/kubectl
+k8s_provision_kubectl_checksum: "sha256:{{ k8s_provision_kubectl_url }}.sha256"
+
+k8s_provision_helm_url: >-
+  https://get.helm.sh/helm-{{ k8s_provision_helm_version }}-linux-{{ k8s_provision_arch }}.tar.gz
+k8s_provision_helm_checksum: "sha256:{{ k8s_provision_helm_url }}.sha256sum"
+
+# --- Tool installation toggles | 工具安装开关 --------------------------------
+# kind needs a standalone kubectl; k3s ships its own (/usr/local/bin/kubectl).
+k8s_provision_install_kubectl: "{{ k8s_provision_provider == 'kind' }}"
+k8s_provision_install_helm: false
+k8s_provision_prerequisite_packages:
+  - ca-certificates
+  - curl
+
+# --- k3s | k3s 配置 -----------------------------------------------------------
+# Extra flags appended to "k3s server" at install time (INSTALL_K3S_EXEC).
+k8s_provision_k3s_server_args: >-
+  {{ k3s_server_args | default(k3s_server_options | default('--disable traefik --write-kubeconfig-mode 644')) }}
+# Extra flags appended to "k3s agent" at install time (worker nodes).
+k8s_provision_k3s_agent_args: "{{ k3s_agent_args | default('') }}"
+# Agents must know the server URL and the cluster join token.
+k8s_provision_k3s_url: "{{ k3s_url | default('') }}"
+k8s_provision_k3s_token: "{{ k3s_token | default(lookup('env', 'K3S_TOKEN')) }}"
+# Resulting INSTALL_K3S_EXEC value, e.g. "server --disable traefik ..." or "agent".
+k8s_provision_k3s_exec: >-
+  {{ (k8s_provision_k3s_role ~ ' ' ~ (k8s_provision_k3s_server_args if k8s_provision_k3s_role == 'server'
+                                       else k8s_provision_k3s_agent_args)) | trim }}
+# Optional declarative config written to /etc/rancher/k3s/config.yaml after the
+# install (keys are k3s CLI flags, e.g. {disable: [traefik], tls-san: [k3s.example.com]}).
+# Empty dict = file not managed.
+k8s_provision_k3s_config: {}
+k8s_provision_k3s_config_path: /etc/rancher/k3s/config.yaml
+k8s_provision_k3s_kubeconfig_path: "{{ kubeconfig_remote_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+# Optional extra copy of the kubeconfig (e.g. /home/deploy/.kube/config); "" = disabled.
+k8s_provision_kubeconfig_copy_path: ""
+k8s_provision_kubeconfig_copy_owner: root
+k8s_provision_kubeconfig_copy_group: root
+
+# --- kind | kind 配置 ---------------------------------------------------------
+k8s_provision_kind_cluster_name: >-
+  {{ kind_cluster_name | default(cluster_name | default('anixops-dev')) }}
+# Pin a node image (e.g. kindest/node:v1.32.0@sha256:...); "" = kind's default for this kind version.
+k8s_provision_kind_node_image: ""
+# 0 = let kind pick a random host port for the API server.
+k8s_provision_kind_api_server_port: "{{ kind_api_server_port | default(0) }}"
+k8s_provision_kind_api_server_address: "127.0.0.1"
+k8s_provision_kind_nodes:
+  - role: control-plane
+# Host port mappings for the first control-plane node (ingress etc.).
+# Example: [{containerPort: 80, hostPort: 8080, protocol: TCP}]
+k8s_provision_kind_extra_port_mappings: []
+k8s_provision_kind_wait: "120s"
+
+# --- kubeconfig used for verification | 验证所用 kubeconfig ------------------
+k8s_provision_kubeconfig_path: >-
+  {{ kubeconfig_path
+     | default(k8s_provision_k3s_kubeconfig_path if k8s_provision_provider == 'k3s'
+               else (ansible_env.HOME | default('/root')) ~ '/.kube/config') }}
+
+# --- Readiness timeouts | 就绪等待 -------------------------------------------
+k8s_provision_wait_timeout: 300
+k8s_provision_ready_retries: 30
+k8s_provision_ready_delay: 10
+
+# --- Lifecycle contract (consumed by roles/lifecycle) | 生命周期契约 ---------
+k8s_provision_port: 6443
+k8s_provision_health_url: ""
+k8s_provision_backup_files:
+  - /etc/rancher/k3s/config.yaml
+k8s_provision_config_dirs:
+  - /etc/rancher/k3s
+k8s_provision_packages: []
+k8s_provision_service_name: "{{ 'k3s-agent' if k8s_provision_k3s_role == 'agent' else 'k3s' }}"

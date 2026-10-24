@@ -1,0 +1,98 @@
+---
+# =============================================================================
+# V2bX AuthKey resolution | V2bX AuthKey 解析
+# =============================================================================
+# Order: V2BX_AUTH_KEY env > key stored on the node > panel internal API.
+# Every host obtains its own key (no run_once) because node names differ.
+# The key is never printed; only its id/name are shown.
+
+- name: Create the V2bX configuration directory | 创建配置目录
+  ansible.builtin.file:
+    path: "{{ v2bx_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Check for an AuthKey stored on the node | 检查节点上已保存的 AuthKey
+  ansible.builtin.stat:
+    path: "{{ v2bx_authkey_file }}"
+  register: v2bx_authkey_stat
+
+- name: Read the stored AuthKey | 读取已保存的 AuthKey
+  ansible.builtin.slurp:
+    src: "{{ v2bx_authkey_file }}"
+  register: v2bx_authkey_stored
+  no_log: true
+  when:
+    - v2bx_auth_key | length == 0
+    - v2bx_authkey_stat.stat.exists
+
+- name: Use the stored AuthKey | 使用已保存的 AuthKey
+  ansible.builtin.set_fact:
+    v2bx_auth_key: "{{ v2bx_authkey_stored.content | b64decode | trim }}"
+    v2bx_auth_key_source: "stored"
+  no_log: true
+  when:
+    - v2bx_authkey_stored.content is defined
+    - (v2bx_authkey_stored.content | b64decode | trim) | length > 0
+
+- name: Request a new AuthKey from the panel API | 通过面板内部 API 申请 AuthKey
+  ansible.builtin.uri:
+    url: "{{ v2bx_api_host }}{{ v2bx_authkey_api_path }}"
+    method: POST
+    headers:
+      X-API-Key: "{{ v2bx_panel_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ v2bx_node_name }}"
+      node_name: "{{ v2bx_node_name }}"
+      expire_days: "{{ v2bx_authkey_expire_days | int }}"
+    status_code: [200, 201]
+    timeout: "{{ v2bx_authkey_api_timeout }}"
+  register: v2bx_authkey_response
+  delegate_to: "{{ v2bx_authkey_api_delegate }}"
+  become: false
+  no_log: true
+  retries: 3
+  delay: 5
+  until: v2bx_authkey_response is succeeded
+  when:
+    - v2bx_auth_key | length == 0
+    - v2bx_auto_generate_authkey | bool
+
+- name: Use the AuthKey returned by the panel | 使用面板返回的 AuthKey
+  ansible.builtin.set_fact:
+    v2bx_auth_key: "{{ v2bx_authkey_response.json.data.key }}"
+    v2bx_auth_key_source: "panel"
+  no_log: true
+  when: v2bx_authkey_response.json.data.key is defined
+
+- name: Show AuthKey metadata (never the key itself) | 显示 AuthKey 元数据
+  ansible.builtin.debug:
+    msg: >-
+      AuthKey issued by the panel for node '{{ v2bx_node_name }}':
+      id={{ v2bx_authkey_response.json.data.id | default('n/a') }}
+      name={{ v2bx_authkey_response.json.data.name | default(v2bx_node_name) }}
+      expire_days={{ v2bx_authkey_expire_days }}
+  when: v2bx_authkey_response.json.data.key is defined
+
+- name: Ensure an AuthKey is available | 确认 AuthKey 可用
+  ansible.builtin.assert:
+    that:
+      - v2bx_auth_key | length > 0
+    fail_msg: >-
+      No V2bX AuthKey available for {{ inventory_hostname }}: export V2BX_AUTH_KEY,
+      keep {{ v2bx_authkey_file }} on the node, or enable v2bx_auto_generate_authkey
+      together with V2BOARD_API_TOKEN.
+    quiet: true
+
+- name: Store the AuthKey on the node for future runs | 保存 AuthKey 以便后续复用
+  ansible.builtin.copy:
+    content: "{{ v2bx_auth_key }}\n"
+    dest: "{{ v2bx_authkey_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true

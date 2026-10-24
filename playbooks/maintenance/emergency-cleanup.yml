@@ -1,60 +1,62 @@
 ---
 # =============================================================================
-# Emergency Service Cleanup - Stop Old Cloudflared/WARP/Headscale Services
+# Legacy — stops cloudflared/warp-svc/headscale/tailscaled
+# 遗留 — 停止 cloudflared / warp-svc / headscale / tailscaled
 # =============================================================================
-# 涓存椂娓呯悊鑴氭湰 - 鍦ㄨ縼绉诲埌 Cloudflare Mesh 涔嬪墠鍋滄鎵€鏈夋棫缃戠粶鏈嶅姟
-# Temporary cleanup - stop all old networking services before Mesh migration
+# One-off cleanup that was used before the Cloudflare Mesh migration to stop
+# and disable the retired networking agents. Kept for reference; it only acts
+# on units that exist on the host and leaves everything else untouched.
 #
-# WARNING: This will stop connectivity services. Run with caution.
+# WARNING: stopping these agents removes the connectivity they provide.
+#
+#   ansible-playbook playbooks/maintenance/emergency-cleanup.yml --limit <host>
+#
+# Play tags: legacy_cleanup
+# Scope: all servers, serial 1, max_fail_percentage 0
+# Rollback: systemctl enable --now <unit> on the affected host
+# Risk: MEDIUM (connectivity loss on hosts that still rely on these agents)
 # =============================================================================
 
-- name: "Stop Old Network Services (Pre-Mesh Cleanup)"
+- name: Stop retired network agents (legacy cleanup) | 停止已退役的网络代理（遗留清理）
   hosts: all
-  gather_facts: yes
-  become: yes
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: false
+  tags: [legacy_cleanup]
+
+  vars:
+    emergency_cleanup_units:
+      - cloudflared
+      - warp-svc
+      - headscale
+      - tailscaled
 
   tasks:
-    - name: Stop cloudflared service
-      ansible.builtin.systemd:
-        name: cloudflared
-        state: stopped
-        enabled: no
-      failed_when: false
-      ignore_errors: yes
+    - name: Collect service facts | 收集服务状态
+      ansible.builtin.service_facts:
 
-    - name: Stop warp-svc service (old WARP Connector)
-      ansible.builtin.systemd:
-        name: warp-svc
-        state: stopped
-        enabled: no
-      failed_when: false
-      ignore_errors: yes
+    - name: Determine which retired units exist on this host | 确定本机存在的已退役单元
+      ansible.builtin.set_fact:
+        emergency_cleanup_present: >-
+          {{ emergency_cleanup_present | default([]) + [item] }}
+      vars:
+        emergency_cleanup_unit_facts: "{{ ansible_facts['services'][item ~ '.service'] | default({}) }}"
+      loop: "{{ emergency_cleanup_units }}"
+      when:
+        - emergency_cleanup_unit_facts | length > 0
+        - emergency_cleanup_unit_facts['status'] | default('') not in ['not-found', 'masked']
 
-    - name: Stop headscale service
-      ansible.builtin.systemd:
-        name: headscale
+    - name: Stop and disable the retired units | 停止并禁用已退役单元
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
         state: stopped
-        enabled: no
-      failed_when: false
-      ignore_errors: yes
+        enabled: false
+      loop: "{{ emergency_cleanup_present | default([]) }}"
 
-    - name: Stop tailscaled service (Headscale clients)
-      ansible.builtin.systemd:
-        name: tailscaled
-        state: stopped
-        enabled: no
-      failed_when: false
-      ignore_errors: yes
-
-    - name: Display cleanup summary
+    - name: Show the cleanup summary | 显示清理摘要
       ansible.builtin.debug:
-        msg:
-          - "Service Cleanup Complete"
-          - ""
-          - "Stopped services (if they existed):"
-          - "  - cloudflared"
-          - "  - warp-svc (old WARP Connector)"
-          - "  - headscale"
-          - "  - tailscaled"
-          - ""
-          - "Next step: continue with the remaining maintenance tasks"
+        msg: >-
+          {{ inventory_hostname }}: stopped and disabled
+          {{ emergency_cleanup_present | default([]) | join(', ') or 'nothing (no retired units present)' }}

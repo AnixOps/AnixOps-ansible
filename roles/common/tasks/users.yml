@@ -1,0 +1,52 @@
+---
+# =============================================================================
+# Admin users | 管理员用户
+# =============================================================================
+# Passwords are intentionally not managed here: access is key based.
+
+- name: Ensure admin users exist with shell and sudo group | 确保管理员用户存在
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    shell: "{{ item.shell | default(common_admin_default_shell) }}"
+    groups: "{{ item.groups | default([common_sudo_group]) }}"
+    append: true
+    state: "{{ item.state | default('present') }}"
+    create_home: true
+    remove: "{{ item.remove | default(false) | bool }}"
+  loop: "{{ common_admin_users }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.state | default('present') }})"
+
+- name: Deploy authorized keys for admin users | 部署管理员用户的授权密钥
+  ansible.posix.authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ item.authorized_keys | join('\n') }}"
+    exclusive: "{{ item.authorized_keys_exclusive | default(false) | bool }}"
+    state: present
+  loop: "{{ common_admin_users }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.authorized_keys | default([]) | length }} keys)"
+  when:
+    - (item.state | default('present')) == 'present'
+    - item.authorized_keys | default([]) | length > 0
+
+- name: Grant passwordless sudo to admin users | 为管理员用户授予免密 sudo
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible (roles/common) - local edits are overwritten.
+      {% for user in common_admin_users if (user.state | default('present')) == 'present' %}
+      {{ user.name }} ALL=(ALL) NOPASSWD:ALL
+      {% endfor %}
+    dest: "{{ common_admin_sudoers_file }}"
+    owner: root
+    group: root
+    mode: "0440"
+    backup: true
+    validate: "/usr/sbin/visudo -cf %s"
+  when: common_admin_sudo_nopasswd | bool
+
+- name: Remove the passwordless sudo drop-in when disabled | 禁用时移除免密 sudo 配置
+  ansible.builtin.file:
+    path: "{{ common_admin_sudoers_file }}"
+    state: absent
+  when: not (common_admin_sudo_nopasswd | bool)

@@ -1,20 +1,117 @@
 ---
-# Prometheus Server Default Variables
-
-prometheus_version: "2.45.0"
-
-# Speedtest exporter host for Prometheus scrape targets
-speedtest_exporter_host: "10.100.0.122"
-
 # =============================================================================
-# Lifecycle Configuration | 生命周期配置
+# Prometheus server role - defaults | Prometheus 服务端角色默认变量
 # =============================================================================
+# Every variable is prefixed with `prometheus_`. Global knobs that live in
+# inventories/production/group_vars/all/main.yml (the `prometheus` / `loki`
+# dicts, `_target_arch`, `speedtest_exporter_host`) are consumed through
+# fallbacks so existing inventories keep working unchanged.
+
+# -----------------------------------------------------------------------------
+# Version and download | 版本与下载
+# -----------------------------------------------------------------------------
+# Falls back to `prometheus.version` from group_vars/all when present.
+prometheus_version: "{{ (prometheus | default({})).version | default('2.45.0') }}"
+prometheus_download_url: "https://github.com/prometheus/prometheus/releases/download"
+# Architecture of the release tarball: uses the global `_target_arch` when the
+# inventory defines it, otherwise maps ansible_architecture.
+prometheus_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+  armv7l: armv7
+prometheus_arch: "{{ _target_arch | default(prometheus_arch_map[ansible_architecture] | default('amd64')) }}"
+# Optional checksum for the tarball, e.g. "sha256:<hex>" or
+# "sha256:https://github.com/prometheus/prometheus/releases/download/v2.45.0/sha256sums.txt".
+prometheus_checksum: ""
+prometheus_download_timeout: 60
+prometheus_download_retries: 5
+prometheus_download_delay: 10
+
+# -----------------------------------------------------------------------------
+# Paths, user and group | 路径、用户与用户组
+# -----------------------------------------------------------------------------
+prometheus_user: prometheus
+prometheus_group: prometheus
+prometheus_install_dir: /usr/local/bin
+prometheus_config_dir: /etc/prometheus
+prometheus_rules_dir: "{{ prometheus_config_dir }}/rules"
+prometheus_data_dir: /var/lib/prometheus
+prometheus_config_file: "{{ prometheus_config_dir }}/prometheus.yml"
+prometheus_unit_file: /etc/systemd/system/prometheus.service
+
+# Alert rule files (*.yml) copied to prometheus_rules_dir and validated with
+# `promtool check rules`. Files in the target directory that are not part of
+# the source set are removed when prometheus_rules_prune is true.
+prometheus_rules_src_dir: "{{ role_path }}/../../observability/prometheus/rules"
+prometheus_rules_prune: true
+
+# -----------------------------------------------------------------------------
+# Server flags | 服务端启动参数
+# -----------------------------------------------------------------------------
 prometheus_port: 9090
-prometheus_health_url: "http://localhost:9090/-/healthy"
+prometheus_listen_address: "0.0.0.0:{{ prometheus_port }}"
+prometheus_retention_time: 15d
+# e.g. "50GB"; empty disables the size based retention.
+prometheus_retention_size: ""
+# e.g. "https://prometheus.example.com/" when served behind a reverse proxy.
+prometheus_external_url: ""
+# Enables the /-/reload and /-/quit HTTP endpoints. Reloads are done through
+# `systemctl reload prometheus` (SIGHUP) so this is off by default.
+prometheus_web_enable_lifecycle: false
+# Additional raw command line flags appended to ExecStart.
+prometheus_extra_args: []
+
+# -----------------------------------------------------------------------------
+# Scrape configuration | 抓取配置
+# -----------------------------------------------------------------------------
+prometheus_scrape_interval: 15s
+prometheus_scrape_timeout: 10s
+prometheus_evaluation_interval: 15s
+prometheus_external_labels:
+  cluster: anixops
+# Alertmanager endpoints, e.g. ["localhost:9093"]. Empty disables alerting.
+prometheus_alertmanager_targets: []
+
+# node_exporter targets are generated from this inventory group. Per host the
+# following inventory variables are used (all optional):
+#   ansible_host, server_alias, location, server_environment, description,
+#   prometheus_scrape_enabled (set to false to exclude a host).
+prometheus_node_exporter_group: all
+prometheus_node_exporter_port: "{{ ((prometheus | default({})).node_exporter | default({})).port | default(9100) }}"
+
+# Self-monitoring of the observability host.
+prometheus_scrape_promtail: true
+prometheus_promtail_port: "{{ ((loki | default({})).promtail | default({})).port | default(9080) }}"
+prometheus_scrape_loki: true
+prometheus_loki_port: "{{ (loki | default({})).port | default(3100) }}"
+prometheus_scrape_grafana: true
+prometheus_grafana_port: 3000
+
+# Speedtest exporter: the job is only rendered when the host is non-empty.
+# Falls back to the legacy global `speedtest_exporter_host`.
+prometheus_speedtest_exporter_host: "{{ speedtest_exporter_host | default('') }}"
+prometheus_speedtest_exporter_port: 9091
+prometheus_speedtest_scrape_timeout: 30s
+
+# Raw scrape_configs entries appended verbatim (list of dicts).
+prometheus_extra_scrape_configs: []
+
+# -----------------------------------------------------------------------------
+# Verification | 验证
+# -----------------------------------------------------------------------------
+prometheus_verify_retries: 12
+prometheus_verify_delay: 5
+
+# -----------------------------------------------------------------------------
+# Lifecycle contract | 生命周期契约 (roles/lifecycle, rollback.yml)
+# -----------------------------------------------------------------------------
+prometheus_service_name: prometheus
+prometheus_health_url: "http://localhost:{{ prometheus_port }}/-/healthy"
+prometheus_ready_url: "http://localhost:{{ prometheus_port }}/-/ready"
 prometheus_backup_files:
-  - /etc/prometheus/prometheus.yml
-  - /etc/systemd/system/prometheus.service
+  - "{{ prometheus_config_file }}"
+  - "{{ prometheus_unit_file }}"
 prometheus_packages: []
 prometheus_config_dirs:
-  - /etc/prometheus
-  - /var/lib/prometheus
+  - "{{ prometheus_config_dir }}"
+  - "{{ prometheus_data_dir }}"

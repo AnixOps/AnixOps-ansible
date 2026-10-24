@@ -1,0 +1,59 @@
+---
+# =============================================================================
+# Helm (optional) - pinned release tarball install | 安装 Helm（可选）
+# =============================================================================
+
+- name: Check installed Helm version
+  ansible.builtin.command:
+    argv:
+      - "{{ k8s_provision_helm_bin }}"
+      - version
+      - --short
+  register: k8s_provision_helm_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install Helm {{ k8s_provision_helm_version }}
+  when: >-
+    k8s_provision_helm_probe.rc | default(1) != 0
+    or k8s_provision_helm_version not in (k8s_provision_helm_probe.stdout | default(''))
+  block:
+    - name: Create temporary directory for the Helm download
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -helm
+      register: k8s_provision_helm_tmp
+
+    - name: Download Helm release tarball
+      ansible.builtin.get_url:
+        url: "{{ k8s_provision_helm_url }}"
+        dest: "{{ k8s_provision_helm_tmp.path }}/helm.tar.gz"
+        checksum: "{{ k8s_provision_helm_checksum | default(omit, true) }}"
+        mode: "0644"
+      register: k8s_provision_helm_download
+      retries: "{{ k8s_provision_download_retries }}"
+      delay: "{{ k8s_provision_download_delay }}"
+      until: k8s_provision_helm_download is succeeded
+
+    - name: Unpack Helm release tarball
+      ansible.builtin.unarchive:
+        src: "{{ k8s_provision_helm_tmp.path }}/helm.tar.gz"
+        dest: "{{ k8s_provision_helm_tmp.path }}"
+        remote_src: true
+
+    - name: Install Helm binary
+      ansible.builtin.copy:
+        src: "{{ k8s_provision_helm_tmp.path }}/linux-{{ k8s_provision_arch }}/helm"
+        dest: "{{ k8s_provision_helm_bin }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+  always:
+    - name: Remove temporary Helm directory
+      ansible.builtin.file:
+        path: "{{ k8s_provision_helm_tmp.path }}"
+        state: absent
+      when: k8s_provision_helm_tmp.path is defined

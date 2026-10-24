@@ -3,6 +3,9 @@ description: >-
   Install the pinned Python/Ansible toolchain, Galaxy collections, the SSH
   private key and (optionally) generate the inventory from servers-config.yml.
   Shared by every workflow so the control-node setup is defined exactly once.
+  The key is written below RUNNER_TEMP/ssh (never ~/.ssh/id_rsa) and exported
+  as SSH_KEY_PATH / ANSIBLE_PRIVATE_KEY_FILE; callers remove that directory in
+  an "if: always()" cleanup step.
 
 inputs:
   python-version:
@@ -48,15 +51,25 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        python -m pip install --upgrade pip
-        python -m pip install --requirement requirements.txt
+        python -m pip install --quiet --upgrade pip
+        python -m pip install --quiet --requirement requirements.txt
 
     - name: Install Galaxy collections
       if: inputs.install-collections == 'true'
       shell: bash
       run: |
         set -euo pipefail
-        ansible-galaxy collection install --requirements-file requirements.yml
+        # Galaxy is occasionally flaky; retry a few times before giving up.
+        attempt=1
+        until ansible-galaxy collection install --requirements-file requirements.yml; do
+          if (( attempt >= 3 )); then
+            echo "::error::ansible-galaxy collection install failed after ${attempt} attempts"
+            exit 1
+          fi
+          attempt=$((attempt + 1))
+          echo "ansible-galaxy failed, retrying (${attempt}/3) in 10s..."
+          sleep 10
+        done
 
     - name: Write SSH private key
       id: ssh
@@ -66,15 +79,17 @@ runs:
         SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
       run: |
         set -euo pipefail
+        umask 077
         key_dir="${RUNNER_TEMP}/ssh"
         key_path="${key_dir}/id_ansible"
-        mkdir -p "${key_dir}"
-        chmod 700 "${key_dir}"
+        install -d -m 700 "${key_dir}"
         printf '%s\n' "${SSH_PRIVATE_KEY}" > "${key_path}"
         chmod 600 "${key_path}"
         echo "path=${key_path}" >> "${GITHUB_OUTPUT}"
-        echo "SSH_KEY_PATH=${key_path}" >> "${GITHUB_ENV}"
-        echo "ANSIBLE_PRIVATE_KEY_FILE=${key_path}" >> "${GITHUB_ENV}"
+        {
+          echo "SSH_KEY_PATH=${key_path}"
+          echo "ANSIBLE_PRIVATE_KEY_FILE=${key_path}"
+        } >> "${GITHUB_ENV}"
 
     - name: Generate inventory
       id: inventory
@@ -98,3 +113,13 @@ runs:
           echo "ANSIBLE_FORCE_COLOR=True"
           echo "PY_COLORS=1"
         } >> "${GITHUB_ENV}"
+
+    - name: Show toolchain versions
+      shell: bash
+      run: |
+        set -euo pipefail
+        python --version
+        ansible --version | head -n 1
+        if command -v ansible-lint >/dev/null 2>&1; then
+          ansible-lint --version | head -n 1
+        fi

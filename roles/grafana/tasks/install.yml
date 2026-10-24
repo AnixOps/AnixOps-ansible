@@ -1,0 +1,72 @@
+---
+# =============================================================================
+# Grafana - install | 安装
+# =============================================================================
+
+- name: Install apt prerequisites | 安装 apt 依赖
+  ansible.builtin.apt:
+    name: "{{ grafana_dependency_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  register: grafana_prereq_install
+  retries: "{{ grafana_apt_retries }}"
+  delay: "{{ grafana_apt_delay }}"
+  until: grafana_prereq_install is succeeded
+
+- name: Create apt keyrings directory | 创建 apt keyrings 目录
+  ansible.builtin.file:
+    path: "{{ grafana_apt_keyring | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Grafana apt signing key | 下载 Grafana apt 签名密钥
+  ansible.builtin.get_url:
+    url: "{{ grafana_apt_key_url }}"
+    dest: "{{ grafana_apt_keyring }}"
+    owner: root
+    group: root
+    mode: "0644"
+    timeout: 30
+  register: grafana_apt_key
+  retries: "{{ grafana_apt_retries }}"
+  delay: "{{ grafana_apt_delay }}"
+  until: grafana_apt_key is succeeded
+
+- name: Remove legacy Grafana apt sources and keyrings | 删除旧版 Grafana apt 源与密钥
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/grafana.list
+    - /etc/apt/sources.list.d/grafana.list.save
+    - /usr/share/keyrings/grafana.gpg
+  register: grafana_legacy_cleanup
+
+- name: Configure Grafana apt repository (deb822) | 配置 Grafana apt 源 (deb822)
+  ansible.builtin.deb822_repository:
+    name: grafana
+    types: deb
+    uris: "{{ grafana_apt_repo_uri }}"
+    suites: "{{ grafana_apt_repo_suite }}"
+    components: "{{ grafana_apt_repo_component }}"
+    signed_by: "{{ grafana_apt_keyring }}"
+    enabled: true
+    state: present
+    mode: "0644"
+  register: grafana_apt_repo
+
+# cache_valid_time drops to 0 (forced refresh) when the repository definition
+# or the legacy files changed; otherwise the cache is reused for one hour.
+- name: Install Grafana package | 安装 Grafana 软件包
+  ansible.builtin.apt:
+    name: "{{ grafana_package }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ 0 if (grafana_apt_repo is changed or grafana_legacy_cleanup is changed) else 3600 }}"
+  register: grafana_package_install
+  retries: "{{ grafana_apt_retries }}"
+  delay: "{{ grafana_apt_delay }}"
+  until: grafana_package_install is succeeded

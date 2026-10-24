@@ -1,29 +1,107 @@
 ---
 # =============================================================================
-# Grafana Server Role - Default Variables
+# Grafana server role - defaults | Grafana 角色默认变量
 # =============================================================================
+# Every variable is prefixed with `grafana_`. Legacy/global knobs are mapped
+# through fallbacks: `observability_ssl_enabled`, the GRAFANA_* environment
+# variables used by the GitHub workflows and scripts/anixops.sh.
 
-grafana_version: "10.0.0"
+# -----------------------------------------------------------------------------
+# Package | 软件包
+# -----------------------------------------------------------------------------
+# Empty installs the current release from apt.grafana.com and never upgrades
+# afterwards (state: present). Set e.g. "11.2.0" to pin an exact version.
+grafana_version: ""
+grafana_package: "grafana{{ ('=' ~ grafana_version) if grafana_version | length > 0 else '' }}"
+grafana_apt_repo_uri: https://apt.grafana.com
+grafana_apt_repo_suite: stable
+grafana_apt_repo_component: main
+grafana_apt_key_url: https://apt.grafana.com/gpg.key
+# Armored key stored under /etc/apt/keyrings; apt accepts armored keys in
+# Signed-By since apt 1.4 (Debian 9 / Ubuntu 18.04).
+grafana_apt_keyring: /etc/apt/keyrings/grafana.asc
+# deb822_repository needs python3-debian on the target.
+grafana_dependency_packages:
+  - ca-certificates
+  - python3-debian
+grafana_apt_retries: 5
+grafana_apt_delay: 10
+
+# -----------------------------------------------------------------------------
+# Server | 服务端
+# -----------------------------------------------------------------------------
+grafana_http_addr: 0.0.0.0
 grafana_http_port: 3000
-grafana_domain: "localhost"
-grafana_admin_user: "admin"
-observability_ssl_enabled: false
+grafana_domain: "{{ lookup('ansible.builtin.env', 'GRAFANA_DOMAIN') | default('localhost', true) }}"
+# Mirrors the legacy global `observability_ssl_enabled` (or the
+# OBSERVABILITY_SSL_ENABLED environment variable). When true Grafana expects
+# to be served through the nginx reverse proxy on https://grafana_domain/.
+grafana_ssl_enabled: "{{ observability_ssl_enabled | default(lookup('ansible.builtin.env', 'OBSERVABILITY_SSL_ENABLED') | default(false, true)) | bool }}"
+grafana_root_url: "{{ ('https://' ~ grafana_domain ~ '/') if grafana_ssl_enabled | bool else ('http://' ~ grafana_domain ~ ':' ~ grafana_http_port ~ '/') }}"
+grafana_default_theme: dark
+grafana_allow_sign_up: false
+grafana_anonymous_enabled: false
+grafana_log_level: info
+grafana_analytics_reporting: false
+grafana_check_for_updates: false
+# Extra raw grafana.ini sections appended verbatim, e.g.
+#   grafana_extra_ini: |
+#     [smtp]
+#     enabled = true
+grafana_extra_ini: ""
 
-# NOTE: grafana_admin_password has no default -- it must be provided via
-# group_vars, inventory vars, or environment variable. The role will fail
-# explicitly if it is not set.
+# -----------------------------------------------------------------------------
+# Admin credentials | 管理员凭据
+# -----------------------------------------------------------------------------
+# grafana_admin_password has NO usable default: the role asserts it is non-empty
+# before installing anything. Provide it via group_vars/vault, -e, or the
+# GRAFANA_ADMIN_PASSWORD environment variable (GitHub Actions secret).
+# [security] admin_password is only applied by Grafana when the admin user is
+# first created; set grafana_reset_admin_password: true for one run to force
+# the password on an existing installation (grafana-cli admin reset-admin-password).
+grafana_admin_user: "{{ lookup('ansible.builtin.env', 'GRAFANA_ADMIN_USER') | default('admin', true) }}"
+grafana_admin_password: "{{ lookup('ansible.builtin.env', 'GRAFANA_ADMIN_PASSWORD') | default('', true) }}"
+grafana_reset_admin_password: false
 
-# =============================================================================
-# Lifecycle Configuration | 生命周期配置
-# =============================================================================
-grafana_port: 3000
-grafana_health_url: "http://localhost:3000/api/health"
+# -----------------------------------------------------------------------------
+# Provisioning | 自动配置
+# -----------------------------------------------------------------------------
+grafana_config_dir: /etc/grafana
+grafana_config_file: "{{ grafana_config_dir }}/grafana.ini"
+grafana_provisioning_dir: "{{ grafana_config_dir }}/provisioning"
+grafana_data_dir: /var/lib/grafana
+grafana_log_dir: /var/log/grafana
+grafana_prometheus_url: "http://localhost:9090"
+grafana_prometheus_scrape_interval: 15s
+grafana_loki_url: "http://localhost:3100"
+grafana_loki_max_lines: 1000
+# Dashboards from the repository are copied to grafana_dashboards_dir and
+# loaded by the file provider /etc/grafana/provisioning/dashboards/anixops.yml.
+grafana_dashboards_src_dir: "{{ role_path }}/../../observability/grafana/dashboards"
+grafana_dashboards_dir: "{{ grafana_data_dir }}/dashboards"
+grafana_dashboards_folder: AnixOps
+grafana_dashboards_update_interval: 60
+grafana_dashboards_prune: true
+
+# -----------------------------------------------------------------------------
+# Verification | 验证
+# -----------------------------------------------------------------------------
+grafana_verify_retries: 12
+grafana_verify_delay: 5
+
+# -----------------------------------------------------------------------------
+# Lifecycle contract | 生命周期契约 (roles/lifecycle, rollback.yml)
+# -----------------------------------------------------------------------------
+grafana_service_name: grafana-server
+grafana_port: "{{ grafana_http_port }}"
+grafana_health_url: "http://localhost:{{ grafana_http_port }}/api/health"
 grafana_backup_files:
-  - /etc/grafana/grafana.ini
-  - /etc/grafana/provisioning/datasources/datasource-prometheus.yml
-  - /etc/grafana/provisioning/datasources/datasource-loki.yml
+  - "{{ grafana_config_file }}"
+  - "{{ grafana_provisioning_dir }}/datasources/prometheus.yml"
+  - "{{ grafana_provisioning_dir }}/datasources/loki.yml"
+  - "{{ grafana_provisioning_dir }}/dashboards/anixops.yml"
 grafana_packages:
   - grafana
 grafana_config_dirs:
-  - /etc/grafana
-  - /var/lib/grafana
+  - "{{ grafana_config_dir }}"
+  - "{{ grafana_data_dir }}"

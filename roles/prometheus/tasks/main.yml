@@ -1,106 +1,28 @@
 ---
-# Prometheus Server Installation Tasks
+# =============================================================================
+# Prometheus server role | Prometheus 服务端角色
+# =============================================================================
+# install   -> user, directories, architecture/version aware binary install
+# configure -> alert rules, prometheus.yml (promtool validated), systemd unit
+# service   -> flush handlers, enable + start
+# verify    -> /-/healthy and /-/ready with retries, rollback on failure
+# =============================================================================
 
-- name: Create prometheus system group
-  ansible.builtin.group:
-    name: prometheus
-    state: present
-    system: yes
+- name: Install Prometheus | 安装 Prometheus
+  ansible.builtin.include_tasks: install.yml
 
-- name: Create prometheus system user
-  ansible.builtin.user:
-    name: prometheus
-    group: prometheus
-    shell: /sbin/nologin
-    system: yes
-    create_home: no
+- name: Configure Prometheus | 配置 Prometheus
+  ansible.builtin.include_tasks: configure.yml
 
-- name: Create prometheus directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: prometheus
-    group: prometheus
-    mode: '0755'
-  loop:
-    - /etc/prometheus
-    - /var/lib/prometheus
+- name: Manage Prometheus service | 管理 Prometheus 服务
+  ansible.builtin.include_tasks: service.yml
 
-- name: Download and install Prometheus
-  block:
-    - name: Check if Prometheus is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/prometheus
-      register: prometheus_bin
+- name: Verify Prometheus | 验证 Prometheus
+  ansible.builtin.include_tasks: verify.yml
 
-    - name: Download Prometheus
-      ansible.builtin.get_url:
-        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
-        dest: /tmp/prometheus.tar.gz
-        mode: '0644'
-      when: not prometheus_bin.stat.exists
-
-    - name: Extract Prometheus
-      ansible.builtin.unarchive:
-        src: /tmp/prometheus.tar.gz
-        dest: /tmp
-        remote_src: yes
-      when: not prometheus_bin.stat.exists
-
-    - name: Copy Prometheus binaries
-      ansible.builtin.copy:
-        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
-        dest: "/usr/local/bin/{{ item }}"
-        owner: prometheus
-        group: prometheus
-        mode: '0755'
-        remote_src: yes
-      loop:
-        - prometheus
-        - promtool
-      when: not prometheus_bin.stat.exists
-
-    - name: Copy Prometheus console files
-      ansible.builtin.copy:
-        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
-        dest: "/etc/prometheus/{{ item }}"
-        owner: prometheus
-        group: prometheus
-        remote_src: yes
-      loop:
-        - consoles
-        - console_libraries
-      when: not prometheus_bin.stat.exists
-
-- name: Configure Prometheus
-  ansible.builtin.template:
-    src: prometheus.yml.j2
-    dest: /etc/prometheus/prometheus.yml
-    owner: prometheus
-    group: prometheus
-    mode: '0644'
-    backup: yes
-  notify: restart prometheus
-
-- name: Create Prometheus systemd service
-  ansible.builtin.template:
-    src: prometheus.service.j2
-    dest: /etc/systemd/system/prometheus.service
-    mode: '0644'
-    backup: yes
-  notify: restart prometheus
-
-- name: Enable and start Prometheus service
-  ansible.builtin.systemd:
-    name: prometheus
-    state: started
-    enabled: yes
-    daemon_reload: yes
-
-- name: Display Prometheus info
+- name: Show Prometheus summary | 显示 Prometheus 摘要
   ansible.builtin.debug:
-    msg: |
-      Prometheus installed successfully
-      Access: http://{{ ansible_host }}:9090
-      Config: /etc/prometheus/prometheus.yml
-      Data: /var/lib/prometheus
+    msg: >-
+      Prometheus {{ prometheus_version }} ready on {{ prometheus_listen_address }}
+      (config {{ prometheus_config_file }}, rules {{ prometheus_rules_dir }},
+      data {{ prometheus_data_dir }}, retention {{ prometheus_retention_time }})

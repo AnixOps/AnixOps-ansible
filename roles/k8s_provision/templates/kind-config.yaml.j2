@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: {{ k8s_provision_kind_cluster_name }}
+networking:
+  apiServerAddress: "{{ k8s_provision_kind_api_server_address }}"
+{% if k8s_provision_kind_api_server_port | int > 0 %}
+  apiServerPort: {{ k8s_provision_kind_api_server_port | int }}
+{% endif %}
+nodes:
+{% for node in k8s_provision_kind_nodes %}
+  - role: {{ node.role }}
+{% if k8s_provision_kind_node_image | length > 0 %}
+    image: {{ k8s_provision_kind_node_image }}
+{% endif %}
+{% if loop.first and k8s_provision_kind_extra_port_mappings | length > 0 %}
+    extraPortMappings:
+{% for mapping in k8s_provision_kind_extra_port_mappings %}
+      - containerPort: {{ mapping.containerPort }}
+        hostPort: {{ mapping.hostPort }}
+        protocol: {{ mapping.protocol | default('TCP') }}
+{% endfor %}
+{% endif %}
+{% endfor %}

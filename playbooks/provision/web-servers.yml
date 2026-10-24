@@ -1,37 +1,45 @@
+---
 # =============================================================================
-# Web 服务器 Play书 | Web Servers Playbook
+# Web servers | Web 服务器
 # =============================================================================
-# 专门用于部署 Web 服务器 (Nginx)
-# Specifically used for deploying web servers (Nginx)
+# Deploy Nginx on the web_servers group and verify the local /health endpoint
+# served by the role's default site.
 #
-# Scope: web_servers group (serial: 30%, max_fail: 25%)
+#   ansible-playbook playbooks/provision/web-servers.yml
+#   ansible-playbook playbooks/provision/web-servers.yml --limit jp-1
+#
+# Play tags: nginx
+# Scope: web_servers, serial 30%, max_fail_percentage 25
 # Rollback: ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=nginx"
-# Risk Level: MEDIUM (affects web-facing servers)
-# Pre-flight: Yes (fact gathering)
-# Post-check: Yes (URI health check)
+# Risk: MEDIUM (web-facing servers)
+# Post-check: HTTP 200 from http://127.0.0.1/health on every host
 # =============================================================================
 
-- name: Deploy web servers | 部署 Web 服务器
+- name: Deploy Nginx web servers | 部署 Nginx Web 服务器
   hosts: web_servers
+  become: true
+  gather_facts: true
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  gather_facts: yes
-  ignore_unreachable: yes
+  any_errors_fatal: false
+  tags: [nginx]
 
   roles:
-    - nginx
+    - role: nginx
 
   post_tasks:
-    - name: Verify Nginx is accessible | 验证 Nginx 可访问性
-      uri:
-        url: "http://{{ ansible_default_ipv4.address }}"
+    - name: Verify the local Nginx health endpoint | 验证本机 Nginx 健康端点
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ nginx_port | default(80) }}/health"
         status_code: 200
-      register: web_check
+        timeout: 5
+      register: web_servers_nginx_health
+      retries: 5
+      delay: 5
+      until: web_servers_nginx_health is succeeded
 
-    - name: Display web server info | 显示 Web 服务器信息
-      debug:
-        msg: |
-          ✓ Web 服务器部署成功 | Web server deployed successfully
-          - URL: http://{{ ansible_default_ipv4.address }}
-          - 状态 | Status: {{ web_check.status }}
+    - name: Show the web server summary | 显示 Web 服务器摘要
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} ({{ ansible_facts['default_ipv4']['address'] | default('no IPv4') }}):
+          nginx healthy, HTTP {{ web_servers_nginx_health.status }} from /health

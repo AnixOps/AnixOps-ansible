@@ -14,12 +14,28 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
+# One node-platform deploy at a time; a running deploy is never cancelled.
+concurrency:
+  group: deploy-node-platform
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   deploy:
     name: Deploy AnixOps Node Platform
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     environment: node-platform
 
+    # The node platform role reads its settings with lookup('env', 'ANIXOPS_NODE_PLATFORM_*'); several of
+    # them are renamed from shared secrets (SSL_CERTIFICATE_PEM, VULTR_API_KEY, SMTP_*), so the mapping
+    # stays explicit here instead of going through export-secrets.
     env:
       ANSIBLE_HOST_KEY_CHECKING: 'False'
       ANSIBLE_FORCE_COLOR: 'True'
@@ -102,25 +118,13 @@ jobs:
       ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_TOKEN: ${{ secrets.ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_TOKEN }}
       ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_COUNTRY: ${{ secrets.ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_COUNTRY }}
       ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_EYEBALL_BIAS: ${{ secrets.ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_EYEBALL_BIAS }}
+      INVENTORY_PATH: inventories/production/node-platform.actions.yml
+      DRY_RUN: ${{ inputs.dry_run }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install Ansible and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          ansible-galaxy install -r requirements.yml
-
       - name: Validate required environment
         run: |
+          set -euo pipefail
           missing=0
           for name in \
             SSH_PRIVATE_KEY \
@@ -134,45 +138,72 @@ jobs:
             ANIXOPS_NODE_PLATFORM_REDIS_PASSWORD \
             ANIXOPS_NODE_PLATFORM_ADMIN_EMAILS
           do
-            if [ -z "${!name}" ]; then
-              echo "::error::$name is required"
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::${name} is required"
               missing=1
             fi
           done
-          exit "$missing"
+          exit "${missing}"
 
-      - name: Setup SSH key
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ansible toolchain
+        uses: ./.github/actions/setup-ansible
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          generate-inventory: "false"
+
+      - name: Syntax-check the node platform playbook
         run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+          set -euo pipefail
+          ansible-playbook -i "${INVENTORY_PATH}" --syntax-check playbooks/provision/node-platform.yml
 
       - name: Verify connectivity
         run: |
+          set -euo pipefail
+          # The dedicated inventory pins ansible_ssh_private_key_file; override it with the key written by setup-ansible.
           ansible anixops_node_platform_servers \
-            -i inventories/production/node-platform.actions.yml \
-            -m ping -v
+            -i "${INVENTORY_PATH}" \
+            -e "ansible_ssh_private_key_file=${SSH_KEY_PATH}" \
+            -m ansible.builtin.ping -o
 
       - name: Deploy node platform
         run: |
-          CMD="ansible-playbook playbooks/provision/node-platform.yml"
-          CMD="$CMD -i inventories/production/node-platform.actions.yml"
-          CMD="$CMD -v"
-
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            CMD="$CMD --check --diff"
-            echo "Running in dry-run mode"
+          set -euo pipefail
+          args=(
+            playbooks/provision/node-platform.yml
+            -i "${INVENTORY_PATH}"
+            -e "ansible_ssh_private_key_file=${SSH_KEY_PATH}"
+            -v
+          )
+          if [[ "${DRY_RUN}" == "true" ]]; then
+            args+=(--check --diff)
+            echo "Dry run: check mode with diff, no changes will be made"
           fi
+          printf 'Executing: ansible-playbook'
+          printf ' %q' "${args[@]}"
+          printf '\n'
+          ansible-playbook "${args[@]}"
 
-          echo "Executing: $CMD"
-          eval "$CMD"
-
-      - name: Deployment summary
+      - name: Remove SSH key material
         if: always()
         run: |
-          echo "Workflow: Deploy AnixOps Node Platform"
-          echo "Domain: $ANIXOPS_NODE_PLATFORM_SERVER_NAME"
-          echo "Inventory: inventories/production/node-platform.actions.yml"
-          echo "Playbook: playbooks/provision/node-platform.yml"
-          echo "Status: ${{ job.status }}"
+          set -euo pipefail
+          key_dir="${RUNNER_TEMP}/ssh"
+          if [[ -d "${key_dir}" ]]; then
+            find "${key_dir}" -type f -exec shred -u {} +
+            rm -rf "${key_dir}"
+          fi
+
+      - name: Write deployment summary
+        if: always()
+        uses: ./.github/actions/job-summary
+        with:
+          title: AnixOps Node Platform deployment
+          status: ${{ job.status }}
+          fields: |
+            Playbook: `playbooks/provision/node-platform.yml`
+            Inventory: `inventories/production/node-platform.actions.yml`
+            Domain: `${{ inputs.domain }}`
+            Dry run: ${{ inputs.dry_run }}

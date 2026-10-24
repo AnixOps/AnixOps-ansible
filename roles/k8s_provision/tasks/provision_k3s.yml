@@ -1,90 +1,206 @@
 ---
 # =============================================================================
-# Provision K3s Cluster (Production)
+# Provision k3s (production) | 部署 k3s（生产环境）
 # =============================================================================
+# Pinned installer download -> install with INSTALL_K3S_VERSION/INSTALL_K3S_EXEC
+# -> optional declarative config.yaml with rollback -> wait until the node is Ready.
 
-- name: Check if k3s is already installed
+- name: Validate k3s agent join settings
+  ansible.builtin.assert:
+    that:
+      - k8s_provision_k3s_url | length > 0
+      - k8s_provision_k3s_token | length > 0
+    fail_msg: >-
+      k3s agents need k8s_provision_k3s_url (fallback: k3s_url) and
+      k8s_provision_k3s_token (fallback: k3s_token or the K3S_TOKEN environment variable).
+    quiet: true
+  when: k8s_provision_k3s_role == 'agent'
+
+- name: Check whether the k3s binary is present
   ansible.builtin.stat:
-    path: /usr/local/bin/k3s
-  register: k3s_binary
+    path: "{{ k8s_provision_k3s_bin }}"
+  register: k8s_provision_k3s_binary
 
-- name: Install k3s
-  when: not k3s_binary.stat.exists
+- name: Read the installed k3s version
+  ansible.builtin.command:
+    argv:
+      - "{{ k8s_provision_k3s_bin }}"
+      - --version
+  register: k8s_provision_k3s_probe
+  changed_when: false
+  check_mode: false
+  when: k8s_provision_k3s_binary.stat.exists
+
+- name: Report a k3s version drift against the pin
+  ansible.builtin.debug:
+    msg: >-
+      Installed k3s ({{ k8s_provision_k3s_probe.stdout_lines[0] | default('unknown') }}) differs from the pinned
+      {{ k8s_provision_k3s_version }}. The role never upgrades a running k3s automatically; follow the k3s
+      upgrade procedure (or remove {{ k8s_provision_k3s_bin }}) to change versions.
+  when:
+    - k8s_provision_k3s_binary.stat.exists
+    - k8s_provision_k3s_version not in (k8s_provision_k3s_probe.stdout | default(''))
+
+- name: Install k3s {{ k8s_provision_k3s_version }}
+  when: not k8s_provision_k3s_binary.stat.exists
   block:
-    - name: Download and install k3s
-      ansible.builtin.shell: |
-        curl -sfL {{ k3s_install_script }} | INSTALL_K3S_VERSION={{ k3s_version }} sh -s - server {{ k3s_server_options }}
-      args:
-        executable: /bin/bash
-      become: yes
-      register: k3s_install
-      changed_when: k3s_install.rc == 0
+    - name: Create temporary file for the k3s install script
+      ansible.builtin.tempfile:
+        state: file
+        suffix: -k3s-install.sh
+      register: k8s_provision_k3s_script
 
-    - name: Wait for k3s to be ready
-      ansible.builtin.wait_for:
-        port: 6443
-        delay: 5
-        timeout: 300
+    - name: Download the k3s install script
+      ansible.builtin.get_url:
+        url: "{{ k8s_provision_k3s_install_script_url }}"
+        dest: "{{ k8s_provision_k3s_script.path }}"
+        checksum: "{{ k8s_provision_k3s_install_script_checksum | default(omit, true) }}"
+        mode: "0700"
+        force: true
+      register: k8s_provision_k3s_script_download
+      retries: "{{ k8s_provision_download_retries }}"
+      delay: "{{ k8s_provision_download_delay }}"
+      until: k8s_provision_k3s_script_download is succeeded
 
-- name: Ensure k3s service is started and enabled
-  ansible.builtin.systemd:
-    name: k3s
+    - name: Run the k3s install script as {{ k8s_provision_k3s_role }}
+      ansible.builtin.command:
+        argv:
+          - /bin/sh
+          - "{{ k8s_provision_k3s_script.path }}"
+        creates: "{{ k8s_provision_k3s_bin }}"
+      environment: "{{ k8s_provision_k3s_install_env }}"
+      vars:
+        k8s_provision_k3s_install_env: >-
+          {{ {'INSTALL_K3S_VERSION': k8s_provision_k3s_version, 'INSTALL_K3S_EXEC': k8s_provision_k3s_exec}
+             | combine({'K3S_URL': k8s_provision_k3s_url, 'K3S_TOKEN': k8s_provision_k3s_token}
+                       if k8s_provision_k3s_role == 'agent' else {}) }}
+      become: true
+      no_log: "{{ k8s_provision_k3s_role == 'agent' }}"
+      register: k8s_provision_k3s_install
+      changed_when: "'skipped, since' not in k8s_provision_k3s_install.stdout"
+  always:
+    - name: Remove the k3s install script
+      ansible.builtin.file:
+        path: "{{ k8s_provision_k3s_script.path }}"
+        state: absent
+      when: k8s_provision_k3s_script.path is defined
+
+- name: Ensure the k3s service is enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ k8s_provision_service_name }}"
     state: started
-    enabled: yes
-  become: yes
+    enabled: true
+  become: true
 
-- name: Check k3s service status
-  ansible.builtin.systemd:
-    name: k3s
-  register: k3s_service_status
-  become: yes
+- name: Manage k3s config.yaml
+  when: k8s_provision_k3s_config | length > 0
+  block:
+    - name: Ensure the k3s configuration directory exists
+      ansible.builtin.file:
+        path: "{{ k8s_provision_k3s_config_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
 
-- name: Display k3s service status
-  ansible.builtin.debug:
-    msg:
-      - "K3s service status: {{ k3s_service_status.status.ActiveState }}"
-      - "Service is {{ 'running' if k3s_service_status.status.ActiveState == 'active' else 'not ready yet' }}"
+    - name: Write k3s config.yaml
+      ansible.builtin.copy:
+        content: "{{ k8s_provision_k3s_config | to_nice_yaml(indent=2) }}"
+        dest: "{{ k8s_provision_k3s_config_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+        backup: true
+      become: true
+      register: k8s_provision_k3s_config_result
+      notify: Restart k3s
 
-- name: Wait for k3s node to be ready
-  ansible.builtin.command: kubectl get nodes
+    - name: Apply the k3s configuration now
+      ansible.builtin.meta: flush_handlers
+
+    - name: Verify the k3s API port after the configuration change
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ k8s_provision_port }}"
+        timeout: "{{ k8s_provision_wait_timeout }}"
+      when: k8s_provision_k3s_role == 'server'
+  rescue:
+    - name: Restore the previous k3s config.yaml
+      ansible.builtin.copy:
+        src: "{{ k8s_provision_k3s_config_result.backup_file }}"
+        dest: "{{ k8s_provision_k3s_config_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+      when: k8s_provision_k3s_config_result.backup_file is defined
+
+    - name: Restart k3s with the restored configuration
+      ansible.builtin.systemd_service:
+        name: "{{ k8s_provision_service_name }}"
+        state: restarted
+      become: true
+      when: k8s_provision_k3s_config_result.backup_file is defined
+
+    - name: Fail after the k3s configuration rollback
+      ansible.builtin.fail:
+        msg: >-
+          k3s did not come back after applying {{ k8s_provision_k3s_config_path }}; the previous file was
+          restored when one existed. Inspect 'journalctl -u {{ k8s_provision_service_name }}' on
+          {{ inventory_hostname }}.
+
+- name: Wait for the k3s API port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ k8s_provision_port }}"
+    timeout: "{{ k8s_provision_wait_timeout }}"
+  when: k8s_provision_k3s_role == 'server'
+
+- name: Wait for the k3s kubeconfig to be written
+  ansible.builtin.wait_for:
+    path: "{{ k8s_provision_k3s_kubeconfig_path }}"
+    timeout: "{{ k8s_provision_wait_timeout }}"
+  when: k8s_provision_k3s_role == 'server'
+
+- name: Wait for the k3s nodes to report Ready
+  ansible.builtin.command:
+    argv:
+      - "{{ k8s_provision_kubectl_bin }}"
+      - wait
+      - --for=condition=Ready
+      - node
+      - --all
+      - --timeout=60s
   environment:
-    KUBECONFIG: "{{ k3s_kubeconfig_path }}"
-  register: node_status
-  until: "'Ready' in node_status.stdout"
-  retries: 60  # 增加重试次数以应对慢速启动
-  delay: 5     # 减少延迟间隔，更频繁检查
+    KUBECONFIG: "{{ k8s_provision_k3s_kubeconfig_path }}"
+  register: k8s_provision_k3s_nodes_ready
   changed_when: false
-  become: yes
-  tags:
-    - skip_ansible_lint  # kubectl 命令是必需的
+  retries: "{{ k8s_provision_ready_retries }}"
+  delay: "{{ k8s_provision_ready_delay }}"
+  until: k8s_provision_k3s_nodes_ready.rc == 0
+  when: k8s_provision_k3s_role == 'server'
 
-- name: Create .kube directory for non-root user (if needed)
-  ansible.builtin.file:
-    path: "{{ ansible_env.HOME }}/.kube"
-    state: directory
-    mode: '0755'
-  when: ansible_user != 'root'
+- name: Copy the kubeconfig to an additional location
+  when:
+    - k8s_provision_k3s_role == 'server'
+    - k8s_provision_kubeconfig_copy_path | length > 0
+  become: true
+  block:
+    - name: Ensure the kubeconfig copy directory exists
+      ansible.builtin.file:
+        path: "{{ k8s_provision_kubeconfig_copy_path | dirname }}"
+        state: directory
+        owner: "{{ k8s_provision_kubeconfig_copy_owner }}"
+        group: "{{ k8s_provision_kubeconfig_copy_group }}"
+        mode: "0700"
 
-- name: Copy kubeconfig for non-root user
-  ansible.builtin.copy:
-    src: "{{ k3s_kubeconfig_path }}"
-    dest: "{{ ansible_env.HOME }}/.kube/config"
-    remote_src: yes
-    mode: '0600'
-  become: yes
-  when: ansible_user != 'root'
-
-- name: Display k3s cluster information
-  ansible.builtin.command: kubectl get nodes -o wide
-  environment:
-    KUBECONFIG: "{{ k3s_kubeconfig_path }}"
-  register: k3s_nodes
-  changed_when: false
-  become: yes
-
-- name: Display k3s cluster status
-  ansible.builtin.debug:
-    msg:
-      - "✅ K3s cluster is ready"
-      - "K3s version: {{ k3s_version }}"
-      - "{{ k3s_nodes.stdout_lines }}"
+    - name: Copy the kubeconfig
+      ansible.builtin.copy:
+        src: "{{ k8s_provision_k3s_kubeconfig_path }}"
+        dest: "{{ k8s_provision_kubeconfig_copy_path }}"
+        remote_src: true
+        owner: "{{ k8s_provision_kubeconfig_copy_owner }}"
+        group: "{{ k8s_provision_kubeconfig_copy_group }}"
+        mode: "0600"

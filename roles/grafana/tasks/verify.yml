@@ -1,0 +1,61 @@
+---
+# =============================================================================
+# Grafana - verify | 验证
+# =============================================================================
+
+- name: Verify grafana health | 验证 grafana 健康状态
+  block:
+    - name: Wait for grafana /api/health | 等待 /api/health
+      ansible.builtin.uri:
+        url: "{{ grafana_health_url }}"
+        status_code: 200
+        return_content: true
+        timeout: 10
+      register: grafana_health
+      retries: "{{ grafana_verify_retries }}"
+      delay: "{{ grafana_verify_delay }}"
+      until: grafana_health.status == 200 and (grafana_health.json.database | default('')) == 'ok'
+  rescue:
+    - name: Collect grafana journal tail | 收集 grafana 日志尾部
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ grafana_service_name }}"
+          - -n
+          - "50"
+          - --no-pager
+      register: grafana_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Show grafana journal tail | 显示 grafana 日志尾部
+      ansible.builtin.debug:
+        msg: "{{ grafana_journal.stdout_lines | default([]) }}"
+
+    - name: Restore previous grafana.ini | 恢复之前的 grafana.ini
+      ansible.builtin.copy:
+        src: "{{ grafana_config_result.backup_file }}"
+        dest: "{{ grafana_config_file }}"
+        owner: root
+        group: grafana
+        mode: "0640"
+        remote_src: true
+      no_log: true
+      when: grafana_config_result.backup_file is defined
+
+    - name: Restart grafana with the restored configuration | 使用恢复的配置重启 grafana
+      ansible.builtin.systemd_service:
+        name: "{{ grafana_service_name }}"
+        state: restarted
+      when: grafana_config_result.backup_file is defined
+
+    - name: Fail because grafana did not become healthy | grafana 未能恢复健康，任务失败
+      ansible.builtin.fail:
+        msg: >-
+          Grafana did not report database "ok" on {{ grafana_health_url }} within
+          {{ grafana_verify_retries * grafana_verify_delay }}s.
+          {% if grafana_config_result.backup_file is defined %}
+          The previous grafana.ini was restored and the service restarted.
+          {% endif %}
+          Inspect `journalctl -u {{ grafana_service_name }}` on {{ inventory_hostname }}.

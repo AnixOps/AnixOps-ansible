@@ -1,65 +1,39 @@
 ---
 # =============================================================================
-# V2bX Main Tasks | V2bX 主任务
+# V2bX main tasks | V2bX 主任务
 # =============================================================================
-# 自动生成AuthKey -> 安装 -> 配置 -> 启动
+# validate -> resolve AuthKey -> install -> configure -> verify
 
-- name: Generate AuthKey via panel internal API | 通过面板内部API生成AuthKey
-  block:
-    - name: Check if AuthKey is provided | 检查是否提供了AuthKey
-      ansible.builtin.set_fact:
-        v2bx_use_existing_key: "{{ v2bx_auth_key != '' }}"
-      when: v2bx_auth_key is defined and v2bx_auth_key != ''
+- name: Validate required variables | 校验必需变量
+  ansible.builtin.assert:
+    that:
+      - v2bx_api_host | default('') | length > 0
+      - v2bx_protocols | default([]) | length > 0
+      - v2bx_node_name | default('') | length > 0
+    fail_msg: |
+      Missing required V2bX configuration | 缺少必需配置:
+      - V2BX_API_HOST   (panel base URL, e.g. http://100.96.0.5:8080)
+      - V2BX_PROTOCOLS  (JSON array or comma list, e.g. ["vmess","vless"])
+      - V2BX_NODE_NAME  (defaults to the inventory hostname)
+    quiet: true
 
-    - name: Generate new AuthKey from panel | 从面板生成新的AuthKey
-      ansible.builtin.uri:
-        url: "{{ v2bx_api_host }}/api/v2/internal/auth-keys"
-        method: POST
-        headers:
-          X-API-Key: "{{ v2bx_panel_api_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          name: "{{ v2bx_node_name }}"
-          node_name: "{{ v2bx_node_name }}"
-          expire_days: "{{ v2bx_authkey_expire_days | default(1) }}"
-        status_code: 200
-        timeout: 30
-      register: authkey_response
-      delegate_to: localhost
-      run_once: true
-      when: not v2bx_use_existing_key | default(false)
+- name: Validate AuthKey prerequisites | 校验 AuthKey 前置条件
+  ansible.builtin.assert:
+    that:
+      - v2bx_auth_key | length > 0 or not (v2bx_auto_generate_authkey | bool) or v2bx_panel_api_token | length > 0
+    fail_msg: >-
+      v2bx_auto_generate_authkey is enabled but V2BOARD_API_TOKEN is empty;
+      export it or provide V2BX_AUTH_KEY.
+    quiet: true
 
-    - name: Set generated AuthKey | 设置生成的AuthKey
-      ansible.builtin.set_fact:
-        v2bx_auth_key: "{{ authkey_response.json.data.key }}"
-      when: not v2bx_use_existing_key | default(false) and authkey_response.json.data.key is defined
+- name: Include AuthKey resolution tasks | 解析 AuthKey
+  ansible.builtin.include_tasks: authkey.yml
 
-    - name: Display generated AuthKey info | 显示生成的AuthKey信息
-      ansible.builtin.debug:
-        msg: |
-          AuthKey已生成 | AuthKey Generated:
-          ID: {{ authkey_response.json.data.id }}
-          Name: {{ authkey_response.json.data.name }}
-          Key: {{ authkey_response.json.data.key }}
-          请保存此密钥以便后续使用 | Save this key for future use
-      when: not v2bx_use_existing_key | default(false)
-  when: v2bx_auto_generate_authkey | default(true)
-
-- name: Validate required variables | 验证必需变量
-  ansible.builtin.fail:
-    msg: |
-      缺少必需配置变量 | Missing required configuration:
-      - V2BX_API_HOST (面板API地址，使用Mesh IP)
-      - V2BX_PROTOCOLS (支持的协议列表，如 ["vmess", "vless", "shadowsocks"])
-
-      AuthKey已自动生成或需要手动配置 | AuthKey auto-generated or needs manual config
-  when: >
-    (v2bx_api_host | default('') == '') or
-    (v2bx_protocols | default([]) | length == 0)
-
-- name: Include installation tasks | 包含安装任务
+- name: Include installation tasks | 安装
   ansible.builtin.include_tasks: install.yml
 
-- name: Include configuration tasks | 包含配置任务
+- name: Include configuration tasks | 配置
   ansible.builtin.include_tasks: configure.yml
+
+- name: Include verification tasks | 验证
+  ansible.builtin.include_tasks: verify.yml

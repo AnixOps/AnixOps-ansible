@@ -1,29 +1,31 @@
-- name: Scan for high and critical vulnerabilities before remediation
+---
+# Pre-remediation scan | 修复前扫描
+# The raw Trivy JSON is large, so the tasks that carry it run with no_log; readable
+# failure messages are produced by the explicit verification tasks instead.
+
+- name: Scan for vulnerabilities before remediation
   ansible.builtin.command:
-    argv:
-      - "{{ security_patch_trivy_bin }}"
-      - fs
-      - --quiet
-      - --no-progress
-      - --format
-      - json
-      - --exit-code
-      - "0"
-      - --timeout
-      - "{{ security_patch_trivy_timeout }}"
-      - --severity
-      - HIGH,CRITICAL
-      - --pkg-types
-      - os
-      - --scanners
-      - vuln
-      - /
+    argv: "{{ security_patch_trivy_scan_argv + security_patch_trivy_optional_argv + ['/'] }}"
   register: security_patch_scan_before
   changed_when: false
+  failed_when: false
   no_log: true
+
+- name: Verify the pre-remediation scan succeeded
+  ansible.builtin.assert:
+    that:
+      - security_patch_scan_before.rc | default(1) | int == 0
+      - security_patch_scan_before.stdout | default('') | length > 0
+    quiet: true
+    fail_msg: >-
+      Trivy pre-remediation scan failed on {{ inventory_hostname }}
+      (rc={{ security_patch_scan_before.rc | default('n/a') }}):
+      {{ security_patch_scan_before.stderr | default(security_patch_scan_before.msg | default(''))
+         | trim | regex_replace('\n', ' | ') | truncate(500) }}
 
 - name: Summarize pre-remediation findings
   delegate_to: localhost
+  become: false
   ansible.builtin.command:
     argv:
       - python3
@@ -31,7 +33,19 @@
     stdin: "{{ hostvars[inventory_hostname].security_patch_scan_before.stdout }}"
   register: security_patch_findings_before_raw
   changed_when: false
+  failed_when: false
   no_log: true
+
+- name: Verify the pre-remediation summarizer succeeded
+  ansible.builtin.assert:
+    that:
+      - security_patch_findings_before_raw.rc | default(1) | int == 0
+    quiet: true
+    fail_msg: >-
+      summarize_trivy.py failed for the pre-remediation scan of {{ inventory_hostname }}
+      (rc={{ security_patch_findings_before_raw.rc | default('n/a') }}):
+      {{ security_patch_findings_before_raw.stderr | default(security_patch_findings_before_raw.msg | default(''))
+         | trim | regex_replace('\n', ' | ') | truncate(500) }}
 
 - name: Parse pre-remediation findings
   ansible.builtin.set_fact:
@@ -40,5 +54,7 @@
 
 - name: Count pre-remediation findings
   ansible.builtin.set_fact:
-    security_patch_before_patchable_count: "{{ security_patch_findings_before | selectattr('fixed_version', 'match', '.+') | list | length }}"
-    security_patch_before_unpatchable_count: "{{ security_patch_findings_before | rejectattr('fixed_version', 'match', '.+') | list | length }}"
+    security_patch_before_patchable_count: >-
+      {{ security_patch_findings_before | selectattr('fixed_version', 'match', '.+') | list | length }}
+    security_patch_before_unpatchable_count: >-
+      {{ security_patch_findings_before | rejectattr('fixed_version', 'match', '.+') | list | length }}

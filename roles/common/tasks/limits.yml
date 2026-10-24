@@ -1,0 +1,15 @@
+---
+# =============================================================================
+# PAM resource limits | PAM 资源限制
+# =============================================================================
+
+- name: Configure PAM resource limits | 配置 PAM 资源限制
+  community.general.pam_limits:
+    domain: "{{ item.domain }}"
+    limit_type: "{{ item.limit_type }}"
+    limit_item: "{{ item.limit_item }}"
+    value: "{{ item.value }}"
+    dest: "{{ common_limits_file }}"
+  loop: "{{ common_security_limits }}"
+  loop_control:
+    label: "{{ item.domain }} {{ item.limit_type }} {{ item.limit_item }}={{ item.value }}"

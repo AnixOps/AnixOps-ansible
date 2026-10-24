@@ -1,0 +1,30 @@
+# {{ ansible_managed }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ k8s_dashboard_deploy_service_account }}
+  namespace: {{ k8s_dashboard_deploy_namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ k8s_dashboard_deploy_service_account }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: {{ k8s_dashboard_deploy_service_account }}
+    namespace: {{ k8s_dashboard_deploy_namespace }}
+{% if k8s_dashboard_deploy_token_mode == 'secret' %}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ k8s_dashboard_deploy_service_account }}-token
+  namespace: {{ k8s_dashboard_deploy_namespace }}
+  annotations:
+    kubernetes.io/service-account.name: {{ k8s_dashboard_deploy_service_account }}
+type: kubernetes.io/service-account-token
+{% endif %}

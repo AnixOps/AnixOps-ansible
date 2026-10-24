@@ -1,147 +1,41 @@
 ---
 # =============================================================================
-# V2board Configuration Tasks | V2board 閰嶇疆浠诲姟
+# V2board binary configuration | V2board 二进制配置
 # =============================================================================
-- name: Generate v2board config.yaml | 鐢熸垚 v2board 閰嶇疆鏂囦欢
+# Render config + unit -> flush handlers (daemon-reload / restart) -> ensure the
+# service is enabled and started. Health verification lives in verify.yml.
+
+- name: Render config.yaml | 渲染 config.yaml
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ v2board_config_dir }}/config.yaml"
-    mode: '0640'
-  notify: Restart v2board service | 閲嶅惎 v2board 鏈嶅姟
+    owner: root
+    group: "{{ v2board_service_group }}"
+    mode: "0640"
+    backup: true
+  register: v2board_config_result
+  no_log: true
+  notify: Restart v2board
 
-- name: Install v2board systemd service | 瀹夎 v2board systemd 鏈嶅姟
+- name: Install the v2board systemd unit | 安装 v2board systemd 单元
   ansible.builtin.template:
     src: v2board.service.j2
-    dest: /etc/systemd/system/v2board.service
-    mode: '0644'
-  notify: Restart v2board service | 閲嶅惎 v2board 鏈嶅姟
+    dest: "/etc/systemd/system/{{ v2board_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  register: v2board_unit_result
+  notify:
+    - Reload systemd
+    - Restart v2board
 
-- name: Enable and start v2board service | 鍚敤骞跺惎鍔?v2board 鏈嶅姟
-  block:
-    - name: Stop existing v2board service | 鍋滄鐜版湁 v2board 鏈嶅姟
-      ansible.builtin.systemd:
-        name: "{{ v2board_service_name }}"
-        state: stopped
-        daemon_reload: yes
-      failed_when: false
+- name: Apply pending handlers before starting the service | 启动前执行挂起的处理器
+  ansible.builtin.meta: flush_handlers
 
-    - name: Kill all stale v2board processes | 娓呯悊鎵€鏈夋畫鐣?v2board 杩涚▼
-      ansible.builtin.shell: |
-        pkill -9 -f "{{ v2board_install_dir }}/{{ v2board_bin_name }}" 2>/dev/null || true
-        sleep 1
-        for i in 1 2 3 4 5; do
-          fuser -k {{ v2board_frontend_port }}/tcp 2>/dev/null || break
-          sleep 1
-        done
-        for i in 1 2 3 4 5; do
-          fuser -k {{ v2board_api_port }}/tcp 2>/dev/null || break
-          sleep 1
-        done
-      args:
-        executable: /bin/bash
-      changed_when: false
-      failed_when: false
-
-    - name: Test v2board binary startup (capture crash output) | 娴嬭瘯 v2board 鍚姩鎹曡幏宕╂簝杈撳嚭
-      ansible.builtin.shell: |
-        # Start binary in background
-        {{ v2board_install_dir }}/{{ v2board_bin_name }} -config {{ v2board_config_dir }}/config.yaml \
-          >> {{ v2board_data_dir }}/logs/v2board-test.out 2>&1 &
-        BINARY_PID=$!
-
-        # Wait up to 15s for ports to start listening
-        LISTENING=no
-        for i in $(seq 1 15); do
-          if ss -tlnp | grep -qE '{{ v2board_api_port }}|{{ v2board_frontend_port }}'; then
-            LISTENING=yes
-            break
-          fi
-          # If binary already died, stop waiting
-          kill -0 $BINARY_PID 2>/dev/null || break
-          sleep 1
-        done
-
-        echo "=== Listening Ports ==="
-        ss -tlnp | grep -E '{{ v2board_api_port }}|{{ v2board_frontend_port }}' || echo "No ports listening (LISTENING=$LISTENING)"
-
-        # Check if binary process still alive
-        if kill -0 $BINARY_PID 2>/dev/null; then
-          echo "=== Status ==="
-          echo "Binary still running (PID $BINARY_PID), startup successful"
-          kill $BINARY_PID 2>/dev/null || true
-          sleep 2
-          kill -9 $BINARY_PID 2>/dev/null || true
-          exit 0
-        else
-          wait $BINARY_PID 2>/dev/null || true
-          EXIT_CODE=$?
-          echo "=== Binary Exit Code: $EXIT_CODE ==="
-          echo "=== Full stdout/stderr ==="
-          tail -n 200 {{ v2board_data_dir }}/logs/v2board-test.out
-          echo "=== Error Log ==="
-          tail -n 100 {{ v2board_data_dir }}/logs/v2board-error.log 2>/dev/null || echo "No error log"
-          exit $EXIT_CODE
-        fi
-      args:
-        executable: /bin/bash
-      register: v2board_test_output
-      changed_when: false
-      failed_when: false
-
-    - name: Start v2board service | 鍚姩 v2board 鏈嶅姟
-      ansible.builtin.systemd:
-        name: "{{ v2board_service_name }}"
-        state: restarted
-        enabled: yes
-        daemon_reload: yes
-
-- name: Wait for v2board to start | 绛夊緟 v2board 鍚姩
-  ansible.builtin.pause:
-    seconds: 30
-
-- name: Display v2board test output | 鏄剧ず v2board 娴嬭瘯杈撳嚭
-  ansible.builtin.debug:
-    msg: |
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?      V2board Binary Test Output | v2board 浜岃繘鍒舵祴璇曡緭鍑?      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?      {{ v2board_test_output.stdout | default('No output captured') }}
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-- name: Verify v2board service status
-  block:
-    - name: Check v2board service state
-      ansible.builtin.systemd:
-        name: "{{ v2board_service_name }}"
-        state: started
-      register: v2board_service_status
-      failed_when: v2board_service_status.status.ActiveState != 'active'
-  rescue:
-    - name: Capture v2board journal logs
-      ansible.builtin.shell:
-        cmd: journalctl -u {{ v2board_service_name }} --no-pager -n 200 --no-hostname
-      register: v2board_journal
-      changed_when: false
-      failed_when: false
-    - name: Fail with service error
-      ansible.builtin.fail:
-        msg: "V2board service failed to start."
-- name: Display v2board deployment summary | 鏄剧ず v2board 閮ㄧ讲鎽樿
-  ansible.builtin.debug:
-    msg: |
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?      鉁?V2board 鎺у埗闈㈡澘閮ㄧ讲鎴愬姛 | V2board Panel Deployed
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?      涓绘満 | Host: {{ inventory_hostname }}
-
-      绔彛 | Ports:
-      - API: {{ v2board_api_port }}
-      - gRPC: {{ v2board_grpc_port }}
-      - NodeX: {{ v2board_nodex_port }}
-
-      鏁版嵁搴?| Database: {{ v2board_db_type }}
-
-      閮ㄧ讲鏂瑰紡 | Deployment: Binary
-      - Binary: {{ v2board_install_dir }}/{{ v2board_bin_name }}
-      - Config: {{ v2board_config_dir }}/config.yaml
-
-      鐘舵€?| Status: {{ v2board_service_status.status.ActiveState }}
-
-      涓嬩竴姝?| Next Steps:
-      1. 璁块棶闈㈡澘 | Access panel: http://{{ inventory_hostname }}:{{ v2board_api_port }}
-      2. 閰嶇疆鑺傜偣 | Configure nodes in admin panel
-      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺
+- name: Enable and start v2board | 启用并启动 v2board
+  ansible.builtin.systemd:
+    name: "{{ v2board_service_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true

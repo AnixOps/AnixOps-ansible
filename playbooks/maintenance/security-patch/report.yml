@@ -1,3 +1,10 @@
+---
+# Report stage (localhost) | 报告阶段
+# Aggregates every host summary into security-patch-report.json (schema_version 1)
+# and a short Markdown twin (<report>.md) that fits $GITHUB_STEP_SUMMARY.
+# Hosts that produced no summary at all (unreachable, or failed before pre_tasks ran)
+# get a placeholder `scan_failed` summary and are counted in unreachable_count.
+
 - name: Determine security patch target group
   ansible.builtin.set_fact:
     security_patch_target_group_name: "{{ security_patch_target_group | default('all') }}"
@@ -20,7 +27,7 @@
     security_patch_report_hosts: >-
       {{
         security_patch_report_hosts
-        + [ hostvars[item].security_patch_summary | default(security_patch_placeholder_summary, true) ]
+        + [hostvars[item].security_patch_summary | default(security_patch_placeholder_summary, true)]
       }}
   vars:
     security_patch_placeholder_summary:
@@ -36,26 +43,62 @@
       after_patchable_count: 0
       after_unpatchable_count: 0
       update_rc: 0
+      update_changed: false
       reboot_required: false
+      rebooted: false
+      apply_updates: "{{ security_patch_apply_updates | bool }}"
+      severity: "{{ security_patch_severity }}"
+      trivy_version: "unknown"
+      placeholder: true
       findings: []
   loop: "{{ security_patch_target_hosts }}"
 
 - name: Build aggregated report
   ansible.builtin.set_fact:
-    security_patch_report:
-      generated_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
-      target_group: "{{ security_patch_target_group | default('all') }}"
-      total_hosts: "{{ security_patch_report_hosts | length }}"
-      clean_count: "{{ security_patch_report_hosts | selectattr('status', 'equalto', 'clean') | list | length }}"
-      patched_count: "{{ security_patch_report_hosts | selectattr('status', 'equalto', 'patched') | list | length }}"
-      alert_count: >-
-        {{
-          (security_patch_report_hosts | selectattr('status', 'equalto', 'needs_attention') | list | length)
-          + (security_patch_report_hosts | selectattr('status', 'equalto', 'scan_failed') | list | length)
-        }}
-      hosts: "{{ security_patch_report_hosts }}"
+    security_patch_report: >-
+      {{
+        {
+          'schema_version': 1,
+          'generated_at': now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ'),
+          'target_group': security_patch_target_group_name,
+          'apply_updates': security_patch_apply_updates | bool,
+          'severity': security_patch_severity,
+          'total_hosts': security_patch_report_hosts | length,
+          'clean_count': security_patch_report_hosts | selectattr('status', 'equalto', 'clean') | list | length,
+          'patched_count': security_patch_report_hosts | selectattr('status', 'equalto', 'patched') | list | length,
+          'needs_attention_count': security_patch_report_hosts
+                                   | selectattr('status', 'equalto', 'needs_attention') | list | length,
+          'scan_failed_count': security_patch_report_hosts
+                               | selectattr('status', 'equalto', 'scan_failed') | list | length,
+          'alert_count': security_patch_report_hosts
+                         | selectattr('status', 'in', ['needs_attention', 'scan_failed']) | list | length,
+          'unreachable_count': security_patch_report_hosts
+                               | selectattr('placeholder', 'defined') | selectattr('placeholder') | list | length,
+          'reboot_required_count': security_patch_report_hosts
+                                   | selectattr('reboot_required', 'defined') | selectattr('reboot_required')
+                                   | list | length,
+          'rebooted_count': security_patch_report_hosts
+                            | selectattr('rebooted', 'defined') | selectattr('rebooted') | list | length,
+          'hosts': security_patch_report_hosts
+        }
+      }}
 
-- name: Write report to workspace
+- name: Write JSON report to workspace
   ansible.builtin.copy:
-    dest: "{{ security_patch_report_path | default(playbook_dir ~ '/../../security-patch-report.json', true) }}"
-    content: "{{ security_patch_report | to_nice_json }}"
+    dest: "{{ security_patch_report_path }}"
+    content: "{{ security_patch_report | to_nice_json }}\n"
+    mode: "0644"
+
+- name: Write Markdown summary next to the JSON report
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/security-patch/report.md.j2"
+    dest: "{{ security_patch_report_markdown_path }}"
+    mode: "0644"
+
+- name: Show report totals
+  ansible.builtin.debug:
+    msg: >-
+      Security patch report written to {{ security_patch_report_path }}:
+      hosts={{ security_patch_report.total_hosts }} clean={{ security_patch_report.clean_count }}
+      patched={{ security_patch_report.patched_count }} alerts={{ security_patch_report.alert_count }}
+      unreachable={{ security_patch_report.unreachable_count }} rebooted={{ security_patch_report.rebooted_count }}

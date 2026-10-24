@@ -1,0 +1,16 @@
+{{ ansible_managed | comment }}
+# Grafana dashboard provisioning: file provider for repository dashboards
+---
+apiVersion: 1
+
+providers:
+  - name: anixops
+    orgId: 1
+    folder: {{ grafana_dashboards_folder | to_json }}
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: {{ grafana_dashboards_update_interval }}
+    allowUiUpdates: false
+    options:
+      path: {{ grafana_dashboards_dir }}
+      foldersFromFilesStructure: false

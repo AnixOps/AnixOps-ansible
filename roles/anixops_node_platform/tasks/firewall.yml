@@ -1,50 +1,74 @@
 ---
+# Edge policy: only Nginx (80/443) is reachable from outside; the application
+# ports stay loopback-only and are additionally denied in UFW.
+# 边缘策略：仅 Nginx (80/443) 对外开放，应用端口在 UFW 中显式拒绝。
+
 - name: Ensure UFW is installed for node platform port policy
   ansible.builtin.apt:
     name: ufw
     state: present
-    update_cache: yes
-  when: ansible_os_family == "Debian"
-
-- name: Remove direct allow rules for node platform application ports
-  ansible.builtin.ufw:
-    rule: allow
-    port: "{{ item }}"
-    proto: tcp
-    delete: yes
-  loop: "{{ anixops_node_platform_block_direct_public_ports }}"
-  ignore_errors: yes
+    update_cache: true
+    cache_valid_time: 3600
+  register: anixops_node_platform_apt_ufw
+  retries: 3
+  delay: 10
+  until: anixops_node_platform_apt_ufw is succeeded
   when:
     - ansible_os_family == "Debian"
-    - firewall_enabled | default(true)
+    - firewall_enabled | default(true) | bool
 
-- name: Deny direct inbound access to node platform application ports
-  ansible.builtin.ufw:
-    rule: deny
-    port: "{{ item }}"
-    proto: tcp
-    comment: "AnixOps edge only"
-  loop: "{{ anixops_node_platform_block_direct_public_ports }}"
+- name: Apply the UFW edge policy
   when:
     - ansible_os_family == "Debian"
-    - firewall_enabled | default(true)
+    - firewall_enabled | default(true) | bool
+  block:
+    - name: Probe current UFW rules
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - status
+      register: anixops_node_platform_ufw_status
+      changed_when: false
 
-- name: Ensure HTTP and HTTPS stay publicly reachable through Nginx
-  ansible.builtin.ufw:
-    rule: allow
-    port: "{{ item }}"
-    proto: tcp
-  loop:
-    - "80"
-    - "443"
-  when:
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(true)
+    - name: Remove direct allow rules for node platform application ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item | string }}"
+        proto: tcp
+        delete: true
+      loop: "{{ anixops_node_platform_block_direct_public_ports }}"
+      # Only delete when `ufw status` actually lists an unrestricted ALLOW for the port,
+      # so the task is idempotent and never relies on ufw's exit code for missing rules.
+      when: >-
+        anixops_node_platform_ufw_status.stdout
+        is search('^' ~ (item | string) ~ '/tcp +ALLOW( IN)? +Anywhere', multiline=True)
 
-- name: Enable UFW for node platform edge policy
-  ansible.builtin.ufw:
-    state: enabled
-    policy: allow
-  when:
-    - ansible_os_family == "Debian"
-    - firewall_enabled | default(true)
+    - name: Deny direct inbound access to node platform application ports
+      community.general.ufw:
+        rule: deny
+        port: "{{ item | string }}"
+        proto: tcp
+        comment: "AnixOps edge only"
+      loop: "{{ anixops_node_platform_block_direct_public_ports }}"
+
+    - name: Ensure the SSH port stays reachable before UFW is enabled
+      community.general.ufw:
+        rule: allow
+        port: "{{ ansible_port | default(ssh_port | default(22)) | string }}"
+        proto: tcp
+        comment: "SSH (lockout protection)"
+
+    - name: Ensure HTTP and HTTPS stay publicly reachable through Nginx
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+        comment: "AnixOps edge (Nginx)"
+      loop:
+        - "80"
+        - "443"
+
+    - name: Enable UFW for node platform edge policy
+      community.general.ufw:
+        state: enabled
+        policy: "{{ firewall_default_incoming_policy | default('allow') }}"

@@ -1,249 +1,305 @@
+---
 # =============================================================================
-# AnixOps 涓?Playbook | AnixOps Main Playbook
+# AnixOps main playbook | AnixOps 主 Playbook
 # =============================================================================
-# 鐢ㄤ簬瀹屾暣閮ㄧ讲鎵€鏈夋湇鍔″櫒閰嶇疆
-# Used for complete deployment of all server configurations
+# Full deployment of every managed server. Each service is one play with
+# exactly one tag, so `--tags <service>` deploys that service and nothing else.
 #
-# Scope: all servers (serial: 30%, max_fail: 25%)
-# Rollback: ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=..."
-# Risk Level: HIGH (affects all servers)
-# Pre-flight: Yes (fact gathering + unreachable handling)
-# Post-check: Yes (final health check play included)
+#   ansible-playbook playbooks/provision/site.yml                      # everything
+#   ansible-playbook playbooks/provision/site.yml --tags nginx         # one service
+#   ansible-playbook playbooks/provision/site.yml --limit web_servers  # one group
+#   ansible-playbook playbooks/provision/site.yml --check --diff       # dry run
 #
-# 閮ㄧ讲鍐呭 | Deployment Content:
-#   - Docker 閰嶇疆淇锛堝畼鏂规爣鍑嗭級
-#   - 閫氱敤閰嶇疆锛堝畨鍏ㄣ€佹椂鍖恒€佺敤鎴凤級| Common configuration
-#   - Node Exporter锛堢洃鎺э級| Node Exporter
-#   - Promtail锛堟棩蹇楁敹闆嗭級| Promtail
-#   - 闃茬伀澧欓厤缃?| Firewall configuration
-#   - Nginx锛圵eb 鏈嶅姟鍣級| Nginx
+# Play tags: common, node_exporter, promtail, firewall, nginx, prometheus,
+#            loki, grafana, postgresql, v2board, v2bx, speedtest, health
+# Scope: all servers, serial 30%, max_fail_percentage 25 (preflight runs on
+#        every host at once and is tagged `always`)
+# Rollback: ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=<role>"
+# Risk: HIGH (touches every server)
+# Pre-flight: OS family, Python 3 and free disk assertions (tag always)
+# Post-check: playbooks/maintenance/health-check.yml (tag health)
+#
+# Variables:
+#   preflight_min_free_mb  1024  minimum free space on / required to continue
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# 淇 Docker apt 閰嶇疆锛堝畼鏂规爣鍑嗭級 | Fix Docker apt configuration
-# -----------------------------------------------------------------------------
-- name: Fix Docker apt configuration | 淇 Docker apt 閰嶇疆
+- name: Preflight checks | 部署前检查
   hosts: all
-  serial: "30%"
+  become: false
+  gather_facts: true
+  serial: "100%"
   max_fail_percentage: 25
-  become: yes
-  gather_facts: yes
-  ignore_unreachable: yes
+  any_errors_fatal: false
+  tags: [always]
+
   tasks:
-    - name: Check if apt has Docker conflict | 妫€鏌?apt 鏄惁鏈?Docker 閰嶇疆鍐茬獊
-      ansible.builtin.shell: apt update 2>&1 | grep -q "Conflicting" && echo "conflict" || echo "ok"
-      register: apt_check
-      changed_when: false
-      failed_when: false
+    - name: Assert the operating system family is supported | 断言操作系统受支持
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['os_family'] in ['Debian', 'RedHat']
+        fail_msg: >-
+          {{ inventory_hostname }}: unsupported OS family
+          '{{ ansible_facts['os_family'] | default('unknown') }}' (supported: Debian, RedHat)
+        quiet: true
 
-    - name: Fix Docker apt configuration | 淇 Docker apt 閰嶇疆
-      block:
-        - name: Remove old/conflicting Docker GPG keys | 绉婚櫎鏃?鍐茬獊鐨?Docker GPG keys
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /usr/share/keyrings/docker-archive-keyring.gpg
-            - /etc/apt/keyrings/docker.gpg
+    - name: Assert the remote interpreter is Python 3 | 断言远程解释器为 Python 3
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['python']['version']['major'] | int == 3
+        fail_msg: >-
+          {{ inventory_hostname }}: remote interpreter is Python
+          {{ ansible_facts['python_version'] | default('unknown') }}, Python 3 is required
+        quiet: true
 
-        - name: Remove old Docker apt source files | 绉婚櫎鏃х殑 Docker apt source 鏂囦欢
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /etc/apt/sources.list.d/docker.list
-            - /etc/apt/sources.list.d/docker-ce.list
+    - name: Assert the root filesystem has enough free space | 断言根文件系统剩余空间充足
+      ansible.builtin.assert:
+        that:
+          - preflight_root_free_mb | int >= preflight_min_free_mb | default(1024) | int
+        fail_msg: >-
+          {{ inventory_hostname }}: only {{ preflight_root_free_mb }} MB free on /
+          (minimum {{ preflight_min_free_mb | default(1024) }} MB, override with -e preflight_min_free_mb=N)
+        quiet: true
+      vars:
+        preflight_root_free_mb: >-
+          {{ ((ansible_facts['mounts'] | selectattr('mount', 'equalto', '/')
+              | map(attribute='size_available') | first | default(0)) | int) // 1048576 }}
 
-        - name: Create keyrings directory | 鍒涘缓 keyrings 鐩綍
-          ansible.builtin.file:
-            path: /etc/apt/keyrings
-            state: directory
-            mode: '0755'
-
-        - name: Download Docker GPG key (official) |涓嬭浇 Docker GPG key (瀹樻柟)
-          ansible.builtin.shell: |
-            curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg \
-              -o /etc/apt/keyrings/docker.asc
-            chmod a+r /etc/apt/keyrings/docker.asc
-          args:
-            creates: /etc/apt/keyrings/docker.asc
-
-        - name: Add Docker apt source (official DEB822 format) | 娣诲姞 Docker apt source (瀹樻柟鏍煎紡)
-          ansible.builtin.copy:
-            dest: /etc/apt/sources.list.d/docker.sources
-            content: |
-              Types: deb
-              URIs: https://download.docker.com/linux/{{ ansible_distribution | lower }}
-              Suites: {{ ansible_distribution_release }}
-              Components: stable
-              Signed-By: /etc/apt/keyrings/docker.asc
-            mode: '0644'
-
-        - name: Update apt cache | 鏇存柊 apt 缂撳瓨
-          ansible.builtin.apt:
-            update_cache: yes
-
-        - name: Display fix result | 鏄剧ず淇缁撴灉
-          ansible.builtin.debug:
-            msg: |
-              鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?              鉁?Docker apt 閰嶇疆宸蹭慨澶?| Docker apt config fixed
-              瀹樻柟閰嶇疆 | Official Config:
-              - GPG key: /etc/apt/keyrings/docker.asc
-              - Source: /etc/apt/sources.list.d/docker.sources
-              鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?      when:
-        - ansible_os_family == 'Debian'
-        - apt_check.stdout == "conflict"
+    - name: Record the deployment start time | 记录部署开始时间
+      ansible.builtin.set_fact:
+        deploy_started_at: "{{ ansible_facts['date_time']['iso8601'] }}"
 
 # -----------------------------------------------------------------------------
-# 閮ㄧ讲閫氱敤閰嶇疆 | Deploy Common Configuration
+# Base system | 基础系统
 # -----------------------------------------------------------------------------
-- name: Deploy Common Configuration | 閮ㄧ讲閫氱敤閰嶇疆
+- name: Deploy common configuration | 部署通用配置
   hosts: all
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  gather_facts: yes
-  ignore_unreachable: yes
-  roles:
-    - common
+  any_errors_fatal: false
+  tags: [common]
 
-# -----------------------------------------------------------------------------
-# 閮ㄧ讲 Node Exporter | Deploy Node Exporter
-# -----------------------------------------------------------------------------
-- name: Deploy Node Exporter (Monitoring) | 閮ㄧ讲 Node Exporter锛堢洃鎺э級
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: common
+
+- name: Deploy Node Exporter | 部署 Node Exporter
   hosts: all
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  ignore_unreachable: yes
-  roles:
-    - node_exporter
+  any_errors_fatal: false
+  tags: [node_exporter]
 
-# -----------------------------------------------------------------------------
-# 閮ㄧ讲 Promtail | Deploy Promtail
-# -----------------------------------------------------------------------------
-- name: Deploy Promtail (Log Collection) | 閮ㄧ讲 Promtail锛堟棩蹇楁敹闆嗭級
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: node_exporter
+
+- name: Deploy Promtail | 部署 Promtail
   hosts: all
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  ignore_unreachable: yes
-  roles:
-    - promtail
+  any_errors_fatal: false
+  tags: [promtail]
 
-# -----------------------------------------------------------------------------
-# 閰嶇疆闃茬伀澧欏拰鐩戞帶鐧藉悕鍗?| Configure Firewall and Monitoring Whitelist
-# -----------------------------------------------------------------------------
-- name: Configure Firewall and Monitoring Whitelist | 闰?
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: promtail
+
+- name: Configure the firewall | 配置防火墙
   hosts: all
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  ignore_unreachable: yes
+  any_errors_fatal: false
+  tags: [firewall]
+
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
   roles:
-    - firewall
+    - role: firewall
 
 # -----------------------------------------------------------------------------
-# 閮ㄧ讲 Nginx | Deploy Nginx
+# Web tier | Web 层
 # -----------------------------------------------------------------------------
-- name: Deploy Nginx (Web Servers) | 閮ㄧ讲 Nginx锛圵eb 鏈嶅姟鍣級
+- name: Deploy Nginx | 部署 Nginx
   hosts: web_servers
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  ignore_unreachable: yes
+  any_errors_fatal: false
+  tags: [nginx]
+
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
   roles:
-    - nginx
-
+    - role: nginx
 
 # -----------------------------------------------------------------------------
-# 閮ㄧ讲 PostgreSQL 鏁版嵁搴?| Deploy PostgreSQL Database
+# Observability stack (Prometheus + Loki + Grafana) | 可观测性栈
 # -----------------------------------------------------------------------------
-- name: Deploy PostgreSQL Database | 閮ㄧ讲 PostgreSQL 鏁版嵁搴?
+- name: Deploy Prometheus | 部署 Prometheus
+  hosts: observability
+  become: true
+  gather_facts: false
+  serial: "30%"
+  max_fail_percentage: 25
+  any_errors_fatal: false
+  tags: [prometheus]
+
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: prometheus
+
+- name: Deploy Loki | 部署 Loki
+  hosts: observability
+  become: true
+  gather_facts: false
+  serial: "30%"
+  max_fail_percentage: 25
+  any_errors_fatal: false
+  tags: [loki]
+
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: loki
+
+- name: Deploy Grafana | 部署 Grafana
+  hosts: observability
+  become: true
+  gather_facts: false
+  serial: "30%"
+  max_fail_percentage: 25
+  any_errors_fatal: false
+  tags: [grafana]
+
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: grafana
+
+# -----------------------------------------------------------------------------
+# Applications | 应用
+# -----------------------------------------------------------------------------
+- name: Deploy PostgreSQL | 部署 PostgreSQL
   hosts: postgres_servers
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  gather_facts: yes
-  ignore_unreachable: yes
-  roles:
-    - postgresql
-  tags:
-    - postgresql
+  any_errors_fatal: false
+  tags: [postgresql]
 
-# -----------------------------------------------------------------------------
-# 閮ㄧ讲 V2board 鎺у埗闈㈡澘 | Deploy V2board Control Panel
-# -----------------------------------------------------------------------------
-- name: Deploy V2board Control Panel | 閮ㄧ讲 V2board 鎺у埗闈㈡澘
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: postgresql
+
+- name: Deploy the V2board control panel | 部署 V2board 控制面板
   hosts: v2board_servers
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  ignore_unreachable: yes
-  roles:
-    - v2board
-  tags:
-    - v2board
+  any_errors_fatal: false
+  tags: [v2board]
 
-# -----------------------------------------------------------------------------
-# 閮ㄧ讲 V2bX 浠ｇ悊鑺傜偣 | Deploy V2bX Proxy Nodes
-# -----------------------------------------------------------------------------
-- name: Deploy V2bX Proxy Nodes | 閮ㄧ讲 V2bX 浠ｇ悊鑺傜偣
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: v2board
+
+- name: Deploy V2bX proxy nodes | 部署 V2bX 代理节点
   hosts: v2bx_servers
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  ignore_unreachable: yes
-  roles:
-    - v2bx
-  tags:
-    - v2bx
+  any_errors_fatal: false
+  tags: [v2bx]
 
-# -----------------------------------------------------------------------------
-# 閮ㄧ讲 Speedtest | Deploy Speedtest
-# -----------------------------------------------------------------------------
-- name: Deploy Speedtest | 閮ㄧ讲 Speedtest 娴嬮€熷伐鍏?
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
+  roles:
+    - role: v2bx
+
+- name: Deploy Speedtest | 部署 Speedtest
   hosts: all
+  become: true
+  gather_facts: false
   serial: "30%"
   max_fail_percentage: 25
-  become: yes
-  ignore_unreachable: yes
+  any_errors_fatal: false
+  tags: [speedtest]
+
+  pre_tasks:
+    - name: Gather facts when the preflight cache is unavailable | 缺少预检事实时收集事实
+      ansible.builtin.setup:
+      when: ansible_facts['os_family'] is not defined
+      tags: [always]
+
   roles:
-    - speedtest
-  tags:
-    - speedtest
+    - role: speedtest
 
 # -----------------------------------------------------------------------------
-# 鏈€缁堝仴搴锋鏌?| Final Health Check
+# Post-deployment health check (single source: maintenance/health-check.yml)
+# 部署后健康检查
 # -----------------------------------------------------------------------------
-- name: Final Health Check | 鏈€缁堝仴搴锋鏌?
-  hosts: all
-  serial: 1
-  max_fail_percentage: 50
-  become: yes
-  gather_facts: no
-  ignore_unreachable: yes
-  tasks:
-    - name: Display deployment summary | 鏄剧ず閮ㄧ讲鎽樿
-      debug:
-        msg: |
-          鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?          鉁?閮ㄧ讲鎴愬姛瀹屾垚 | Deployment completed successfully
-          鏈嶅姟鍣?| Server: {{ inventory_hostname }}
-          鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?          涓绘満鍚?| Hostname: {{ ansible_hostname }}
-          IP 鍦板潃 | IP Address: {{ ansible_default_ipv4.address | default('N/A') }}
-          鎿嶄綔绯荤粺 | OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
-
-          宸查儴缃叉湇鍔?| Deployed Services:
-          鉁?閫氱敤閰嶇疆锛堝畨鍏ㄣ€佹椂鍖恒€佺敤鎴凤級| Common configuration (security, timezone, users)
-          鉁?Node Exporter锛堢鍙?{{ prometheus.node_exporter.port }}锛墊 Node Exporter (port {{ prometheus.node_exporter.port }})
-          鉁?Promtail锛堟棩蹇楁敹闆嗭級| Promtail (log collection)
-          鉁?闃茬伀澧欙紙鐩戞帶鐧藉悕鍗曪級| Firewall (monitoring whitelist)
-          {% if inventory_hostname in groups['web_servers'] %}
-          鉁?Nginx锛圚TTP/HTTPS锛墊 Nginx (HTTP/HTTPS)
-          {% endif %}
-
-          涓嬩竴姝?| Next Steps:
-          1. 鍦?Grafana 涓獙璇?| Verify in Grafana: {{ grafana.url }}
-          2. 妫€鏌?Prometheus 鎸囨爣 | Check Prometheus metrics: {{ prometheus.server_url }}
-          3. 鏌ョ湅 Loki 鏃ュ織 | Review logs in Loki: {{ loki.server_url }}
-          鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+- name: Run the post-deployment health check | 运行部署后健康检查
+  ansible.builtin.import_playbook: ../maintenance/health-check.yml
+  tags: [health]

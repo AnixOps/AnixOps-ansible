@@ -1,219 +1,209 @@
+---
 # =============================================================================
-# 鏈嶅姟鍣ㄩ厤缃腑蹇?| Server Configuration Center
+# Server configuration center | 服务器配置中心
 # =============================================================================
-# 姝ゆ枃浠舵槸鏈嶅姟鍣ㄩ厤缃殑鍞竴鐪熷疄鏉ユ簮 (Single Source of Truth)
-# This file is the single source of truth for all server configurations
+# This file is the SINGLE SOURCE OF TRUTH for the production fleet.
+# inventories/production/hosts.yml is a GENERATED artifact — never edit it by hand:
 #
-# 鐢ㄩ€?| Purpose:
-#   - 鏈湴鐜閰嶇疆 | Local environment configuration
-#   - GitHub Actions 鑷姩鍖栭儴缃?| GitHub Actions automated deployment
-#   - 鏈嶅姟鍣ㄦ竻鍗曠敓鎴?| Server inventory generation
+#   make gen-inventory                                  # regenerate hosts.yml
+#   python3 tools/generate_inventory.py local --check   # drift gate (CI + tests)
+#
+# IP addresses are never stored in git. Every server names the environment
+# variable that holds its SSH address: locally it comes from .env (see
+# .env.example), in GitHub Actions from a repository secret of the same name.
+#
+# Schema v2
+#   schema_version: 2
+#   global_vars:        variables applied to every host (rendered as all.vars)
+#   group_definitions:  <group>: { description, vars }
+#   servers:            <hostname>:
+#                         env_var: NAME            # required, UPPER_SNAKE_CASE
+#                         alias / location / description / server_environment
+#                         groups: [ ... ]          # required, every name must be defined above
+#                         host_vars: { ... }       # optional extra host variables
+#
+# The generator rejects unknown keys, unknown groups, duplicate hosts and
+# duplicate env_vars so that mistakes surface at generation time, not at deploy time.
 # =============================================================================
+schema_version: 2
 
 # -----------------------------------------------------------------------------
-# GitHub Actions 娴嬭瘯鏈嶅姟鍣?| GitHub Actions Test Servers
+# Global variables | 全局变量
 # -----------------------------------------------------------------------------
-# 鐢ㄤ簬 CI/CD 娴佺▼鐨勬祴璇曟湇鍔″櫒閰嶇疆
-# Test server configurations for CI/CD workflows
-github_actions_servers:
-  pl-test-1:
-    secret_name: PL_1_V4_SSH
-    alias: "娉㈠叞-娴嬭瘯-1 | Poland-Test-1"
-    location: "Poland"
-    groups:
-      - web_servers
-      - observability
-      - prod
-    roles:
-      - web
-      - observability
-    server_environment: production
+# SSH connection defaults (ansible_user / ansible_port / ansible_ssh_private_key_file)
+# are injected by the generator from ANSIBLE_USER / ANSIBLE_PORT / SSH_KEY_PATH.
+# SSH client options (host key checking, ControlPersist, ...) live in ansible.cfg.
+global_vars:
+  ansible_python_interpreter: /usr/bin/python3
 
 # -----------------------------------------------------------------------------
-# 鐢熶骇鐜鏈嶅姟鍣?| Production Environment Servers
+# Group definitions | 组定义
 # -----------------------------------------------------------------------------
-# 瀹屾暣鐨勭敓浜ф湇鍔″櫒閰嶇疆鍒楄〃
-# Complete list of production server configurations
-production_servers:
-
-  jp-1:
-    env_var: JP_1_V4_SSH
-    alias: "鏃ユ湰-1 | Japan-1"
-    description: "鏃ユ湰 Web 鏈嶅姟鍣?- Oracle | Japan Web Server - Oracle"
-    location: "Japan"
-    groups:
-      - web_servers
-    roles:
-      - web
-    server_environment: test
-
-  uk-1:
-    env_var: UK_1_V4_SSH
-    alias: "鑻卞浗-1 | UK-1"
-    description: "鑻卞浗 Web 鏈嶅姟鍣?- Oracle | UK Web Server - Oracle"
-    location: "United Kingdom"
-    groups:
-      - web_servers
-      - v2bx_servers
-    roles:
-      - web
-      - v2bx
-    server_environment: production
-
-  us-w-1:
-    env_var: US_W_1_V4_SSH
-    alias: "缇庡浗瑗?1 | US-West-1"
-    description: "缇庡浗瑗?Web 鏈嶅姟鍣?- Oracle | US West Web Server - Oracle"
-    location: "United States"
-    groups:
-      - web_servers
-      - v2board_servers
-    roles:
-      - web
-      - v2board
-    server_environment: production
-
-  # ---------------------------------------------------------------------------
-  # Proxy 鏈嶅姟鍣ㄧ粍 (PLG Stack) | Proxy Server Group (PLG Stack)
-  # ---------------------------------------------------------------------------
-  # 閮ㄧ讲 Prometheus銆丩oki銆丟rafana 鏍堢殑浠ｇ悊鏈嶅姟鍣?  # Proxy servers deploying Prometheus, Loki, and Grafana stack
-
-  sg-1:
-    env_var: SG_1_V4_SSH
-    alias: "鏂板姞鍧?1 | Singapore-1"
-    description: "鏂板姞鍧?Proxy 鏈嶅姟鍣?- PLG Stack - Aliyun | Singapore Proxy Server - PLG Stack - Aliyun"
-    location: "Singapore"
-    groups:
-      - proxy_servers
-    roles:
-      - proxy
-      - plg_stack
-    server_environment: production
-
-  hk-1:
-    env_var: HK_1_V4_SSH
-    alias: "棣欐腐-1 | Hong Kong-1"
-    description: "棣欐腐 Proxy 鏈嶅姟鍣?- PLG Stack - Zouter | Hong Kong Proxy Server - PLG Stack - Zouter"
-    location: "Hong Kong"
-    groups:
-      - proxy_servers
-    roles:
-      - proxy
-      - plg_stack
-    server_environment: production
-
-  uk-2:
-    env_var: UK_2_V4_SSH
-    alias: "鑻卞浗-2 | UK-2"
-    description: "鑻卞浗 Proxy 鏈嶅姟鍣?- PLG Stack - Akko | UK Proxy Server - PLG Stack - Akko"
-    location: "United Kingdom"
-    groups:
-      - proxy_servers
-      - v2bx_servers
-    roles:
-      - proxy
-      - plg_stack
-      - v2bx
-    server_environment: production
-
-  # ---------------------------------------------------------------------------
-  # 寮€鍙戞湇鍔″櫒缁?| Development Server Group
-  # ---------------------------------------------------------------------------
-  # 鐢ㄤ簬寮€鍙戝拰娴嬭瘯鐨勬湇鍔″櫒鐜
-  # Server environments for development and testing
-
-  fr-1:
-    env_var: FR_1_V4_SSH
-    alias: "娉曞浗-1 | France-1"
-    description: "娉曞浗 Development 鏈嶅姟鍣?- OVH | France Development Server - OVH"
-    location: "France"
-    groups:
-      - dev_servers
-      - dev
-    roles:
-      - development
-    server_environment: development
-
-  # ---------------------------------------------------------------------------
-  # 鍙娴嬫€ф湇鍔″櫒缁?| Observability Server Group
-  # ---------------------------------------------------------------------------
-  # 閮ㄧ讲鐩戞帶鍜屾棩蹇楃郴缁熺殑涓績鏈嶅姟鍣?  # Central servers for monitoring and logging systems
-
-  pl-1:
-    env_var: PL_1_V4_SSH
-    alias: "娉㈠叞-1 | Poland-1"
-    description: "娉㈠叞 Observability 鏈嶅姟鍣?- PLG Stack - OVH | Poland Observability Server - PLG Stack - OVH"
-    location: "Poland"
-    groups:
-      - observability
-      - v2board_servers
-      - postgres_servers
-    roles:
-      - observability
-      - prometheus
-      - grafana
-      - loki
-      - v2board
-      - postgresql
-    server_environment: production
-
-# =============================================================================
-# 缁勫埆瀹氫箟 | Group Definitions
-# =============================================================================
-# 瀹氫箟鏈嶅姟鍣ㄧ粍鍜岀浉鍏冲彉閲?# Define server groups and their associated variables
 group_definitions:
-
   web_servers:
-    description: "Web 搴旂敤鏈嶅姟鍣?| Web Application Servers"
+    description: "Web application servers | Web 应用服务器"
     vars:
       server_role: web
 
   proxy_servers:
-    description: "浠ｇ悊鏈嶅姟鍣?(PLG Stack) | Proxy Servers (PLG Stack)"
+    description: "Proxy servers | 代理服务器"
     vars:
       server_role: proxy
 
   dev_servers:
-    description: "寮€鍙戞祴璇曟湇鍔″櫒 | Development Test Servers"
+    description: "Development and test servers | 开发测试服务器"
     vars:
       server_role: development
 
   observability:
-    description: "鐩戞帶绯荤粺鏈嶅姟鍣?(Prometheus + Loki + Grafana) | Monitoring System Servers (PLG)"
+    description: "Observability stack: Prometheus + Loki + Grafana | 可观测性服务器 (PLG)"
     vars:
       server_role: observability
 
   v2bx_servers:
-    description: "V2bX 浠ｇ悊鑺傜偣 | V2bX Proxy Nodes"
+    description: "V2bX proxy nodes | V2bX 代理节点"
     vars:
       server_role: v2bx_node
 
   v2board_servers:
-    description: "V2board 鎺у埗闈㈡澘 | V2board Control Panels"
+    description: "V2board control panels | V2board 控制面板"
     vars:
       server_role: v2board_panel
 
   postgres_servers:
-    description: "PostgreSQL 鏁版嵁搴撴湇鍔″櫒 | PostgreSQL Database Servers"
+    description: "PostgreSQL database servers | PostgreSQL 数据库服务器"
     vars:
       server_role: database
 
-  # 鐜鍒嗙粍 | Environment Groups
+  k8s_control_plane:
+    description: "Kubernetes control-plane reverse proxy (Dashboard, API, Metrics) | K8s 控制面板反向代理"
+    vars:
+      server_role: k8s_control
+
+  # Intentionally EMPTY: no production K3s cluster is rolled out yet.
+  # playbooks/platform/k3s.yml targets this group; add a server's name to its
+  # `groups:` list below when the first production node is provisioned.
+  k8s_servers:
+    description: "Production Kubernetes (K3s) cluster nodes | 生产 Kubernetes 集群节点"
+    vars:
+      server_role: kubernetes
+
+  k8s_test:
+    description: "Remote K3s test cluster | K3s 远程测试集群"
+    vars:
+      server_role: k8s_test
+
+  # Environment label groups | 环境标签组
+  # Membership is opt-in: list `dev` or `prod` under a server's `groups:`.
   dev:
-    description: "寮€鍙戠幆澧?| Development Environment"
+    description: "Development environment | 开发环境"
     vars:
       server_environment: development
 
   prod:
-    description: "鐢熶骇鐜 | Production Environment"
+    description: "Production environment | 生产环境"
     vars:
       server_environment: production
 
-# =============================================================================
-# 鍏ㄥ眬鍙橀噺 | Global Variables
-# =============================================================================
-# 閫傜敤浜庢墍鏈夋湇鍔″櫒鐨勫叏灞€閰嶇疆
-# Global configurations applicable to all servers
-global_vars:
-  ansible_python_interpreter: /usr/bin/python3
-  ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+# -----------------------------------------------------------------------------
+# Servers | 服务器
+# -----------------------------------------------------------------------------
+servers:
+
+  # --- Web servers | Web 服务器 ------------------------------------------------
+  jp-1:
+    env_var: JP_1_V4_SSH
+    alias: "日本-1 | Japan-1"
+    location: "Japan"
+    description: "Japan web server - Oracle | 日本 Web 服务器 - Oracle"
+    server_environment: test
+    groups:
+      - web_servers
+
+  uk-1:
+    env_var: UK_1_V4_SSH
+    alias: "英国-1 | UK-1"
+    location: "United Kingdom"
+    description: "UK web server - Oracle | 英国 Web 服务器 - Oracle"
+    server_environment: production
+    groups:
+      - web_servers
+      - v2bx_servers
+
+  us-w-1:
+    env_var: US_W_1_V4_SSH
+    alias: "美国西-1 | US-West-1"
+    location: "United States"
+    description: "US West web server - Oracle | 美国西 Web 服务器 - Oracle"
+    server_environment: production
+    groups:
+      - web_servers
+      - v2board_servers
+
+  # --- Proxy servers | 代理服务器 ---------------------------------------------
+  sg-1:
+    env_var: SG_1_V4_SSH
+    alias: "新加坡-1 | Singapore-1"
+    location: "Singapore"
+    description: "Singapore proxy server - Aliyun | 新加坡代理服务器 - Aliyun"
+    server_environment: production
+    groups:
+      - proxy_servers
+
+  hk-1:
+    env_var: HK_1_V4_SSH
+    alias: "香港-1 | Hong Kong-1"
+    location: "Hong Kong"
+    description: "Hong Kong proxy server - Zouter | 香港代理服务器 - Zouter"
+    server_environment: production
+    groups:
+      - proxy_servers
+
+  uk-2:
+    env_var: UK_2_V4_SSH
+    alias: "英国-2 | UK-2"
+    location: "United Kingdom"
+    description: "UK proxy server - Akko | 英国代理服务器 - Akko"
+    server_environment: production
+    groups:
+      - proxy_servers
+      - v2bx_servers
+
+  # --- Development servers | 开发服务器 ---------------------------------------
+  fr-1:
+    env_var: FR_1_V4_SSH
+    alias: "法国-1 | France-1"
+    location: "France"
+    description: "France development server - OVH | 法国开发服务器 - OVH"
+    server_environment: development
+    groups:
+      - dev_servers
+      - dev
+
+  # --- Observability | 可观测性 -----------------------------------------------
+  # pl-1 hosts Prometheus/Loki/Grafana, the V2board panel + PostgreSQL and the
+  # remote K3s test cluster. Its address (PL_1_V4_SSH) is also whitelisted for the
+  # restricted monitoring ports on every host (group_vars/all/main.yml).
+  pl-1:
+    env_var: PL_1_V4_SSH
+    alias: "波兰-1 | Poland-1"
+    location: "Poland"
+    description: "Poland observability server (PLG stack) - OVH | 波兰可观测性服务器 (PLG) - OVH"
+    server_environment: production
+    groups:
+      - observability
+      - v2board_servers
+      - postgres_servers
+      - k8s_control_plane
+      - k8s_test
+    host_vars:
+      # K3s test cluster (playbooks/platform/k3s-test.yml, roles/k8s_provision)
+      k8s_role: master
+      k8s_provider: k3s
+      k3s_version: v1.27.3+k3s1
+      k3s_server_args: "--disable traefik --disable servicelb --write-kubeconfig-mode 644"
+      kubeconfig_remote_path: /etc/rancher/k3s/k3s.yaml
+      kubeconfig_local_path: /tmp/k3s-pl-1-kubeconfig.yaml
+      cluster_name: k3s-test-pl1
+      # Verification runs against the kubeconfig on the remote server itself.
+      kubeconfig_path: /etc/rancher/k3s/k3s.yaml

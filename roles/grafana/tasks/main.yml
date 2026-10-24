@@ -1,105 +1,32 @@
 ---
-# Grafana Server Installation Tasks
+# =============================================================================
+# Grafana server role | Grafana 角色
+# =============================================================================
+# preflight -> admin password present, supported OS
+# install   -> signed-by keyring, deb822 repository, package (optionally pinned)
+# configure -> grafana.ini, datasources, dashboards provisioning
+# service   -> flush handlers, enable + start, optional admin password reset
+# verify    -> /api/health with retries, rollback on failure
+# =============================================================================
 
-- name: Update apt cache
-  ansible.builtin.apt:
-    update_cache: yes
-    cache_valid_time: 3600
-  when: ansible_os_family == "Debian"
+- name: Run Grafana preflight checks | Grafana 前置检查
+  ansible.builtin.include_tasks: preflight.yml
 
-- name: Install Grafana dependencies
-  ansible.builtin.apt:
-    name:
-      - apt-transport-https
-      - software-properties-common
-      - wget
-    state: present
-  when: ansible_os_family == "Debian"
+- name: Install Grafana | 安装 Grafana
+  ansible.builtin.include_tasks: install.yml
 
-- name: Add Grafana GPG key (Debian/Ubuntu)
-  ansible.builtin.get_url:
-    url: https://apt.grafana.com/gpg.key
-    dest: /usr/share/keyrings/grafana.gpg
-    mode: '0644'
-  when: ansible_os_family == "Debian"
+- name: Configure Grafana | 配置 Grafana
+  ansible.builtin.include_tasks: configure.yml
 
-- name: Remove conflicting Grafana repository files
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /etc/apt/sources.list.d/grafana.list
-  when: ansible_os_family == "Debian"
+- name: Manage Grafana service | 管理 Grafana 服务
+  ansible.builtin.include_tasks: service.yml
 
-- name: Add Grafana repository (Debian/Ubuntu)
-  ansible.builtin.apt_repository:
-    repo: deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main
-    state: present
-    filename: grafana
-  when: ansible_os_family == "Debian"
+- name: Verify Grafana | 验证 Grafana
+  ansible.builtin.include_tasks: verify.yml
 
-- name: Install Grafana
-  ansible.builtin.package:
-    name: grafana
-    state: present
-    update_cache: yes
-
-- name: Configure Grafana
-  ansible.builtin.template:
-    src: grafana.ini.j2
-    dest: /etc/grafana/grafana.ini
-    owner: root
-    group: grafana
-    mode: '0640'
-    backup: yes
-  notify: restart grafana
-
-- name: Create Grafana provisioning directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: grafana
-    group: grafana
-    mode: '0755'
-  loop:
-    - /etc/grafana/provisioning/datasources
-    - /etc/grafana/provisioning/dashboards
-
-- name: Provision Prometheus datasource
-  ansible.builtin.template:
-    src: datasource-prometheus.yml.j2
-    dest: /etc/grafana/provisioning/datasources/prometheus.yml
-    owner: grafana
-    group: grafana
-    mode: '0644'
-    backup: yes
-  notify: restart grafana
-
-- name: Provision Loki datasource
-  ansible.builtin.template:
-    src: datasource-loki.yml.j2
-    dest: /etc/grafana/provisioning/datasources/loki.yml
-    owner: grafana
-    group: grafana
-    mode: '0644'
-    backup: yes
-  notify: restart grafana
-
-- name: Enable and start Grafana service
-  ansible.builtin.systemd:
-    name: grafana-server
-    state: started
-    enabled: yes
-    daemon_reload: yes
-
-- name: Fail if grafana_admin_password is not set
-  ansible.builtin.fail:
-    msg: "grafana_admin_password must be set. Provide a strong password via group_vars or environment variable."
-  when: grafana_admin_password is not defined or grafana_admin_password == ''
-
-- name: Display Grafana info
+- name: Show Grafana summary | 显示 Grafana 摘要
   ansible.builtin.debug:
-    msg: |
-      Grafana installed successfully
-      Access: http://{{ ansible_host }}:3000
-      Config: /etc/grafana/grafana.ini
+    msg: >-
+      Grafana ready on {{ grafana_http_addr }}:{{ grafana_http_port }} (root_url {{ grafana_root_url }},
+      datasources: Prometheus {{ grafana_prometheus_url }}, Loki {{ grafana_loki_url }},
+      dashboards: {{ grafana_dashboards_dir }})

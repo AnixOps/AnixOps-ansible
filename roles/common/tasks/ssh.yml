@@ -1,0 +1,125 @@
+---
+# =============================================================================
+# SSH daemon hardening with verified roll-out | SSH 加固与验证式下发
+# =============================================================================
+# template (validated with sshd -t) -> flush handlers -> verify the daemon
+# still listens on common_ssh_port -> on failure restore the backup, restart
+# and fail loudly.
+
+- name: Check whether sshd is socket activated | 检查 sshd 是否由 socket 激活
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - "{{ common_ssh_service_name }}.socket"
+  register: common_ssh_socket_state
+  changed_when: false
+  failed_when: false
+  when: common_ssh_disable_socket_activation | bool
+
+- name: Switch from socket activation to the classic sshd service | 从 socket 激活切换为常规服务
+  when:
+    - common_ssh_disable_socket_activation | bool
+    - common_ssh_socket_state.stdout | default('') | trim == 'enabled'
+  block:
+    - name: Disable the sshd socket unit | 禁用 sshd socket 单元
+      ansible.builtin.systemd_service:
+        name: "{{ common_ssh_service_name }}.socket"
+        enabled: false
+        state: stopped
+
+    - name: Enable and start the sshd service unit | 启用并启动 sshd 服务单元
+      ansible.builtin.systemd_service:
+        name: "{{ common_ssh_service_name }}.service"
+        enabled: true
+        state: started
+
+- name: Roll out sshd_config with verification | 下发 sshd_config 并验证
+  block:
+    - name: Deploy sshd_config | 部署 sshd_config
+      ansible.builtin.template:
+        src: sshd_config.j2
+        dest: /etc/ssh/sshd_config
+        owner: root
+        group: root
+        mode: "0600"
+        backup: true
+        validate: "/usr/sbin/sshd -t -f %s"
+      register: common_sshd_config
+      notify: Restart sshd
+
+    - name: Ensure the SSH service is enabled and running | 确保 SSH 服务已启用并运行
+      ansible.builtin.service:
+        name: "{{ common_ssh_service_name }}"
+        state: started
+        enabled: true
+
+    - name: Apply pending sshd restart | 应用待处理的 sshd 重启
+      ansible.builtin.meta: flush_handlers
+
+    - name: Verify the installed sshd configuration | 验证已安装的 sshd 配置
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -t
+      register: common_sshd_test
+      changed_when: false
+
+    - name: Verify sshd accepts connections from the controller | 验证控制机可连接 sshd
+      ansible.builtin.wait_for:
+        host: "{{ common_ssh_verify_host }}"
+        port: "{{ common_ssh_port | int }}"
+        search_regex: "SSH-2.0-"
+        timeout: "{{ common_ssh_verify_timeout | int }}"
+        state: started
+      register: common_ssh_listen_check
+      retries: "{{ common_ssh_verify_retries | int }}"
+      delay: "{{ common_ssh_verify_delay | int }}"
+      until: common_ssh_listen_check is succeeded
+      delegate_to: localhost
+      become: false
+      when: common_ssh_verify_from_controller | bool
+
+    - name: Verify sshd accepts connections locally | 验证 sshd 本地可连接
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ common_ssh_port | int }}"
+        search_regex: "SSH-2.0-"
+        timeout: "{{ common_ssh_verify_timeout | int }}"
+        state: started
+      register: common_ssh_local_check
+      retries: "{{ common_ssh_verify_retries | int }}"
+      delay: "{{ common_ssh_verify_delay | int }}"
+      until: common_ssh_local_check is succeeded
+      when: not (common_ssh_verify_from_controller | bool)
+
+  rescue:
+    - name: Restore the previous sshd_config | 恢复之前的 sshd_config
+      ansible.builtin.copy:
+        src: "{{ common_sshd_config.backup_file }}"
+        dest: /etc/ssh/sshd_config
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+      when:
+        - common_sshd_config.backup_file is defined
+        - common_sshd_config.backup_file | length > 0
+
+    - name: Restart sshd with the restored configuration | 使用恢复的配置重启 sshd
+      ansible.builtin.service:
+        name: "{{ common_ssh_service_name }}"
+        state: restarted
+      when:
+        - common_sshd_config.backup_file is defined
+        - common_sshd_config.backup_file | length > 0
+
+    - name: Fail after sshd rollback | sshd 回滚后报错
+      ansible.builtin.fail:
+        msg: >-
+          sshd verification failed on {{ inventory_hostname }}
+          (expected OpenSSH on {{ common_ssh_verify_host }}:{{ common_ssh_port }}).
+          {{ 'Previous sshd_config restored from ' ~ common_sshd_config.backup_file ~ ' and sshd restarted.'
+             if (common_sshd_config.backup_file | default('') | length > 0)
+             else 'Nothing to restore (sshd_config was unchanged).' }}
+          Error: {{ ansible_failed_result.msg | default('see the failed task above') }}

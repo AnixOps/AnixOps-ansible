@@ -1,51 +1,63 @@
 ---
 # =============================================================================
-# V2board Main Tasks | V2board 主任务
+# V2board main tasks | V2board 主任务
 # =============================================================================
+# validate -> install (docker | binary) -> configure -> verify
 
-- name: Validate required variables | 验证必需变量
-  ansible.builtin.fail:
-    msg: |
-      缺少必需配置变量 | Missing required configuration:
-      - V2BOARD_JWT_SECRET (JWT密钥)
-      - V2BOARD_API_TOKEN (内部API令牌，用于Ansible自动化)
-      - V2BOARD_ADMIN_EMAIL (管理员邮箱)
-      - V2BOARD_ADMIN_PASSWORD (管理员密码)
-  when: >
-    (v2board_jwt_secret | default('') == '') or
-    (v2board_api_token | default('') == '') or
-    (v2board_admin_email | default('') == '') or
-    (v2board_admin_password | default('') == '')
+- name: Validate deployment method | 校验部署方式
+  ansible.builtin.assert:
+    that:
+      - v2board_deploy_method in ['docker', 'binary']
+    fail_msg: "v2board_deploy_method must be 'docker' or 'binary' (got '{{ v2board_deploy_method }}')."
+    quiet: true
 
-- name: Validate PostgreSQL variables | 验证 PostgreSQL 变量
-  ansible.builtin.fail:
-    msg: |
-      PostgreSQL 模式缺少必需配置 | Missing required PostgreSQL configuration:
-      - V2BOARD_PG_PASSWORD (PostgreSQL密码)
-  when: >
-    (v2board_db_type == 'postgres') and
-    (v2board_pg_password | default('') == '')
+- name: Validate supported operating system | 校验操作系统
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+    fail_msg: "The v2board role supports Debian/Ubuntu hosts only (apt based installation)."
+    quiet: true
 
-- name: Docker Deployment | Docker 部署
+- name: Validate required secrets | 校验必需的密钥
+  ansible.builtin.assert:
+    that:
+      - v2board_jwt_secret | default('') | length > 0
+      - v2board_api_token | default('') | length > 0
+      - v2board_admin_email | default('') | length > 0
+      - v2board_admin_password | default('') | length > 0
+    fail_msg: |
+      Missing required v2board configuration | 缺少必需配置:
+      - V2BOARD_JWT_SECRET      (JWT signing secret)
+      - V2BOARD_API_TOKEN       (internal API token, also used by the v2bx role)
+      - V2BOARD_ADMIN_EMAIL     (administrator e-mail)
+      - V2BOARD_ADMIN_PASSWORD  (administrator password)
+    quiet: true
+
+- name: Validate PostgreSQL credentials | 校验 PostgreSQL 配置
+  ansible.builtin.assert:
+    that:
+      - v2board_pg_password | default('') | length > 0
+    fail_msg: "v2board_db_type is 'postgres' but V2BOARD_PG_PASSWORD is empty."
+    quiet: true
+  when: v2board_db_type == 'postgres'
+
+- name: Include Docker deployment tasks | Docker 部署
+  ansible.builtin.include_tasks: "{{ v2board_docker_task }}"
+  loop:
+    - install-docker.yml
+    - configure-docker.yml
+  loop_control:
+    loop_var: v2board_docker_task
   when: v2board_deploy_method == 'docker'
-  block:
-    - name: Include Docker installation tasks | Docker 安装
-      ansible.builtin.include_tasks: install-docker.yml
 
-    - name: Include Docker configuration tasks | Docker 配置
-      ansible.builtin.include_tasks: configure-docker.yml
-
-    - name: Include verification tasks | 验证
-      ansible.builtin.include_tasks: verify.yml
-
-- name: Binary Deployment | 二进制部署
+- name: Include binary deployment tasks | 二进制部署
+  ansible.builtin.include_tasks: "{{ v2board_binary_task }}"
+  loop:
+    - install.yml
+    - configure.yml
+  loop_control:
+    loop_var: v2board_binary_task
   when: v2board_deploy_method == 'binary'
-  block:
-    - name: Include binary installation tasks | 二进制安装
-      ansible.builtin.include_tasks: install.yml
 
-    - name: Include binary configuration tasks | 二进制配置
-      ansible.builtin.include_tasks: configure.yml
-
-    - name: Include verification tasks | 验证
-      ansible.builtin.include_tasks: verify.yml
+- name: Include verification tasks | 验证
+  ansible.builtin.include_tasks: verify.yml

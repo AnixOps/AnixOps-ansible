@@ -1,0 +1,29 @@
+---
+# =============================================================================
+# Grafana - service | 服务
+# =============================================================================
+
+- name: Apply pending grafana handlers | 立即执行待处理的 handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start grafana-server | 启用并启动 grafana-server
+  ansible.builtin.systemd_service:
+    name: "{{ grafana_service_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# Opt-in only: grafana.ini's admin_password is applied by Grafana solely when
+# the admin user is created, so an existing installation keeps its old
+# password. Setting grafana_reset_admin_password: true for a single run forces
+# the configured password through grafana-cli (not idempotent by design).
+- name: Reset Grafana admin password | 重置 Grafana 管理员密码
+  ansible.builtin.command:
+    argv:
+      - grafana-cli
+      - admin
+      - reset-admin-password
+      - "{{ grafana_admin_password }}"
+  changed_when: true
+  no_log: true
+  when: grafana_reset_admin_password | bool

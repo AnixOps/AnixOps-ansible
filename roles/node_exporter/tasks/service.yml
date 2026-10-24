@@ -1,0 +1,16 @@
+---
+# =============================================================================
+# node_exporter - service | 启动服务
+# =============================================================================
+# Handlers are flushed first so systemd has re-read the unit (and restarted a
+# running instance on binary/unit change) before we enable and start it.
+# =============================================================================
+
+- name: Apply pending node_exporter handlers before starting the service
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the node_exporter service
+  ansible.builtin.systemd_service:
+    name: "{{ node_exporter_service_name }}"
+    enabled: true
+    state: started

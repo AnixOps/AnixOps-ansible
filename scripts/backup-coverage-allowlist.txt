@@ -1,0 +1,21 @@
+# =============================================================================
+# Backup coverage allowlist | 备份覆盖率白名单
+# =============================================================================
+# Read by scripts/check-backup-coverage.py. Every template/copy task that
+# writes under /etc must set `backup: true`. A task that genuinely must not
+# keep a backup is exempted here, never by silently omitting the option.
+#
+# Format: one entry per line
+#
+#   <repo-relative path>:<task name>
+#
+#   * path  - POSIX path relative to the repository root, e.g.
+#             roles/nginx/tasks/main.yml. Shell globs are allowed (fnmatch),
+#             e.g. roles/lifecycle/tasks/hooks/*.yml
+#   * task  - the exact `name:` of the task (globs allowed as well). Unnamed
+#             tasks are reported as <unnamed>; give them a name instead.
+#   * Everything after `#` at the start of a line is a comment. Document the
+#     reason for the exemption in a comment directly above the entry.
+#
+# Unused entries are reported as warnings so stale exemptions get removed.
+# =============================================================================

@@ -1,205 +1,151 @@
 # =============================================================================
-# AnixOps Ansible Makefile
+# AnixOps Ansible - Makefile
 # =============================================================================
-# 提供常用操作的快捷命令 | Provides shortcuts for common operations
+# Thin wrappers around scripts/anixops.sh so that `make <target>` and the CLI
+# always behave the same. Run `make help` for the target list.
+#
+# Variables (override on the command line):
+#   INVENTORY     inventory passed to every ansible run (default: production)
+#   ANSIBLE_ARGS  extra arguments appended to ansible-playbook, e.g.
+#                 make deploy ANSIBLE_ARGS="--tags nginx --limit web_servers"
+#   ANIXOPS_FLAGS extra flags for scripts/anixops.sh, e.g. ANIXOPS_FLAGS="--yes -vv"
+#   ROLE          role for `make rollback` / `make status`; VERSION for rollback
+#   PYTHON        Python interpreter (default: python3)
 # =============================================================================
 
-.PHONY: help install install-dev lint syntax check deploy quick-setup health-check ping clean firewall-setup gen-inventoryssh-fix list-hosts show-varsdeploy-dry-run validate-inventory
+SHELL := /usr/bin/env bash
+.SHELLFLAGS := -eu -o pipefail -c
+.DEFAULT_GOAL := help
 
-# -----------------------------------------------------------------------------
-# 默认目标：显示帮助信息 | Default target: Show help information
-# -----------------------------------------------------------------------------
-help:
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo "AnixOps Ansible - 可用命令 | Available Commands"
-	@echo "═══════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "  make install        - 安装所有依赖 | Install all dependencies"
-	@echo "  make install-dev    - 安装开发依赖 | Install dev dependencies"
-	@echo "  make gen-inventory  - 生成 inventory | Generate inventory from servers-config.yml"
-	@echo "  make lint           - 运行代码检查 | Run code linting"
-	@echo "  make syntax         - 检查语法 | Check playbook syntax"
-	@echo "  make ping           - 测试连接 | Test server connectivity"
-	@echo "  make deploy         - 完整部署 | Full deployment"
-	@echo "  make quick-setup    - 快速初始化 | Quick initialization (monitoring + firewall)"
-	@echo "  make firewall-setup - 配置防火墙 | Configure firewall and monitoring whitelist"
-	@echo "  make health-check   - 健康检查 | Health check"
-	@echo "  make deploy-web     - 部署 Web 服务器 | Deploy web servers"
-	@echo "  make ssh-test       - 测试 SSH 配置 | Test SSH configuration"
-	@echo "  make ssh-fix        - 强制修复 SSH 配置 | Force fix SSH configuration"
-	@echo "  make list-hosts     - 列出主机 | List configured hosts"
-	@echo "  make clean          - 清理临时文件 | Clean temporary files"
-	@echo ""
-	@echo ""
-	@echo "Dry-run & Validation:"
-	@echo "  make deploy-dry-run       - Check mode deployment (no changes)"
-	@echo "  make validate-inventory   - Validate generated inventory"
-	@echo ""
-	@echo "═══════════════════════════════════════════════════════════"
+ANIXOPS       := scripts/anixops.sh
+PYTHON        ?= python3
+INVENTORY     ?= inventories/production/hosts.yml
+ANSIBLE_ARGS  ?=
+ANIXOPS_FLAGS ?=
+ROLE          ?=
+VERSION       ?=
+PYTEST_ARGS   ?= -q
 
-# -----------------------------------------------------------------------------
-# 安装依赖 | Install Dependencies
-# -----------------------------------------------------------------------------
-install:
-	@echo "Installing Python dependencies... | 正在安装 Python 依赖..."
-	pip install -r requirements.txt
-	@echo "✓ Dependencies installed | 依赖安装完成"
+# Directories that are never scanned by repository-wide greps.
+GREP_EXCLUDES := --exclude-dir=.git --exclude-dir=venv --exclude-dir=.venv --exclude-dir=.ansible \
+                 --exclude-dir=collections --exclude-dir=__pycache__ --exclude-dir=.pytest_cache \
+                 --exclude-dir=node_modules
 
-# -----------------------------------------------------------------------------
-# 安装开发依赖 | Install Development Dependencies
-# -----------------------------------------------------------------------------
-install-dev: install
-	@echo "Installing dev dependencies..."
-	pip install molecule molecule-plugins[docker] pytest pip-audit pre-commit
+.PHONY: help doctor install install-dev lint syntax test check ping deploy deploy-dry-run \
+        quick-setup deploy-web health-check firewall-setup security-patch security-scan-only \
+        rollback status gen-inventory check-inventory list-hosts clean encoding-check \
+        backup-coverage pre-commit
+
+##@ General
+
+help: ## Show this help | 显示帮助
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target> [INVENTORY=path] [ANSIBLE_ARGS=\"...\"] [ANIXOPS_FLAGS=\"...\"] [ROLE=name]\n"} \
+	  /^[a-zA-Z0-9_-]+:.*?##/ { printf "  %-20s %s\n", $$1, $$2 } \
+	  /^##@/ { printf "\n%s\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+	@printf "\nAll targets delegate to %s; run it with --help for every option.\n\n" "$(ANIXOPS)"
+
+doctor: ## Check local tooling, .env, inventory parsing and drift
+	$(ANIXOPS) doctor -i $(INVENTORY) $(ANIXOPS_FLAGS)
+
+##@ Setup
+
+install: ## Install runtime Python dependencies and Galaxy collections
+	$(PYTHON) -m pip install -r requirements.txt
+	ansible-galaxy collection install -r requirements.yml
+
+install-dev: install ## Install development tools (pytest, shellcheck, pre-commit) and git hooks
+	$(PYTHON) -m pip install -r requirements-dev.txt
 	pre-commit install
-	@echo "Dev dependencies installed"
 
-# -----------------------------------------------------------------------------
-# 生成 Inventory | Generate Inventory
-# -----------------------------------------------------------------------------
-gen-inventory:
-	@echo "Generating inventory from servers-config.yml... | 从 servers-config.yml 生成 inventory..."
-	@python3 tools/generate_inventory.py local > inventories/production/hosts.yml
-	@echo "✓ Inventory generated: inventories/production/hosts.yml | Inventory 已生成"
-	@echo ""
-	@echo "Preview (first 30 lines) | 预览（前 30 行）:"
-	@head -n 30 inventories/production/hosts.yml
+##@ Validation
 
-# -----------------------------------------------------------------------------
-# 代码检查 | Code Linting
-# -----------------------------------------------------------------------------
-lint:
-	@echo "Running yamllint... | 运行 yamllint..."
-	yamllint -c .yamllint.yml .
-	@echo "Running ansible-lint... | 运行 ansible-lint..."
-	ansible-lint --force-color playbooks/provision/*.yml playbooks/maintenance/*.yml roles/*/tasks/*.yml
-	@echo "✓ Lint completed | 代码检查完成"
+lint: ## Run yamllint + ansible-lint
+	$(ANIXOPS) lint $(ANIXOPS_FLAGS)
 
-# -----------------------------------------------------------------------------
-# 语法检查 | Syntax Check
-# -----------------------------------------------------------------------------
-syntax:
-	@echo "Checking playbook syntax... | 检查 playbook 语法..."
-	ansible-playbook --syntax-check playbooks/provision/site.yml
-	ansible-playbook --syntax-check playbooks/provision/quick-setup.yml
-	ansible-playbook --syntax-check playbooks/maintenance/health-check.yml
-	ansible-playbook --syntax-check playbooks/maintenance/firewall-setup.yml
-	ansible-playbook --syntax-check playbooks/maintenance/security-patch.yml
-	@echo "✓ Syntax check passed | 语法检查通过"
+syntax: ## ansible-playbook --syntax-check for every playbook
+	$(ANIXOPS) syntax -i $(INVENTORY) $(ANIXOPS_FLAGS)
 
-# -----------------------------------------------------------------------------
-# 测试连接 | Test Connectivity
-# -----------------------------------------------------------------------------
-ping:
-	@echo "Testing server connectivity... | 测试服务器连接..."
-	ansible all -m ping
-	@echo "✓ Connectivity test completed | 连接测试完成"
+test: ## Run the Python unit tests
+	$(PYTHON) -m pytest $(PYTEST_ARGS) tests
 
-# -----------------------------------------------------------------------------
-# 完整部署 | Full Deployment
-# -----------------------------------------------------------------------------
-deploy:
-	@echo "Starting full deployment... | 开始完整部署..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml
-	@echo "✓ Deployment completed | 部署完成"
+check-inventory: ## Verify hosts.yml matches servers-config.yml and parses
+	$(PYTHON) tools/generate_inventory.py local --check
+	ansible-inventory -i $(INVENTORY) --graph > /dev/null
+	@echo "Inventory OK: $(INVENTORY)"
 
-# -----------------------------------------------------------------------------
-# 快速初始化 | Quick Setup
-# -----------------------------------------------------------------------------
-quick-setup:
-	@echo "Starting quick setup (common + monitoring + firewall)... | 开始快速设置..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/quick-setup.yml
-	@echo "✓ Quick setup completed | 快速设置完成"
+backup-coverage: ## Gate: template/copy tasks under /etc must set backup: true
+	$(PYTHON) scripts/check-backup-coverage.py
 
-# -----------------------------------------------------------------------------
-# 防火墙配置 | Firewall Setup
-# -----------------------------------------------------------------------------
-firewall-setup:
-	@echo "Configuring firewall and monitoring whitelist... | 配置防火墙和监控白名单..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/firewall-setup.yml
-	@echo "✓ Firewall setup completed | 防火墙设置完成"
+encoding-check: ## Fail on UTF-8 BOMs or GBK mojibake anywhere in the repository
+	@status=0; \
+	bom=$$'^\xEF\xBB\xBF'; \
+	pat=$$'\xe9\x88\xba|\xe9\x8f\x88|\xe9\x96\xae|\xe9\x90\xa8|\xe9\x94\x9b|\xe9\x8a\x86|\xe9\x8d\x8f|\xe9\x8e\xb4|\xe6\xb5\xa0|\xe7\x92\x81|\xe9\x8d\x99|\\?[^ -~]'; \
+	if grep -rlI $(GREP_EXCLUDES) "$$bom" . ; then echo "ERROR: UTF-8 BOM found in the files above"; status=1; fi; \
+	if grep -rnI $(GREP_EXCLUDES) -E "$$pat" . ; then echo "ERROR: GBK mojibake found in the lines above"; status=1; fi; \
+	if [ "$$status" -eq 0 ]; then echo "Encoding check passed: no BOM, no mojibake"; fi; \
+	exit $$status
 
-# -----------------------------------------------------------------------------
-# 健康检查 | Health Check
-# -----------------------------------------------------------------------------
-health-check:
-	@echo "Running health check... | 运行健康检查..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/health-check.yml
-	@echo "✓ Health check completed | 健康检查完成"
+check: lint syntax test check-inventory ## lint + syntax + test + check-inventory
+	@echo "All checks passed"
 
-# -----------------------------------------------------------------------------
-# Web 服务器部署 | Web Servers Deployment
-# -----------------------------------------------------------------------------
-deploy-web:
-	@echo "Deploying web servers... | 部署 Web 服务器..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/web-servers.yml
-	@echo "✓ Web servers deployed | Web 服务器部署完成"
+pre-commit: ## Run every pre-commit hook against the whole repository
+	pre-commit run --all-files
 
-# -----------------------------------------------------------------------------
-# SSH 配置测试 | SSH Configuration Test
-# -----------------------------------------------------------------------------
-ssh-test:
-	@echo "Testing SSH configuration... | 测试 SSH 配置..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-test.yml
-	@echo "✓ SSH configuration test completed | SSH 配置测试完成"
+##@ Connectivity
 
-# -----------------------------------------------------------------------------
-# SSH 配置强制修复 | SSH Configuration Force Fix
-# -----------------------------------------------------------------------------
-ssh-fix:
-	@echo "⚠️  WARNING: This will restart SSH service! | 警告：这将重启 SSH 服务！"
-	@echo "Press Ctrl+C within 5 seconds to cancel... | 5 秒内按 Ctrl+C 取消..."
-	@sleep 5
-	@echo "Forcing SSH configuration apply... | 强制应用 SSH 配置..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/maintenance/ssh-config-force-apply.yml
-	@echo "✓ SSH configuration force applied | SSH 配置已强制应用"
+ping: ## Ping all hosts (ANIXOPS_FLAGS="--limit group" to narrow)
+	$(ANIXOPS) ping -i $(INVENTORY) $(ANIXOPS_FLAGS)
 
-# -----------------------------------------------------------------------------
-# 清理临时文件 | Clean Temporary Files
-# -----------------------------------------------------------------------------
-clean:
-	@echo "Cleaning up... | 清理中..."
-	find . -type f -name "*.pyc" -delete
-	find . -type d -name "__pycache__" -delete
+list-hosts: ## Show the inventory graph
+	$(ANIXOPS) list-hosts -i $(INVENTORY) $(ANIXOPS_FLAGS)
+
+##@ Deployment (production; prompts for confirmation unless ANIXOPS_FLAGS=--yes)
+
+deploy: ## Full deployment (playbooks/provision/site.yml)
+	$(ANIXOPS) deploy -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+deploy-dry-run: ## Full deployment in check mode with diff (no changes)
+	$(ANIXOPS) deploy -i $(INVENTORY) --dry-run $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+quick-setup: ## common + monitoring agents + firewall (quick-setup.yml)
+	$(ANIXOPS) quick-setup -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+deploy-web: ## Web servers: nginx + TLS (web-servers.yml)
+	$(ANIXOPS) deploy-web -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+##@ Maintenance
+
+health-check: ## Read-only health check of all hosts
+	$(ANIXOPS) health-check -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+firewall-setup: ## Apply firewall rules and monitoring whitelist
+	$(ANIXOPS) firewall -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+security-patch: ## Scan and apply security updates
+	$(ANIXOPS) security-patch -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+security-scan-only: ## Vulnerability scan without applying updates
+	$(ANIXOPS) security-patch --scan-only -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+rollback: ## Roll back a role: make rollback ROLE=nginx [VERSION=prev]
+	@test -n "$(ROLE)" || { echo "usage: make rollback ROLE=<role> [VERSION=<version>]"; exit 2; }
+	$(ANIXOPS) rollback $(ROLE) $(VERSION) -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+status: ## Lifecycle status of a role: make status ROLE=nginx
+	@test -n "$(ROLE)" || { echo "usage: make status ROLE=<role>"; exit 2; }
+	$(ANIXOPS) status $(ROLE) -i $(INVENTORY) $(ANIXOPS_FLAGS) -- $(ANSIBLE_ARGS)
+
+##@ Inventory
+
+gen-inventory: ## Regenerate inventories/production/hosts.yml (shows a diff, asks first)
+	$(ANIXOPS) gen-inventory $(ANIXOPS_FLAGS)
+
+##@ Housekeeping
+
+clean: ## Remove caches, logs and generated fact cache
+	find . -type f -name "*.pyc" -not -path "./venv/*" -delete
+	find . -type d -name "__pycache__" -not -path "./venv/*" -prune -exec rm -rf {} +
 	find . -type f -name "*.retry" -delete
-	rm -rf .cache/
-	@echo "✓ Cleanup completed | 清理完成"
-
-# -----------------------------------------------------------------------------
-# 查看服务器列表 | List Hosts
-# -----------------------------------------------------------------------------
-list-hosts:
-	@echo "Configured hosts | 已配置主机:"
-	@ansible all --list-hosts
-
-# 显示变量
-show-vars:
-	@echo "Global variables:"
-	@ansible all -m debug -a "var=hostvars[inventory_hostname]" | head -50
-
-# SSH 密钥上传
-upload-key:
-	@echo "Starting SSH key upload wizard..."
-	python tools/ssh_key_manager.py
-
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-
-
-# -----------------------------------------------------------------------------
-# Dry-run deployment (check mode)
-# -----------------------------------------------------------------------------
-deploy-dry-run:
-	@echo "Running deployment in check mode (no changes)..."
-	ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml --check --diff -v
-
-# -----------------------------------------------------------------------------
-# Validate generated inventory
-# -----------------------------------------------------------------------------
-validate-inventory:
-	@echo "Validating inventory generation..."
-	@python3 tools/generate_inventory.py local > /tmp/ansible-inventory-test.yml
-	@python3 -c "import yaml; yaml.safe_load(open('/tmp/ansible-inventory-test.yml'))" && echo "OK: Generated inventory is valid YAML" || (echo "FAIL: Invalid YAML output"; exit 1)
-	@ansible-inventory -i /tmp/ansible-inventory-test.yml --list > /dev/null && echo "OK: Inventory is Ansible-compatible" || (echo "FAIL: Inventory not compatible"; exit 1)
-	@rm -f /tmp/ansible-inventory-test.yml
-	@echo "Inventory validation passed"
+	rm -rf .cache/ .pytest_cache/ .mypy_cache/ .ruff_cache/
+	rm -rf .ansible/facts_cache .ansible/logs .ansible/tmp
+	@echo "Cleaned"

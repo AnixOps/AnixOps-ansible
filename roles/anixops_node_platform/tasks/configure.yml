@@ -1,9 +1,14 @@
 ---
+# Render the stack configuration and converge the compose project.
+# 渲染配置并收敛 compose 项目。
+
 - name: Create deployment directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    mode: '0755'
+    owner: root
+    group: root
+    mode: "0755"
   loop:
     - "{{ anixops_node_platform_deploy_dir }}"
     - "{{ anixops_node_platform_source_dir }}"
@@ -13,8 +18,8 @@
     repo: "{{ anixops_node_platform_repo_url }}"
     dest: "{{ anixops_node_platform_source_dir }}"
     version: "{{ anixops_node_platform_repo_version }}"
-    force: yes
-    update: yes
+    force: true
+    update: true
   environment:
     # GitHub fetches can reset on flaky runners or proxy paths; keep transport conservative.
     GIT_HTTP_VERSION: "HTTP/1.1"
@@ -27,62 +32,81 @@
   ansible.builtin.template:
     src: env.node-platform.j2
     dest: "{{ anixops_node_platform_env_file }}"
-    mode: '0600'
+    owner: root
+    group: root
+    mode: "0600"
+    backup: true
+  register: anixops_node_platform_env_render
   no_log: true
 
 - name: Render node platform compose file
   ansible.builtin.template:
     src: docker-compose.node-platform.yml.j2
     dest: "{{ anixops_node_platform_compose_file }}"
-    mode: '0644'
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  register: anixops_node_platform_compose_render
 
-- name: List legacy self-hosted compose project containers after node platform rename
-  ansible.builtin.command:
-    argv:
-      - docker
-      - ps
-      - -aq
-      - --filter
-      - "label=com.docker.compose.project={{ item }}"
-  loop: "{{ anixops_node_platform_legacy_compose_projects }}"
-  register: anixops_node_platform_legacy_project_containers
-  changed_when: false
-  failed_when: false
+- name: Clean up containers left behind by the pre-rename self-hosted project
   when: anixops_node_platform_cleanup_legacy_containers | bool
+  block:
+    - name: List legacy self-hosted compose project containers after node platform rename
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - -aq
+          - --filter
+          - "label=com.docker.compose.project={{ item }}"
+      loop: "{{ anixops_node_platform_legacy_compose_projects }}"
+      register: anixops_node_platform_legacy_project_containers
+      changed_when: false
 
-- name: Remove legacy self-hosted compose project containers
-  ansible.builtin.command:
-    argv:
-      - docker
-      - rm
-      - -f
-      - "{{ item }}"
-  loop: >-
-    {{
-      anixops_node_platform_legacy_project_containers.results
-      | map(attribute='stdout_lines')
-      | flatten
-      | reject('equalto', '')
-      | list
-    }}
-  changed_when: false
-  failed_when: false
-  when:
-    - anixops_node_platform_cleanup_legacy_containers | bool
-    - (anixops_node_platform_legacy_project_containers.results | map(attribute='stdout_lines') | flatten | list | length) > 0
+    - name: Remove legacy self-hosted compose project containers
+      ansible.builtin.command:
+        argv:
+          - docker
+          - rm
+          - -f
+          - "{{ item }}"
+      loop: >-
+        {{
+          anixops_node_platform_legacy_project_containers.results | default([])
+          | selectattr('stdout_lines', 'defined')
+          | map(attribute='stdout_lines')
+          | flatten
+          | map('trim')
+          | reject('equalto', '')
+          | list
+        }}
+      changed_when: true
 
-- name: Stop legacy self-hosted containers that can hold application ports
-  ansible.builtin.command:
-    argv:
-      - docker
-      - rm
-      - -f
-      - "{{ item }}"
-  loop: "{{ anixops_node_platform_legacy_container_names }}"
-  register: anixops_node_platform_legacy_container_rm
-  changed_when: false
-  failed_when: false
-  when: anixops_node_platform_cleanup_legacy_containers | bool
+    - name: List legacy self-hosted containers by name
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - -aq
+          - --filter
+          - "name=^/{{ item }}$"
+      loop: "{{ anixops_node_platform_legacy_container_names }}"
+      register: anixops_node_platform_legacy_named_containers
+      changed_when: false
+
+    - name: Stop legacy self-hosted containers that can hold application ports
+      ansible.builtin.command:
+        argv:
+          - docker
+          - rm
+          - -f
+          - "{{ item.item }}"
+      loop: "{{ anixops_node_platform_legacy_named_containers.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.stdout | default('') | trim | length > 0
+      changed_when: true
 
 - name: Validate the compose configuration
   ansible.builtin.command:
@@ -98,26 +122,29 @@
       - config
       - --quiet
     chdir: "{{ anixops_node_platform_deploy_dir }}"
+  register: anixops_node_platform_compose_config
   changed_when: false
 
 - name: Start or update the node platform stack
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ anixops_node_platform_project_name }}"
-      - --env-file
+  community.docker.docker_compose_v2:
+    project_src: "{{ anixops_node_platform_deploy_dir }}"
+    project_name: "{{ anixops_node_platform_project_name }}"
+    files:
+      - "{{ anixops_node_platform_compose_file | basename }}"
+    env_files:
       - "{{ anixops_node_platform_env_file }}"
-      - -f
-      - "{{ anixops_node_platform_compose_file }}"
-      - up
-      - -d
-      - --build
-      - --remove-orphans
-    chdir: "{{ anixops_node_platform_deploy_dir }}"
+    state: present
+    build: "{{ anixops_node_platform_compose_build }}"
+    pull: "{{ anixops_node_platform_compose_pull }}"
+    remove_orphans: true
+    wait: "{{ anixops_node_platform_compose_wait | bool }}"
+    wait_timeout: "{{ anixops_node_platform_compose_wait_timeout | int }}"
+    ignore_build_events: true
   register: anixops_node_platform_compose_up
 
-- name: Show compose summary
+- name: Show compose convergence summary
   ansible.builtin.debug:
-    msg: "{{ anixops_node_platform_compose_up.stdout | default('Stack updated') }}"
+    msg: >-
+      Compose project {{ anixops_node_platform_project_name }}:
+      {{ anixops_node_platform_compose_up.containers | default([]) | length }} container(s) managed,
+      changed={{ anixops_node_platform_compose_up.changed | default(false) }}

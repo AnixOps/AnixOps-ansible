@@ -1,147 +1,184 @@
 ---
 # =============================================================================
-# V2board Binary Installation Tasks | V2board 二进制安装任务
+# V2board binary installation | V2board 二进制安装
 # =============================================================================
+# The desired release is resolved once (custom URL > pinned tag > latest tag
+# via the GitHub API) and recorded in a marker file, so a second run downloads
+# nothing unless the version changed or v2board_force_update is true.
+
 - name: Create v2board directories | 创建 v2board 目录
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
-    mode: '0755'
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
   loop:
-    - "{{ v2board_install_dir }}"
-    - "{{ v2board_config_dir }}"
-    - "{{ v2board_data_dir }}"
-    - "{{ v2board_data_dir }}/data"
-    - "{{ v2board_data_dir }}/frontend"
-    - "{{ v2board_data_dir }}/logs"
+    - { path: "{{ v2board_install_dir }}", owner: root, group: root, mode: "0755" }
+    - { path: "{{ v2board_config_dir }}", owner: root, group: "{{ v2board_service_group }}", mode: "0750" }
+    - { path: "{{ v2board_data_dir }}", owner: "{{ v2board_service_user }}", group: "{{ v2board_service_group }}", mode: "0755" }
+    - { path: "{{ v2board_data_dir }}/data", owner: "{{ v2board_service_user }}", group: "{{ v2board_service_group }}", mode: "0755" }
+    - { path: "{{ v2board_data_dir }}/frontend", owner: "{{ v2board_service_user }}", group: "{{ v2board_service_group }}", mode: "0755" }
+    - { path: "{{ v2board_data_dir }}/logs", owner: "{{ v2board_service_user }}", group: "{{ v2board_service_group }}", mode: "0755" }
+  loop_control:
+    label: "{{ item.path }}"
 
-- name: Set architecture suffix | 设置架构后缀
-  ansible.builtin.set_fact:
-    v2board_arch_suffix: "{{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}"
+- name: Check whether the v2board binary is installed | 检查二进制是否已安装
+  ansible.builtin.stat:
+    path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+  register: v2board_binary_stat
 
-# =============================================================================
-# Download from custom URL (if provided)
-# =============================================================================
-- name: Download v2board binary from custom URL | 从自定义 URL 下载二进制
-  ansible.builtin.get_url:
-    url: "{{ v2board_binary_url }}"
-    dest: "/tmp/v2board-binary.tar.gz"
-    mode: '0644'
-    timeout: 120
-  when: v2board_binary_url != ''
+- name: Check for the installed version marker | 检查版本标记文件
+  ansible.builtin.stat:
+    path: "{{ v2board_version_file }}"
+  register: v2board_version_marker
 
-- name: Extract v2board binary from custom URL | 解压二进制
-  ansible.builtin.unarchive:
-    src: "/tmp/v2board-binary.tar.gz"
-    dest: "{{ v2board_install_dir }}"
-    remote_src: yes
-    extra_opts: ["--strip-components=1"]
-  when: v2board_binary_url != ''
+- name: Read the installed version marker | 读取版本标记文件
+  ansible.builtin.slurp:
+    src: "{{ v2board_version_file }}"
+  register: v2board_version_marker_content
+  when: v2board_version_marker.stat.exists
 
-# =============================================================================
-# Download from GitHub Releases (default path)
-# =============================================================================
-- name: Get latest release tag from GitHub API | 从 GitHub API 获取最新版本
-  ansible.builtin.shell:
-    cmd: |
-      set -e
-      curl -sL "https://api.github.com/repos/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/latest" | \
-      grep -m1 '"tag_name"' | \
-      sed -E 's/.*"([^"]+)".*/\1/'
-  register: latest_tag_result
-  changed_when: false
-  failed_when: latest_tag_result.stdout == ''
+- name: Resolve the latest release tag from GitHub | 从 GitHub 解析最新版本
+  ansible.builtin.uri:
+    url: "{{ v2board_github_api_url }}"
+    method: GET
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: v2board_latest_release
+  retries: 3
+  delay: 5
+  until: v2board_latest_release is succeeded
   when:
-    - v2board_binary_url == ''
-    - v2board_binary_version == 'latest' or v2board_binary_version == ''
+    - v2board_binary_url | length == 0
+    - v2board_binary_version in ['latest', '']
 
-- name: Set version to latest tag | 使用最新版本
+- name: Determine the desired release | 确定目标版本
   ansible.builtin.set_fact:
-    v2board_resolved_version: "{{ latest_tag_result.stdout }}"
-  when:
-    - v2board_binary_url == ''
-    - v2board_binary_version == 'latest' or v2board_binary_version == ''
+    v2board_desired_version: >-
+      {{ ('url:' ~ v2board_binary_url) if v2board_binary_url | length > 0
+         else (v2board_latest_release.json.tag_name if v2board_binary_version in ['latest', '']
+               else v2board_binary_version) }}
+    v2board_installed_version: >-
+      {{ (v2board_version_marker_content.content | b64decode | trim)
+         if v2board_version_marker.stat.exists else '' }}
 
-- name: Set version to specified value | 使用指定版本
+- name: Determine download URLs | 确定下载地址
   ansible.builtin.set_fact:
-    v2board_resolved_version: "{{ v2board_binary_version }}"
-  when:
-    - v2board_binary_url == ''
-    - v2board_binary_version != 'latest'
-    - v2board_binary_version != ''
+    v2board_download_url: >-
+      {{ v2board_binary_url if v2board_binary_url | length > 0
+         else 'https://github.com/' ~ v2board_repo_owner ~ '/' ~ v2board_repo_name
+              ~ '/releases/download/' ~ v2board_desired_version
+              ~ '/v2board-linux-' ~ v2board_arch ~ '.tar.gz' }}
+    v2board_frontend_url: >-
+      {{ 'https://github.com/' ~ v2board_repo_owner ~ '/' ~ v2board_repo_name
+         ~ '/releases/download/' ~ v2board_desired_version ~ '/v2board-frontend.tar.gz' }}
+    v2board_needs_download: >-
+      {{ v2board_force_update | bool
+         or not v2board_binary_stat.stat.exists
+         or v2board_installed_version != v2board_desired_version }}
 
-- name: Display resolved version | 显示解析后的版本
+- name: Show the resolved release | 显示解析结果
   ansible.builtin.debug:
-    msg: "V2board version: {{ v2board_resolved_version }}"
-  when: v2board_binary_url == ''
+    msg: >-
+      v2board desired={{ v2board_desired_version }}
+      installed={{ v2board_installed_version | default('none', true) }}
+      download={{ v2board_needs_download }}
 
-- name: Download v2board binary from GitHub Releases | 从 GitHub Releases 下载二进制
-  ansible.builtin.get_url:
-    url: "https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/download/{{ v2board_resolved_version }}/v2board-linux-{{ v2board_arch_suffix }}.tar.gz"
-    dest: "/tmp/v2board-binary.tar.gz"
-    mode: '0644'
-    timeout: 120
-  when: v2board_binary_url == ''
+- name: Download and install the v2board release | 下载并安装 v2board
+  when: v2board_needs_download | bool
+  block:
+    - name: Create a temporary download directory | 创建临时下载目录
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: v2board-
+      register: v2board_tmpdir
 
-- name: Extract v2board binary from GitHub Releases | 解压二进制
-  ansible.builtin.unarchive:
-    src: "/tmp/v2board-binary.tar.gz"
-    dest: "{{ v2board_install_dir }}"
-    remote_src: yes
-  when: v2board_binary_url == ''
+    - name: Create the extraction directory | 创建解压目录
+      ansible.builtin.file:
+        path: "{{ v2board_tmpdir.path }}/extract"
+        state: directory
+        mode: "0755"
 
-- name: Download v2board frontend | 下载前端文件
-  ansible.builtin.get_url:
-    url: "https://github.com/{{ v2board_repo_owner }}/{{ v2board_repo_name }}/releases/download/{{ v2board_resolved_version }}/v2board-frontend.tar.gz"
-    dest: "/tmp/v2board-frontend.tar.gz"
-    mode: '0644'
-    timeout: 120
-  when: v2board_binary_url == ''
+    - name: Download the v2board release archive | 下载 v2board 发布包
+      ansible.builtin.get_url:
+        url: "{{ v2board_download_url }}"
+        dest: "{{ v2board_tmpdir.path }}/v2board.tar.gz"
+        mode: "0644"
+        timeout: 120
+        checksum: "{{ v2board_binary_checksum if v2board_binary_checksum | length > 0 else omit }}"
+      register: v2board_binary_download
+      retries: 5
+      delay: 10
+      until: v2board_binary_download is succeeded
 
-- name: Extract v2board frontend | 解压前端文件
-  ansible.builtin.unarchive:
-    src: "/tmp/v2board-frontend.tar.gz"
-    dest: "{{ v2board_data_dir }}/frontend"
-    remote_src: yes
-  when: v2board_binary_url == ''
+    - name: Extract the release archive | 解压发布包
+      ansible.builtin.unarchive:
+        src: "{{ v2board_tmpdir.path }}/v2board.tar.gz"
+        dest: "{{ v2board_tmpdir.path }}/extract"
+        remote_src: true
 
-# =============================================================================
-# Binary verification and renaming (unified for both paths)
-# =============================================================================
-- name: Check for binary with standard name | 检查标准名称二进制
-  ansible.builtin.stat:
-    path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
-  register: binary_standard
+    - name: Locate the binary inside the archive | 在发布包中查找二进制
+      ansible.builtin.find:
+        paths: "{{ v2board_tmpdir.path }}/extract"
+        patterns:
+          - "{{ v2board_bin_name }}"
+          - "{{ v2board_bin_name }}-linux-{{ v2board_arch }}"
+        file_type: file
+        recurse: true
+      register: v2board_found_binary
 
-- name: Check for binary with arch-specific name | 检查架构特定名称二进制
-  ansible.builtin.stat:
-    path: "{{ v2board_install_dir }}/v2board-linux-{{ v2board_arch_suffix }}"
-  register: binary_arch_specific
+    - name: Ensure the archive contained a binary | 确认发布包包含二进制
+      ansible.builtin.assert:
+        that:
+          - v2board_found_binary.matched > 0
+        fail_msg: "No '{{ v2board_bin_name }}' binary found in {{ v2board_download_url }}."
+        quiet: true
 
-- name: Rename arch-specific binary to standard name | 重命名架构特定二进制
-  ansible.builtin.command:
-    cmd: mv "{{ v2board_install_dir }}/v2board-linux-{{ v2board_arch_suffix }}" "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
-  when:
-    - not binary_standard.stat.exists
-    - binary_arch_specific.stat.exists
-  changed_when: true
+    - name: Install the v2board binary | 安装 v2board 二进制
+      ansible.builtin.copy:
+        src: "{{ v2board_found_binary.files[0].path }}"
+        dest: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart v2board
 
-- name: Ensure binary is executable | 确保二进制可执行
-  ansible.builtin.file:
-    path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
-    mode: '0755'
-    state: file
+    - name: Download the v2board frontend archive | 下载前端文件
+      ansible.builtin.get_url:
+        url: "{{ v2board_frontend_url }}"
+        dest: "{{ v2board_tmpdir.path }}/v2board-frontend.tar.gz"
+        mode: "0644"
+        timeout: 120
+        checksum: "{{ v2board_frontend_checksum if v2board_frontend_checksum | length > 0 else omit }}"
+      register: v2board_frontend_download
+      retries: 5
+      delay: 10
+      until: v2board_frontend_download is succeeded
+      when: v2board_binary_url | length == 0
 
-- name: Verify binary exists | 验证二进制文件存在
-  ansible.builtin.stat:
-    path: "{{ v2board_install_dir }}/{{ v2board_bin_name }}"
-  register: final_binary
-  failed_when: not final_binary.stat.exists
+    - name: Extract the frontend | 解压前端文件
+      ansible.builtin.unarchive:
+        src: "{{ v2board_tmpdir.path }}/v2board-frontend.tar.gz"
+        dest: "{{ v2board_data_dir }}/frontend"
+        remote_src: true
+        owner: "{{ v2board_service_user }}"
+        group: "{{ v2board_service_group }}"
+      when: v2board_binary_url | length == 0
 
-- name: Clean up temporary files | 清理临时文件
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "/tmp/v2board-binary.tar.gz"
-    - "/tmp/v2board-frontend.tar.gz"
+    - name: Record the installed release | 记录已安装版本
+      ansible.builtin.copy:
+        content: "{{ v2board_desired_version }}\n"
+        dest: "{{ v2board_version_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+  always:
+    - name: Remove the temporary download directory | 清理临时目录
+      ansible.builtin.file:
+        path: "{{ v2board_tmpdir.path }}"
+        state: absent
+      when: v2board_tmpdir.path is defined

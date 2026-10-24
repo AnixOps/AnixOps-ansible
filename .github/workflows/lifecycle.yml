@@ -19,19 +19,19 @@ on:
         required: true
         type: choice
         options:
-          - nginx
-          - prometheus
-          - grafana
-          - loki
-          - promtail
-          - node_exporter
           - common
+          - nginx
+          - node_exporter
+          - promtail
+          - prometheus
+          - loki
+          - grafana
+          - postgresql
+          - v2board
+          - v2bx
+          - speedtest
           - firewall
           - acme_ssl
-          - v2bx
-          - v2board
-          - postgresql
-          - speedtest
         default: 'nginx'
 
       version:
@@ -41,7 +41,7 @@ on:
         default: 'prev'
 
       target_group:
-        description: 'Target servers'
+        description: 'Target servers (group or single host)'
         required: true
         type: choice
         options:
@@ -49,8 +49,10 @@ on:
           - web_servers
           - proxy_servers
           - observability
+          - dev_servers
           - v2bx_servers
           - v2board_servers
+          - postgres_servers
           - jp-1
           - uk-1
           - us-w-1
@@ -62,7 +64,7 @@ on:
         default: 'all'
 
       force:
-        description: 'Force execution (skip confirmation)'
+        description: 'Force execution (required for rollback/cleanup on target_group=all)'
         required: false
         type: boolean
         default: false
@@ -73,268 +75,140 @@ on:
         type: number
         default: 5
 
+permissions:
+  contents: read
+
+# Shares the deploy-NodeX-<target> group with deploy.yml so a lifecycle action never overlaps a deploy
+# of the same target; a running job is never cancelled.
+concurrency:
+  group: deploy-NodeX-${{ github.event.inputs.target_group || 'all' }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   lifecycle:
-    name: Lifecycle (${{ github.event.inputs.action }} - ${{ github.event.inputs.role }})
+    name: Lifecycle ${{ inputs.action }} - ${{ inputs.role }} (${{ inputs.target_group }})
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     environment: NodeX
+    env:
+      ACTION: ${{ inputs.action }}
+      ROLE: ${{ inputs.role }}
+      VERSION: ${{ inputs.version }}
+      TARGET_GROUP: ${{ inputs.target_group }}
+      FORCE: ${{ inputs.force }}
+      KEEP_BACKUPS: ${{ inputs.keep_backups }}
 
     steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if [[ "${ACTION}" == "rollback" || "${ACTION}" == "cleanup" ]] && [[ "${TARGET_GROUP}" == "all" && "${FORCE}" != "true" ]]; then
+            echo "::error::${ACTION} on target_group=all requires force=true"
+            exit 1
+          fi
+          if [[ "${ACTION}" == "rollback" && ! "${VERSION}" =~ ^(prev|v[0-9]{8}_[0-9]{6})$ ]]; then
+            echo "::error::version must be 'prev' or vYYYYMMDD_HHMMSS"
+            exit 1
+          fi
+          if [[ ! "${KEEP_BACKUPS}" =~ ^[0-9]+$ ]]; then
+            echo "::error::keep_backups must be a non-negative integer"
+            exit 1
+          fi
+          echo "Inputs OK: action=${ACTION} role=${ROLE} target_group=${TARGET_GROUP} version=${VERSION} force=${FORCE} keep_backups=${KEEP_BACKUPS}"
+
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Export allow-listed secrets
+        uses: ./.github/actions/export-secrets
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          secrets-json: ${{ toJSON(secrets) }}
 
-      - name: Install Ansible and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          ansible-galaxy install -r requirements.yml
+      - name: Set up Ansible toolchain
+        uses: ./.github/actions/setup-ansible
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Setup SSH Key
+      - name: Resolve target hosts
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Create inventory from config
-        run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          echo "Generating inventory from servers-config.yml..."
-          python3 tools/generate_inventory.py github-actions --output "$inventory_path"
-          echo "鉁?Inventory generated"
-
-      - name: Display Lifecycle Configuration
-        run: |
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-          echo "馃攧 LIFECYCLE MANAGEMENT"
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-          echo "Action:          ${{ github.event.inputs.action }}"
-          echo "Role:            ${{ github.event.inputs.role }}"
-          echo "Target:          ${{ github.event.inputs.target_group }}"
-          if [ "${{ github.event.inputs.action }}" = "rollback" ]; then
-            echo "Version:         ${{ github.event.inputs.version }}"
+          set -euo pipefail
+          mapfile -t members < <(ansible "${TARGET_GROUP}" --list-hosts | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d')
+          if (( ${#members[@]} == 0 )); then
+            echo "::error::Target '${TARGET_GROUP}' matches no host in the generated inventory"
+            exit 1
           fi
-          if [ "${{ github.event.inputs.action }}" = "cleanup" ]; then
-            echo "Keep Backups:     ${{ github.event.inputs.keep_backups }}"
-          fi
-          echo "Force:           ${{ github.event.inputs.force }}"
-          echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
-          echo "Triggered by:    ${{ github.actor }}"
-          echo "Branch:          ${{ github.ref_name }}"
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+          echo "Target hosts (${#members[@]}): ${members[*]}"
 
-      - name: Verify Connectivity
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
-          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
-          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
-          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
-          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
-          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
+      - name: Verify connectivity
         run: |
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          echo "馃攳 Verifying connectivity..."
-          ansible ${{ github.event.inputs.target_group }} \
-            -i "$inventory_path" \
-            -m ping -v
+          set -euo pipefail
+          ansible "${TARGET_GROUP}" -m ansible.builtin.ping -o
 
-      - name: Execute Lifecycle Action
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
-          ANSIBLE_FORCE_COLOR: 'True'
-          PL_1_V4_SSH: ${{ secrets.PL_1_V4_SSH }}
-          JP_1_V4_SSH: ${{ secrets.JP_1_V4_SSH }}
-          UK_1_V4_SSH: ${{ secrets.UK_1_V4_SSH }}
-          US_W_1_V4_SSH: ${{ secrets.US_W_1_V4_SSH }}
-          SG_1_V4_SSH: ${{ secrets.SG_1_V4_SSH }}
-          HK_1_V4_SSH: ${{ secrets.HK_1_V4_SSH }}
-          UK_2_V4_SSH: ${{ secrets.UK_2_V4_SSH }}
-          FR_1_V4_SSH: ${{ secrets.FR_1_V4_SSH }}
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_PORT: ${{ secrets.ANSIBLE_PORT }}
-          # V2bX Secrets (Auto-Registration Mode)
-          # Uses V2BOARD_API_TOKEN for panel API calls (same as v2board config)
-          V2BX_CORE: ${{ secrets.V2BX_CORE }}
-          V2BX_API_HOST: ${{ secrets.V2BX_API_HOST }}
-          V2BX_NODE_NAME: ${{ secrets.V2BX_NODE_NAME }}
-          V2BX_PROTOCOLS: ${{ secrets.V2BX_PROTOCOLS }}
-          V2BX_CERT_MODE: ${{ secrets.V2BX_CERT_MODE }}
-          V2BX_CERT_DOMAIN: ${{ secrets.V2BX_CERT_DOMAIN }}
-          V2BX_LOG_LEVEL: ${{ secrets.V2BX_LOG_LEVEL }}
-          # V2board Secrets (NodeX Environment)
-          V2BOARD_DB_TYPE: ${{ secrets.V2BOARD_DB_TYPE }}
-          V2BOARD_PG_HOST: ${{ secrets.V2BOARD_PG_HOST }}
-          V2BOARD_PG_PASSWORD: ${{ secrets.V2BOARD_PG_PASSWORD }}
-          V2BOARD_REDIS_PASSWORD: ${{ secrets.V2BOARD_REDIS_PASSWORD }}
-          V2BOARD_JWT_SECRET: ${{ secrets.V2BOARD_JWT_SECRET }}
-          V2BOARD_API_TOKEN: ${{ secrets.V2BOARD_API_TOKEN }}
-          V2BOARD_ADMIN_EMAIL: ${{ secrets.V2BOARD_ADMIN_EMAIL }}
-          V2BOARD_ADMIN_PASSWORD: ${{ secrets.V2BOARD_ADMIN_PASSWORD }}
-          V2BOARD_FRONTEND_PORT: ${{ secrets.V2BOARD_FRONTEND_PORT }}
-          V2BOARD_API_PORT: ${{ secrets.V2BOARD_API_PORT }}
-          V2BOARD_GRPC_PORT: ${{ secrets.V2BOARD_GRPC_PORT }}
-          V2BOARD_NODEX_PORT: ${{ secrets.V2BOARD_NODEX_PORT }}
+      - name: Execute lifecycle action
         run: |
-          ACTION="${{ github.event.inputs.action }}"
-          ROLE="${{ github.event.inputs.role }}"
-          TARGET="${{ github.event.inputs.target_group }}"
-          # V2board deploy special handling
-          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "v2board" ]; then
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃梽锔? Deploying PostgreSQL..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$inventory_path\""
-            CMD="$CMD --limit $TARGET"
-            CMD="$CMD --tags postgresql"
-            CMD="$CMD -v"
-            eval $CMD || true
-
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃幆 Deploying V2board Control Panel..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$inventory_path\""
-            CMD="$CMD --limit $TARGET"
-            CMD="$CMD --tags v2board"
-            CMD="$CMD -v"
-            eval $CMD
-
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃彞 Verifying V2board health..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            ansible $TARGET -i "$inventory_path" \
-              -m shell -a "docker ps --filter name=v2board --format '{{ '{{' }}.Status{{ '}}' }}' || systemctl status v2board --no-pager" -v || true
-            exit 0
+          set -euo pipefail
+          # Application roles are deployed through site.yml play tags; everything else goes through the
+          # lifecycle playbook. The case statement only decides WHICH tags to run, the command runs once.
+          site_tags=""
+          if [[ "${ACTION}" == "deploy" ]]; then
+            case "${ROLE}" in
+              v2board) site_tags="postgresql,v2board" ;;  # the panel needs its database first
+              postgresql|v2bx|speedtest) site_tags="${ROLE}" ;;
+            esac
           fi
 
-          # PostgreSQL deploy special handling
-          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "postgresql" ]; then
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃梽锔? Deploying PostgreSQL..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$inventory_path\""
-            CMD="$CMD --limit $TARGET"
-            CMD="$CMD --tags postgresql"
-            CMD="$CMD -v"
-            eval $CMD
-
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃彞 Verifying PostgreSQL..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            ansible $TARGET -i "$inventory_path" \
-              -m shell -a "sudo -u postgres psql -c 'SELECT version()'" -v || true
-            exit 0
-          fi
-
-          # V2bX deploy special handling
-          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "v2bx" ]; then
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃幆 Deploying V2bX Proxy Nodes..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$inventory_path\""
-            CMD="$CMD --limit $TARGET"
-            CMD="$CMD --tags v2bx"
-            CMD="$CMD -v"
-            eval $CMD
-
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃彞 Verifying V2bX service..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            ansible $TARGET -i "$inventory_path" \
-              -m shell -a "systemctl status V2bX" -v || true
-            exit 0
-          fi
-
-          # Speedtest deploy special handling
-          if [ "$ACTION" = "deploy" ] && [ "$ROLE" = "speedtest" ]; then
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            echo "馃幆 Deploying Speedtest..."
-            echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-            inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-            CMD="ansible-playbook playbooks/provision/site.yml"
-            CMD="$CMD -i \"$inventory_path\""
-            CMD="$CMD --limit $TARGET"
-            CMD="$CMD --tags speedtest"
-            CMD="$CMD -v"
-            eval $CMD
-            exit 0
-          fi
-
-          # Standard lifecycle action
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
-          CMD="ansible-playbook playbooks/maintenance/lifecycle.yml"
-          CMD="$CMD -i \"$inventory_path\""
-          CMD="$CMD -e lifecycle_target_role=$ROLE"
-          CMD="$CMD --limit $TARGET"
-          CMD="$CMD --tags $ACTION"
-          CMD="$CMD -v"
-
-          # Action-specific parameters
-          if [ "$ACTION" = "rollback" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-            CMD="$CMD -e lifecycle_version=$VERSION"
-            CMD="$CMD -e lifecycle_hook_type=post_rollback"
-          fi
-
-          if [ "$ACTION" = "cleanup" ]; then
-            KEEP="${{ github.event.inputs.keep_backups }}"
-            FORCE="${{ github.event.inputs.force }}"
-            CMD="$CMD -e cleanup_confirm=yes"
-            CMD="$CMD -e cleanup_keep_backups=$KEEP"
-            if [ "$FORCE" = "true" ]; then
-              CMD="$CMD -e cleanup_force=yes"
-            fi
-          fi
-
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-          echo "馃幆 Executing: $CMD"
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-
-          eval $CMD
-
-      - name: Cleanup SSH keys
-        if: always()
-        run: |
-          rm -f ~/.ssh/id_rsa ~/.ssh/known_hosts
-
-      - name: Lifecycle Summary
-        if: always()
-        run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            STATUS_EMOJI="鉁?
-            STATUS_TEXT="SUCCESS"
+          if [[ -n "${site_tags}" ]]; then
+            args=(playbooks/provision/site.yml --limit "${TARGET_GROUP}" --tags "${site_tags}" -v)
           else
-            STATUS_EMOJI="鉂?
-            STATUS_TEXT="FAILED"
+            args=(playbooks/maintenance/lifecycle.yml --limit "${TARGET_GROUP}" --tags "${ACTION}" -e "lifecycle_target_role=${ROLE}" -v)
+            case "${ACTION}" in
+              rollback)
+                args+=(-e "lifecycle_version=${VERSION}" -e lifecycle_hook_type=post_rollback)
+                ;;
+              cleanup)
+                args+=(-e cleanup_confirm=yes -e "cleanup_keep_backups=${KEEP_BACKUPS}")
+                if [[ "${FORCE}" == "true" ]]; then
+                  args+=(-e cleanup_force=yes)
+                fi
+                ;;
+            esac
           fi
 
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-          echo "$STATUS_EMOJI LIFECYCLE $STATUS_TEXT"
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
-          echo "Action:          ${{ github.event.inputs.action }}"
-          echo "Role:            ${{ github.event.inputs.role }}"
-          echo "Target:          ${{ github.event.inputs.target_group }}"
-          echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
-          echo "Completed at:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
+          printf 'Executing: ansible-playbook'
+          printf ' %q' "${args[@]}"
+          printf '\n'
+          ansible-playbook "${args[@]}"
+
+      - name: Post-action health check
+        if: success() && (inputs.action == 'deploy' || inputs.action == 'rollback')
+        run: |
+          set -euo pipefail
+          ansible-playbook playbooks/maintenance/health-check.yml --limit "${TARGET_GROUP}" -v
+
+      - name: Remove SSH key material
+        if: always()
+        run: |
+          set -euo pipefail
+          key_dir="${RUNNER_TEMP}/ssh"
+          if [[ -d "${key_dir}" ]]; then
+            find "${key_dir}" -type f -exec shred -u {} +
+            rm -rf "${key_dir}"
+          fi
+
+      - name: Write lifecycle summary
+        if: always()
+        uses: ./.github/actions/job-summary
+        with:
+          title: Lifecycle summary
+          status: ${{ job.status }}
+          fields: |
+            Action: `${{ inputs.action }}`
+            Role: `${{ inputs.role }}`
+            Target: `${{ inputs.target_group }}`
+            Version: `${{ inputs.version }}`
+            Force: ${{ inputs.force }}
+            Keep backups: ${{ inputs.keep_backups }}

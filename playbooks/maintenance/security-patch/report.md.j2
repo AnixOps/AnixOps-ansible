@@ -1,0 +1,23 @@
+## Security patch report: {{ security_patch_report.target_group }} ({{ security_patch_report.generated_at }})
+
+{% if not security_patch_report.apply_updates %}
+Scan-only mode: findings were reported but no packages were updated and no host was rebooted.
+
+{% endif %}
+| Metric | Value |
+| --- | ---: |
+| Hosts | {{ security_patch_report.total_hosts }} |
+| Clean | {{ security_patch_report.clean_count }} |
+| Patched | {{ security_patch_report.patched_count }} |
+| Needs attention | {{ security_patch_report.needs_attention_count }} |
+| Scan failed | {{ security_patch_report.scan_failed_count }} |
+| Unreachable | {{ security_patch_report.unreachable_count }} |
+| Reboot required | {{ security_patch_report.reboot_required_count }} |
+| Rebooted | {{ security_patch_report.rebooted_count }} |
+| Severity filter | {{ security_patch_report.severity }} |
+
+| Host | Status | Before | After | Reboot | Reason |
+| --- | --- | ---: | ---: | --- | --- |
+{% for host in security_patch_report.hosts %}
+| {{ host.host }} | {{ host.status }} | {{ host.before_count }} | {{ host.after_count }} | {{ 'rebooted' if host.rebooted | default(false) else ('yes' if host.reboot_required | default(false) else 'no') }} | {{ host.alert_reason | replace('|', '/') }} |
+{% endfor %}

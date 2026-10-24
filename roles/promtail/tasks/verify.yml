@@ -1,0 +1,80 @@
+---
+# =============================================================================
+# promtail - verify | 健康检查
+# =============================================================================
+# Roll-out pattern: verify /ready; on failure show the journal, restore the
+# config/unit backups produced by this run (if any), restart and fail.
+# /ready answers 200 once at least one scrape target is active.
+# =============================================================================
+
+- name: Verify promtail is ready
+  block:
+    - name: Wait for the promtail readiness endpoint
+      ansible.builtin.uri:
+        url: "{{ promtail_health_url }}"
+        status_code: 200
+      register: promtail_health
+      retries: "{{ promtail_verify_retries }}"
+      delay: "{{ promtail_verify_delay }}"
+      until: promtail_health.status == 200
+
+    - name: Report promtail health
+      ansible.builtin.debug:
+        msg: "promtail {{ promtail_version }} ready at {{ promtail_health_url }}, shipping to {{ promtail_loki_url }}"
+  rescue:
+    - name: Collect recent promtail journal entries
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ promtail_service_name }}"
+          - -n
+          - "50"
+          - --no-pager
+      register: promtail_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Show recent promtail journal entries
+      ansible.builtin.debug:
+        msg: "{{ promtail_journal.stdout_lines | default([]) }}"
+
+    - name: Restore the previous promtail configuration
+      ansible.builtin.copy:
+        src: "{{ promtail_config_result.backup_file }}"
+        dest: "{{ promtail_config_path }}"
+        owner: root
+        group: "{{ promtail_group }}"
+        mode: "0640"
+        remote_src: true
+      when: promtail_config_result.backup_file is defined
+
+    - name: Restore the previous promtail unit file
+      ansible.builtin.copy:
+        src: "{{ promtail_unit_result.backup_file }}"
+        dest: "{{ promtail_unit_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when: promtail_unit_result.backup_file is defined
+
+    - name: Restart promtail with the restored files
+      ansible.builtin.systemd_service:
+        name: "{{ promtail_service_name }}"
+        daemon_reload: true
+        state: restarted
+      register: promtail_restore_restart
+      failed_when: false
+      when: promtail_config_result.backup_file is defined or promtail_unit_result.backup_file is defined
+
+    - name: Fail because promtail did not become ready
+      ansible.builtin.fail:
+        msg: >-
+          promtail did not return HTTP 200 on {{ promtail_health_url }}
+          after {{ promtail_verify_retries }} attempts.
+          {{ 'Previous configuration/unit backups were restored and the service restarted (result: '
+             ~ (promtail_restore_restart.failed | default(false) | ternary('restart failed', 'restarted'))
+             ~ ').' if (promtail_config_result.backup_file is defined or promtail_unit_result.backup_file is defined)
+             else 'No backups from this run exist, nothing was restored.' }}
+          Inspect the journal output above and `systemctl status {{ promtail_service_name }}`.

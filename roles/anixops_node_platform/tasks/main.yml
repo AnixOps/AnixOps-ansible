@@ -1,4 +1,9 @@
 ---
+# anixops_node_platform entry point | 角色入口
+# Order: validate inputs -> Docker -> compose stack -> UFW edge policy -> TLS -> verify.
+# Any failure after Docker is installed lands in the rescue block, which prints
+# `docker compose ps` and the last 100 log lines before failing the host.
+
 - name: Validate required node platform variables
   ansible.builtin.assert:
     that:
@@ -14,19 +19,20 @@
       - ANIXOPS_NODE_PLATFORM_POSTGRES_PASSWORD
       - ANIXOPS_NODE_PLATFORM_REDIS_PASSWORD
       - ANIXOPS_NODE_PLATFORM_ADMIN_EMAILS
+    quiet: true
 
-- name: Deploy the node platform stack
+- name: Install Docker and Docker Compose
+  ansible.builtin.include_tasks: install-docker.yml
+
+- name: Deploy and verify the node platform stack
   block:
-    - name: Install Docker and Docker Compose
-      ansible.builtin.include_tasks: install-docker.yml
-
     - name: Configure the node platform stack
       ansible.builtin.include_tasks: configure.yml
 
     - name: Configure node platform edge firewall policy
       ansible.builtin.include_tasks: firewall.yml
 
-    - name: Configure node platform TLS fallback certificate
+    - name: Configure node platform TLS certificate
       ansible.builtin.include_tasks: tls.yml
       when:
         - anixops_node_platform_ssl_enabled | default(false) | bool
@@ -34,3 +40,63 @@
 
     - name: Verify the node platform stack
       ansible.builtin.include_tasks: verify.yml
+
+  rescue:
+    - name: Collect compose service status for diagnostics
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ anixops_node_platform_project_name }}"
+          - --env-file
+          - "{{ anixops_node_platform_env_file }}"
+          - -f
+          - "{{ anixops_node_platform_compose_file }}"
+          - ps
+          - --all
+        chdir: "{{ anixops_node_platform_deploy_dir }}"
+      register: anixops_node_platform_rescue_ps
+      changed_when: false
+      failed_when: false
+
+    - name: Collect the last 100 compose log lines for diagnostics
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ anixops_node_platform_project_name }}"
+          - --env-file
+          - "{{ anixops_node_platform_env_file }}"
+          - -f
+          - "{{ anixops_node_platform_compose_file }}"
+          - logs
+          - --no-color
+          - --tail
+          - "100"
+        chdir: "{{ anixops_node_platform_deploy_dir }}"
+      register: anixops_node_platform_rescue_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Show node platform failure diagnostics
+      ansible.builtin.debug:
+        msg: |
+          Failed task: {{ ansible_failed_task.name | default('unknown') }}
+          Error: {{ ansible_failed_result.msg | default('see the task output above') }}
+
+          docker compose ps --all:
+          {{ anixops_node_platform_rescue_ps.stdout | default('') }}
+          {{ anixops_node_platform_rescue_ps.stderr | default('') }}
+
+          docker compose logs --tail 100:
+          {{ anixops_node_platform_rescue_logs.stdout | default('') }}
+          {{ anixops_node_platform_rescue_logs.stderr | default('') }}
+
+    - name: Fail the node platform deployment
+      ansible.builtin.fail:
+        msg: >-
+          AnixOps node platform deployment failed on {{ inventory_hostname }}
+          during '{{ ansible_failed_task.name | default('unknown') }}'. See the diagnostics above;
+          the previous .env / compose files are kept as *.backup files next to the originals.

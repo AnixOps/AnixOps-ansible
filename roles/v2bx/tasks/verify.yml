@@ -1,0 +1,62 @@
+---
+# =============================================================================
+# V2bX verification | V2bX 验证
+# =============================================================================
+
+- name: Verify V2bX is running | 校验 V2bX 运行状态
+  block:
+    - name: Check the V2bX service state | 检查服务状态
+      ansible.builtin.systemd:
+        name: "{{ v2bx_service_name }}"
+      register: v2bx_service_status
+      failed_when: v2bx_service_status.status.ActiveState != 'active'
+
+    - name: Wait for the auto-registration credential file | 等待自动注册凭证文件
+      ansible.builtin.stat:
+        path: "{{ v2bx_credential_file }}"
+      register: v2bx_credential_stat
+      retries: "{{ v2bx_credential_wait_retries }}"
+      delay: "{{ v2bx_credential_wait_delay }}"
+      until: v2bx_credential_stat.stat.exists
+      when: v2bx_auto_register | bool
+
+    - name: Wait for the configured listening port | 等待监听端口
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ v2bx_port | int }}"
+        state: started
+        timeout: "{{ v2bx_port_wait_timeout }}"
+      when: v2bx_port | int > 0
+  rescue:
+    - name: Collect the V2bX journal | 收集 V2bX 日志
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ v2bx_service_name }}"
+          - -n
+          - "100"
+          - --no-pager
+          - --no-hostname
+      register: v2bx_verify_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with diagnostics | 输出诊断信息并失败
+      ansible.builtin.fail:
+        msg: |
+          V2bX verification failed on {{ inventory_hostname }} at task
+          '{{ ansible_failed_task.name | default('unknown') }}'
+          (service state: {{ v2bx_service_status.status.ActiveState | default('unknown') }},
+          credential file: {{ v2bx_credential_stat.stat.exists | default(false) | ternary('present', 'missing') }}).
+          Journal tail:
+          {{ v2bx_verify_journal.stdout | default('') }}
+
+- name: Show deployment summary | 显示部署摘要
+  ansible.builtin.debug:
+    msg: >-
+      V2bX node '{{ v2bx_node_name }}' on {{ inventory_hostname }}: core={{ v2bx_core }}
+      protocols={{ v2bx_protocols | join(',') }} panel={{ v2bx_api_host }}
+      service={{ v2bx_service_status.status.ActiveState }}
+      credential={{ v2bx_credential_stat.stat.exists | default(false) | ternary('present', 'pending') }}
+      authkey_source={{ v2bx_auth_key_source | default('env') }}

@@ -1,15 +1,16 @@
+---
 # =============================================================================
-# Node Exporter Handlers - Node Exporter 处理器 | Node Exporter Handlers
+# node_exporter handlers | node_exporter 处理器
 # =============================================================================
-# 定义 Node Exporter 服务的处理器
-# Define handlers for Node Exporter service
+# Handler order matters: `Reload systemd` is defined first so a changed unit
+# file is re-read before the service is restarted.
 # =============================================================================
 
 - name: Reload systemd
-  systemd:
-    daemon_reload: yes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
 
 - name: Restart node_exporter
-  service:
-    name: node_exporter
+  ansible.builtin.systemd_service:
+    name: "{{ node_exporter_service_name }}"
     state: restarted

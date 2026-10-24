@@ -1,98 +1,26 @@
+---
 # =============================================================================
-# Node Exporter Role - Prometheus 主机监控 | Prometheus Host Monitoring
+# node_exporter role - entry point | node_exporter 角色入口
 # =============================================================================
-# 安装和配置 Prometheus Node Exporter
-# Install and configure Prometheus Node Exporter
-#
-# 功能 | Features:
-#   - 版本检查和更新 | Version checking and updates
-#   - Systemd 服务管理 | Systemd service management
+# install.yml   -> download / upgrade the binary (only when the version differs)
+# configure.yml -> system user + hardened systemd unit
+# service.yml   -> flush handlers, then enable + start the service
+# verify.yml    -> HTTP health check; on failure dump the journal, restore the
+#                  previous unit file and fail loudly
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# 版本检查 | Version Check
-# -----------------------------------------------------------------------------
-- name: Check if node_exporter is already installed | 检查 node_exporter 是否已安装
-  stat:
-    path: /usr/local/bin/node_exporter
-  register: node_exporter_binary
+- name: Install node_exporter binary
+  ansible.builtin.import_tasks: install.yml
+  tags: [node_exporter, node_exporter_install]
 
-- name: Get installed node_exporter version | 获取已安装的 node_exporter 版本
-  shell: /usr/local/bin/node_exporter --version 2>&1 | grep -oP 'version \K[0-9.]+'
-  register: installed_version
-  when: node_exporter_binary.stat.exists
-  changed_when: false
-  failed_when: false
+- name: Configure node_exporter user and systemd unit
+  ansible.builtin.import_tasks: configure.yml
+  tags: [node_exporter, node_exporter_configure]
 
-# -----------------------------------------------------------------------------
-# 下载和安装 | Download and Install
-# -----------------------------------------------------------------------------
-- name: Download and install node_exporter | 下载并安装 node_exporter
-  block:
-    - name: Create temporary directory | 创建临时目录
-      file:
-        path: /tmp/node_exporter
-        state: directory
-        mode: '0755'
+- name: Enable and start node_exporter
+  ansible.builtin.import_tasks: service.yml
+  tags: [node_exporter, node_exporter_service]
 
-    - name: Download node_exporter | 下载 node_exporter
-      get_url:
-        url: "{{ node_exporter_download_url }}/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}.tar.gz"
-        dest: "/tmp/node_exporter/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}.tar.gz"
-        mode: '0644'
-
-    - name: Extract node_exporter | 解压 node_exporter
-      unarchive:
-        src: "/tmp/node_exporter/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}.tar.gz"
-        dest: /tmp/node_exporter
-        remote_src: yes
-
-    - name: Copy node_exporter binary | 复制 node_exporter 二进制文件
-      copy:
-        src: "/tmp/node_exporter/node_exporter-{{ node_exporter_version }}.linux-{{ _target_arch }}/node_exporter"
-        dest: /usr/local/bin/node_exporter
-        mode: '0755'
-        remote_src: yes
-
-    - name: Clean up temporary files | 清理临时文件
-      file:
-        path: /tmp/node_exporter
-        state: absent
-  when: >
-    not node_exporter_binary.stat.exists or
-    (installed_version.stdout is defined and installed_version.stdout != node_exporter_version)
-
-# -----------------------------------------------------------------------------
-# 用户和服务配置 | User and Service Configuration
-# -----------------------------------------------------------------------------
-- name: Create node_exporter user | 创建 node_exporter 用户
-  user:
-    name: node_exporter
-    system: yes
-    shell: /bin/false
-    create_home: no
-
-- name: Create node_exporter systemd service | 创建 node_exporter systemd 服务
-  template:
-    src: node_exporter.service.j2
-    dest: /etc/systemd/system/node_exporter.service
-    mode: '0644'
-    backup: yes
-  notify:
-    - Reload systemd
-    - Restart node_exporter
-
-- name: Enable and start node_exporter | 启用并启动 node_exporter
-  service:
-    name: node_exporter
-    state: started
-    enabled: yes
-
-- name: Verify node_exporter is responding
-  uri:
-    url: "http://localhost:{{ node_exporter_port }}/metrics"
-    status_code: 200
-  register: node_exporter_health
-  retries: 3
-  delay: 5
-  until: node_exporter_health.status == 200
+- name: Verify node_exporter health
+  ansible.builtin.import_tasks: verify.yml
+  tags: [node_exporter, node_exporter_verify]

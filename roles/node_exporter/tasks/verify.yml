@@ -1,0 +1,69 @@
+---
+# =============================================================================
+# node_exporter - verify | 健康检查
+# =============================================================================
+# Roll-out pattern: verify the metrics endpoint; on failure show the journal,
+# restore the unit file backup produced by this run (if any), restart and fail.
+# =============================================================================
+
+- name: Verify node_exporter is serving metrics
+  block:
+    - name: Wait for the node_exporter metrics endpoint
+      ansible.builtin.uri:
+        url: "{{ node_exporter_health_url }}"
+        status_code: 200
+      register: node_exporter_health
+      retries: "{{ node_exporter_verify_retries }}"
+      delay: "{{ node_exporter_verify_delay }}"
+      until: node_exporter_health.status == 200
+
+    - name: Report node_exporter health
+      ansible.builtin.debug:
+        msg: "node_exporter {{ node_exporter_version }} healthy at {{ node_exporter_health_url }}"
+  rescue:
+    - name: Collect recent node_exporter journal entries
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ node_exporter_service_name }}"
+          - -n
+          - "50"
+          - --no-pager
+      register: node_exporter_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Show recent node_exporter journal entries
+      ansible.builtin.debug:
+        msg: "{{ node_exporter_journal.stdout_lines | default([]) }}"
+
+    - name: Restore the previous node_exporter unit file
+      ansible.builtin.copy:
+        src: "{{ node_exporter_unit_result.backup_file }}"
+        dest: "{{ node_exporter_unit_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when: node_exporter_unit_result.backup_file is defined
+
+    - name: Restart node_exporter with the restored unit file
+      ansible.builtin.systemd_service:
+        name: "{{ node_exporter_service_name }}"
+        daemon_reload: true
+        state: restarted
+      register: node_exporter_restore_restart
+      failed_when: false
+      when: node_exporter_unit_result.backup_file is defined
+
+    - name: Fail because node_exporter did not become healthy
+      ansible.builtin.fail:
+        msg: >-
+          node_exporter did not return HTTP 200 on {{ node_exporter_health_url }}
+          after {{ node_exporter_verify_retries }} attempts.
+          {{ 'The previous unit file was restored and the service restarted (result: '
+             ~ (node_exporter_restore_restart.failed | default(false) | ternary('restart failed', 'restarted'))
+             ~ ').' if node_exporter_unit_result.backup_file is defined
+             else 'No unit file backup from this run exists, nothing was restored.' }}
+          Inspect the journal output above and `systemctl status {{ node_exporter_service_name }}`.

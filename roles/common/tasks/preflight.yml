@@ -1,0 +1,43 @@
+---
+# =============================================================================
+# Preflight: facts, supported OS, variable sanity | 预检
+# =============================================================================
+
+- name: Gather minimal facts when they are missing | 缺少事实时收集最小事实集
+  ansible.builtin.setup:
+    gather_subset:
+      - min
+  when: ansible_os_family is not defined or ansible_distribution_major_version is not defined
+
+- name: Assert the operating system family is supported | 断言操作系统受支持
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in ['Debian', 'RedHat']
+    fail_msg: >-
+      roles/common supports Debian/Ubuntu and RedHat-family hosts only
+      (detected: {{ ansible_os_family | default('unknown') }}).
+    quiet: true
+
+- name: Assert role variables are well-formed | 断言角色变量格式正确
+  ansible.builtin.assert:
+    that:
+      - common_ssh_port | int >= 1
+      - common_ssh_port | int <= 65535
+      - common_packages is sequence
+      - common_packages is not string
+      - common_ntp_servers is sequence
+      - common_ntp_servers is not string
+      - common_admin_users is sequence
+      - common_admin_users | rejectattr('name', 'defined') | list | length == 0
+      - common_sysctl is mapping
+      - common_security_limits is sequence
+      - common_disable_services is sequence
+    fail_msg: >-
+      Invalid roles/common variables: common_ssh_port must be 1-65535, list
+      variables must be lists, common_sysctl must be a mapping and every
+      common_admin_users item needs a `name`.
+    quiet: true
+
+- name: Record the SSH service name once | 记录 SSH 服务名
+  ansible.builtin.set_fact:
+    common_ssh_service_name: "{{ common_service_name }}"

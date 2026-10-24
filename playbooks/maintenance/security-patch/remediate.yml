@@ -1,39 +1,98 @@
-- name: Refresh apt metadata before remediation
-  ansible.builtin.apt:
-    update_cache: yes
+---
+# Remediation stage | 修复阶段
+# Packages are only touched when updates are allowed AND the pre-scan found findings
+# with a fixed version. A failing package manager must not abort the host (we still
+# want the post-scan and the report), so the update runs in its own block/rescue and
+# the outcome is normalised into security_patch_update_result = {rc, changed, stdout,
+# stderr} for both OS families (the apt module returns no rc, so one is synthesised).
+
+- name: Apply OS updates and record the outcome
   when:
-    - ansible_os_family == 'Debian'
+    - security_patch_apply_updates | bool
     - security_patch_before_patchable_count | int > 0
+  block:
+    - name: Apply Debian or Ubuntu updates
+      ansible.builtin.apt:
+        upgrade: dist
+        update_cache: true
+        lock_timeout: "{{ security_patch_apt_lock_timeout | int }}"
+        dpkg_options: force-confdef,force-confold
+        autoremove: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      register: security_patch_apt_result
+      retries: 3
+      delay: 10
+      until: security_patch_apt_result is succeeded
+      when: ansible_os_family == 'Debian'
 
-- name: Apply Debian or Ubuntu updates
-  ansible.builtin.shell: |
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade
-  register: security_patch_update_result
-  changed_when: security_patch_update_result.rc == 0
-  failed_when: false
+    - name: Apply RedHat-family updates
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_only: true
+        update_cache: true
+        security: "{{ security_patch_dnf_security_only | bool }}"
+        bugfix: false
+      register: security_patch_dnf_result
+      retries: 3
+      delay: 10
+      until: security_patch_dnf_result is succeeded
+      when: ansible_os_family == 'RedHat'
+
+    - name: Record successful package update result
+      ansible.builtin.set_fact:
+        security_patch_update_result:
+          rc: 0
+          changed: "{{ security_patch_pkg_result.changed | default(false) | bool }}"
+          stdout: >-
+            {{ security_patch_pkg_result.stdout
+               | default(security_patch_pkg_result.results | default([]) | join('\n')) }}
+          stderr: "{{ security_patch_pkg_result.stderr | default('') }}"
+      vars:
+        security_patch_pkg_result: >-
+          {{ security_patch_apt_result if ansible_os_family == 'Debian' else security_patch_dnf_result }}
+
+  rescue:
+    - name: Record failed package update result
+      ansible.builtin.set_fact:
+        security_patch_update_result:
+          rc: "{{ (ansible_failed_result.rc | default(1) | int) or 1 }}"
+          changed: "{{ ansible_failed_result.changed | default(false) | bool }}"
+          stdout: >-
+            {{ ansible_failed_result.stdout
+               | default(ansible_failed_result.results | default([]) | join('\n')) }}
+          stderr: >-
+            {{ ansible_failed_result.stderr
+               | default(ansible_failed_result.msg | default('package update failed')) }}
+
+    - name: Show package update failure
+      ansible.builtin.debug:
+        msg: >-
+          Package update failed on {{ inventory_hostname }}
+          (rc={{ security_patch_update_result.rc }}); continuing with the post-scan
+
+# Sibling task files are included by relative path: Ansible resolves it against the
+# directory of the including file, and so does ansible-lint.
+- name: Detect whether a reboot is required
+  ansible.builtin.include_tasks: reboot-check.yml
+
+- name: Reboot the host to finish applying updates
+  ansible.builtin.reboot:
+    msg: "AnixOps security patching: rebooting to apply updates"
+    reboot_timeout: "{{ security_patch_reboot_timeout | int }}"
+  register: security_patch_reboot_result
   when:
-    - ansible_os_family == 'Debian'
-    - security_patch_before_patchable_count | int > 0
+    - security_patch_allow_reboot | bool
+    - security_patch_apply_updates | bool
+    - security_patch_reboot_required | bool
+    - security_patch_update_result.rc | int == 0
 
-- name: Apply RedHat-family updates
-  ansible.builtin.shell: |
-    dnf -y upgrade --refresh
-  register: security_patch_update_result
-  changed_when: security_patch_update_result.rc == 0
-  failed_when: false
-  when:
-    - ansible_os_family == 'RedHat'
-    - security_patch_before_patchable_count | int > 0
-
-- name: Check whether a reboot is required on Debian or Ubuntu
-  ansible.builtin.stat:
-    path: /var/run/reboot-required
-  register: security_patch_reboot_required_file
-  changed_when: false
-  when: ansible_os_family == 'Debian'
-
-- name: Set reboot flag for Debian or Ubuntu
+- name: Record that the host was rebooted
   ansible.builtin.set_fact:
-    security_patch_reboot_required: "{{ security_patch_reboot_required_file.stat.exists | default(false) }}"
-  when: ansible_os_family == 'Debian'
+    security_patch_rebooted: true
+  when: security_patch_reboot_result is not skipped
+
+- name: Re-check the reboot flag after rebooting
+  ansible.builtin.include_tasks: reboot-check.yml
+  when: security_patch_rebooted | bool
