@@ -1,0 +1,100 @@
+name: Set up Ansible
+description: >-
+  Install the pinned Python/Ansible toolchain, Galaxy collections, the SSH
+  private key and (optionally) generate the inventory from servers-config.yml.
+  Shared by every workflow so the control-node setup is defined exactly once.
+
+inputs:
+  python-version:
+    description: Python version to install.
+    required: false
+    default: "3.11"
+  ssh-private-key:
+    description: SSH private key used to reach the fleet. Leave empty for lint-only jobs.
+    required: false
+    default: ""
+  generate-inventory:
+    description: Generate the inventory from servers-config.yml ("true"/"false").
+    required: false
+    default: "true"
+  inventory-mode:
+    description: Inventory generator mode (local or github-actions).
+    required: false
+    default: "github-actions"
+  install-collections:
+    description: Install Galaxy collections from requirements.yml ("true"/"false").
+    required: false
+    default: "true"
+
+outputs:
+  inventory-path:
+    description: Absolute path of the generated inventory (empty when not generated).
+    value: ${{ steps.inventory.outputs.path }}
+  ssh-key-path:
+    description: Absolute path of the written SSH private key (empty when not written).
+    value: ${{ steps.ssh.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: requirements.txt
+
+    - name: Install Python dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        python -m pip install --requirement requirements.txt
+
+    - name: Install Galaxy collections
+      if: inputs.install-collections == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        ansible-galaxy collection install --requirements-file requirements.yml
+
+    - name: Write SSH private key
+      id: ssh
+      if: inputs.ssh-private-key != ''
+      shell: bash
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
+      run: |
+        set -euo pipefail
+        key_dir="${RUNNER_TEMP}/ssh"
+        key_path="${key_dir}/id_ansible"
+        mkdir -p "${key_dir}"
+        chmod 700 "${key_dir}"
+        printf '%s\n' "${SSH_PRIVATE_KEY}" > "${key_path}"
+        chmod 600 "${key_path}"
+        echo "path=${key_path}" >> "${GITHUB_OUTPUT}"
+        echo "SSH_KEY_PATH=${key_path}" >> "${GITHUB_ENV}"
+        echo "ANSIBLE_PRIVATE_KEY_FILE=${key_path}" >> "${GITHUB_ENV}"
+
+    - name: Generate inventory
+      id: inventory
+      if: inputs.generate-inventory == 'true'
+      shell: bash
+      env:
+        INVENTORY_MODE: ${{ inputs.inventory-mode }}
+      run: |
+        set -euo pipefail
+        inventory_path="${RUNNER_TEMP}/ansible-inventory.yml"
+        python3 tools/generate_inventory.py "${INVENTORY_MODE}" --output "${inventory_path}"
+        echo "path=${inventory_path}" >> "${GITHUB_OUTPUT}"
+        echo "ANSIBLE_INVENTORY=${inventory_path}" >> "${GITHUB_ENV}"
+
+    - name: Export Ansible runtime defaults
+      shell: bash
+      run: |
+        set -euo pipefail
+        {
+          echo "ANSIBLE_HOST_KEY_CHECKING=False"
+          echo "ANSIBLE_FORCE_COLOR=True"
+          echo "PY_COLORS=1"
+        } >> "${GITHUB_ENV}"

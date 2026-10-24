@@ -34,3 +34,7 @@ ansible.local.cfg
 *.log
 *.zip
 security-patch-report.json
+
+# Ansible local runtime state (logs, fact cache, control sockets)
+.ansible/
+collections/

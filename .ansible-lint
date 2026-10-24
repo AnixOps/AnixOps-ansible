@@ -1,40 +1,31 @@
-# Ansible Lint Configuration
-# https://ansible.readthedocs.io/projects/lint/
-
-# Use the production profile for stricter checks
+---
+# ansible-lint configuration — strict "production" profile.
+# https://ansible.readthedocs.io/projects/lint/configuring/
 profile: production
 
-# Skip rules that are not applicable or intentionally violated
-skip_list:
-  # Allow shell commands where no dedicated module exists
-  - no-changed-when
-  # Allow command without changed_when for read-only operations
-  - command-instead-of-module
-  # We intentionally use shell for piped commands in some cases
-  - no-shell
+exclude_paths:
+  - .ansible/
+  - .cache/
+  - .git/
+  - .github/
+  - collections/
+  - venv/
+  - .venv/
+  - observability/
+  - tests/fixtures/
 
-# Warn only for these (don't fail)
+kinds:
+  - playbook: "playbooks/**/*.yml"
+  - playbook: "tests/integration/*.yml"
+  - tasks: "playbooks/maintenance/security-patch/*.yml"
+  - tasks: "roles/*/tasks/**/*.yml"
+  - vars: "inventories/**/group_vars/**/*.yml"
+  - vars: "inventories/**/host_vars/**/*.yml"
+
+# Nothing is skipped: every rule in the production profile must pass.
+skip_list: []
+
+# Informational only.
 warn_list:
-  # Role name convention warnings
-  - role-name
-  # Experimental rules
   - experimental
-  # Pre-existing style issues — flagged for gradual improvement
-  - name[casing]
-  - name[template]
-  - var-naming
-  - risky-shell-pipe
   - yaml[line-length]
-  - fqcn
-  - deprecated-module
-  - ignore-errors
-  - key-order
-  - risky-file-permissions
-  - command-instead-of-shell
-  - no-jinja-when
-  - deprecated-local-action
-  # Galaxy metadata schema (EL platform versions not validated correctly)
-  - schema[meta]
-
-# Custom rules configuration
-rules: {}

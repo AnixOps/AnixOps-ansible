@@ -1,4 +1,4 @@
-﻿# AnixOps Ansible Infrastructure
+# AnixOps Ansible Infrastructure
 
 Ansible automation for AnixOps' multi-region server fleet. The repository covers provisioning, maintenance, observability, networking, Kubernetes support, and weekly security patching.
 
