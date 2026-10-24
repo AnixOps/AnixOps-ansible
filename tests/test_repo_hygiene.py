@@ -92,6 +92,12 @@ def _looks_garbled(run: str) -> bool:
     return common * 2 < len(run)
 
 
+def _garbage_run(run: str) -> bool:
+    """3+ CJK chars without a single common hanzi, or 5+ with at most a quarter common."""
+    common = sum(1 for char in run if _is_common_hanzi(char))
+    return (len(run) >= 3 and common == 0) or (len(run) >= 5 and common * 4 <= len(run))
+
+
 def mojibake_problems(text: str) -> list[tuple[int, str, str]]:
     """``[(lineno, reason, snippet), ...]`` for every line that carries mojibake."""
     problems = []
@@ -99,9 +105,8 @@ def mojibake_problems(text: str) -> list[tuple[int, str, str]]:
         reason = None
         if MOJIBAKE_CHAR_RE.search(line):
             reason = "GBK-decoded UTF-8 character"
-        elif any(len(m.group(0)) >= 3 and not any(_is_common_hanzi(c) for c in m.group(0))
-                 for m in CJK_RUN_RE.finditer(line)):
-            reason = "run of CJK characters with no common hanzi (GBK-decoded UTF-8)"
+        elif any(_garbage_run(m.group(0)) for m in CJK_RUN_RE.finditer(line)):
+            reason = "run of CJK characters with (almost) no common hanzi (GBK-decoded UTF-8)"
         elif any(_looks_garbled(m.group(1)[-4:]) for m in CJK_QUESTION_RE.finditer(line)):
             reason = "'?' right after garbled CJK text (lost byte)"
         elif any(not (CJK_RUN_RE.match(m.group(1)) and _is_common_hanzi(m.group(1)))

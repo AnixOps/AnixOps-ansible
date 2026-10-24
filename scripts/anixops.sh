@@ -73,6 +73,7 @@ declare -a POSITIONAL=()
 declare -a ANSIBLE_OPTS=()
 COMMAND=""
 declare -a ARGS=()
+PLAN_MODE_OVERRIDE=""
 
 # --- Colours & logging -------------------------------------------------------
 C_RED="" C_GREEN="" C_YELLOW="" C_BLUE="" C_CYAN="" C_BOLD="" C_RESET=""
@@ -359,7 +360,7 @@ show_plan() {
   local playbook=$1
   shift
   local mode="apply changes"
-  if (( DRY_RUN )); then mode="check mode + diff (no changes)"; fi
+  if (( DRY_RUN )); then mode="${PLAN_MODE_OVERRIDE:-check mode + diff (no changes)}"; fi
   {
     printf '\n%sPlan | 执行计划%s\n' "$C_BOLD" "$C_RESET"
     printf '  %-12s %s\n' "Command:"   "$COMMAND"
@@ -742,6 +743,7 @@ cmd_rollback_files() {
   if (( DRY_RUN )); then
     # The playbook has its own dry-run switch; --check would hide the backup listing.
     extra+=(-e "rollback_dry_run=true")
+    PLAN_MODE_OVERRIDE="playbook dry run (rollback_dry_run=true, lists backups only)"
     log_info "Dry run: the playbook lists the backup files it would restore."
   fi
   show_plan maintenance/rollback.yml "${extra[@]}"

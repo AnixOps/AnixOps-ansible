@@ -1,41 +1,64 @@
-# Speedtest Role
+# Speedtest Role | Speedtest 角色
 
-部署 Speedtest CLI 工具，用于节点性能测试。
+Installs the AnixOps speedtest CLI binary from GitHub releases on every host.
+No daemon, no configuration files.
 
-## 配置变量
+## Behaviour | 行为
 
-| 变量 | 默认值 | 说明 |
-|------|------|------|
-| `speedtest_install_dir` | `/usr/local/bin` | 安装路径 |
-| `speedtest_bin_name` | `speedtest` | 二进制名称 |
+1. `stat` the installed binary.
+2. When it is missing (or `speedtest_force_update: true`): download the
+   release asset for `speedtest_arch` (amd64/arm64 via `_target_arch`) into a
+   `tempfile` directory (`get_url` with retries, optional `speedtest_checksum`),
+   run `--version` on the download as a sanity check, then copy it into
+   `speedtest_install_dir` (the copy only changes the file when the content
+   differs). The temp directory is removed in `always`.
+3. Verify with `speedtest --version` and print a one-line summary.
 
-## 使用方法
+`releases/latest/download/...` URLs are not cacheable, so the role deliberately
+does not re-download on every run; use `speedtest_force_update: true` (or pin
+`speedtest_version`) to upgrade.
 
-### GitHub Actions
+## Variables | 变量
 
-```yaml
-workflow_dispatch:
-  inputs:
-    role: speedtest
-    target_group: all
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `speedtest_repo_owner` / `speedtest_repo_name` | `AnixOps` / `AnixOps-speedtest` | GitHub repository. |
+| `speedtest_version` | `latest` | `latest` or an exact release tag (e.g. `v1.2.0`). |
+| `speedtest_arch` | `_target_arch` or mapped `ansible_architecture` | Asset architecture. |
+| `speedtest_asset_name` | `speedtest-linux-<arch>` | Release asset name. |
+| `speedtest_download_url` | derived from the above | Full URL; override for mirrors. |
+| `speedtest_checksum` | `""` | Optional `sha256:<hex>`. |
+| `speedtest_download_timeout` / `speedtest_download_retries` / `speedtest_download_delay` | `60` / `5` / `10` | Download behaviour. |
+| `speedtest_install_dir` / `speedtest_bin_name` | `/usr/local/bin` / `speedtest` | Install location. |
+| `speedtest_force_update` | `false` | Re-download even when the binary exists. |
 
-### 本地部署
+Lifecycle contract (no service): `speedtest_service_name: ""`,
+`speedtest_port: 0`, `speedtest_health_url: ""`, `speedtest_backup_files: []`,
+`speedtest_packages: []`, `speedtest_config_dirs: []`.
+
+Removed (unused) variables: `speedtest_repo_branch`, `speedtest_install_method`.
+
+## Usage | 使用
 
 ```bash
-ansible-playbook playbooks/provision/site.yml \
-  --tags speedtest
-```
-
-## 部署流程
-
-1. 从 GitHub Releases 下载二进制
-2. 安装到 `/usr/local/bin/speedtest`
-3. 验证安装
-
-## 使用
-
-```bash
+ansible-playbook playbooks/provision/site.yml --tags speedtest
+ansible-playbook playbooks/provision/site.yml --tags speedtest -e speedtest_force_update=true   # upgrade
 speedtest --help
-speedtest --server <server_id>
+```
+
+## Verification | 验证
+
+```bash
+/usr/local/bin/speedtest --version
+```
+
+A second run of the role must report `changed=0`.
+
+## Rollback | 回滚
+
+Pin the previous release and force the update:
+
+```bash
+ansible-playbook playbooks/provision/site.yml --tags speedtest \
+  -e speedtest_version=v1.1.0 -e speedtest_force_update=true
 ```

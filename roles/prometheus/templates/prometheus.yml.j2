@@ -39,8 +39,7 @@ scrape_configs:
       - targets: ['localhost:{{ prometheus_port }}']
         labels:
           alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
-{{ alias_relabel() -}}
-
+{{ alias_relabel() }}
 {# ---------------------------------------------------------------------------
    node_exporter: one target per inventory host.
    - skipped: hosts whose ansible_host renders empty (e.g. unset env var), hosts
@@ -50,10 +49,16 @@ scrape_configs:
    - hosts without ansible_host are scraped by inventory name.
    --------------------------------------------------------------------------- #}
 {% set prometheus_group_hosts = groups[prometheus_node_exporter_group] | default([]) | sort %}
+{% set prometheus_ns = namespace(seen=[], aliased=[], plain=[]) %}
+{% for host in prometheus_group_hosts if host != inventory_hostname %}
+{%   if hostvars[host]['server_alias'] is defined %}
+{%     set prometheus_ns.aliased = prometheus_ns.aliased + [host] %}
+{%   else %}
+{%     set prometheus_ns.plain = prometheus_ns.plain + [host] %}
+{%   endif %}
+{% endfor %}
 {% set prometheus_ordered_hosts = ([inventory_hostname] if inventory_hostname in prometheus_group_hosts else [])
-     + (prometheus_group_hosts | select('ne', inventory_hostname) | select('in', hostvars | dict2items | selectattr('value.server_alias', 'defined') | map(attribute='key') | list) | list)
-     + (prometheus_group_hosts | select('ne', inventory_hostname) | reject('in', hostvars | dict2items | selectattr('value.server_alias', 'defined') | map(attribute='key') | list) | list) %}
-{% set prometheus_ns = namespace(seen=[]) %}
+     + prometheus_ns.aliased + prometheus_ns.plain %}
   - job_name: node_exporter
     static_configs:
 {% for host in prometheus_ordered_hosts %}
