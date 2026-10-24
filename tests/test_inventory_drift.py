@@ -143,7 +143,7 @@ def test_hosts_yml_is_marked_as_generated_and_clean():
     text = HOSTS_PATH.read_text(encoding="utf-8")
 
     assert text.splitlines()[0] == HEADER
-    assert not text.startswith("﻿")
+    assert not text.startswith("\ufeff")
     assert "\r" not in text and "\t" not in text
     assert text.endswith("\n")
     assert MOJIBAKE_RE.search(text) is None

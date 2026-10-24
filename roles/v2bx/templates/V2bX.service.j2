@@ -2,7 +2,7 @@
 [Unit]
 Description=V2bX Proxy Node
 Documentation=https://github.com/{{ v2bx_repo_owner }}/{{ v2bx_repo_name }}
-After={{ (['network-online.target'] + (v2bx_extra_after_units | default([]))) | join(' ') }}
+After=network-online.target{% for unit in v2bx_extra_after_units | default([]) %} {{ unit }}{% endfor %}
 Wants=network-online.target
 StartLimitIntervalSec=300
 StartLimitBurst=5

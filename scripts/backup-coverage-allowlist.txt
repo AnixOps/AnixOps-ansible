@@ -19,3 +19,12 @@
 #
 # Unused entries are reported as warnings so stale exemptions get removed.
 # =============================================================================
+
+# Static console assets copied from the upstream release tarball (directory
+# sync with remote_src); they are never edited on the host, so a backup has no
+# rollback value and the directory copy does not support per-file backups.
+roles/prometheus/tasks/install.yml:Install console templates and libraries*
+
+# Secret state file (0600). Rotated AuthKeys must not linger in backup copies;
+# the role regenerates it from the panel or V2BX_AUTH_KEY when missing.
+roles/v2bx/tasks/authkey.yml:Store the AuthKey on the node for future runs*
