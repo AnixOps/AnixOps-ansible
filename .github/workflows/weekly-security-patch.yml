@@ -24,6 +24,15 @@ on:
         required: false
         type: boolean
         default: true
+      allow_reboot:
+        description: 'Reboot hosts that need it (inventory = per-host/group security_patch_allow_reboot)'
+        required: false
+        type: choice
+        options:
+          - inventory
+          - 'true'
+          - 'false'
+        default: inventory
 
 permissions:
   contents: read
@@ -48,6 +57,7 @@ jobs:
       # Scheduled runs have no inputs: patch everything and apply updates.
       TARGET_GROUP: ${{ github.event.inputs.target_group || 'all' }}
       APPLY_UPDATES: ${{ github.event.inputs.apply_updates || 'true' }}
+      ALLOW_REBOOT: ${{ github.event.inputs.allow_reboot || 'inventory' }}
 
     steps:
       - name: Checkout code
@@ -85,6 +95,10 @@ jobs:
             -e "security_patch_target_group=${TARGET_GROUP}"
             -e "security_patch_apply_updates=${APPLY_UPDATES}"
           )
+          # "inventory" leaves security_patch_allow_reboot to host/group variables.
+          if [[ "${ALLOW_REBOOT}" == "true" || "${ALLOW_REBOOT}" == "false" ]]; then
+            args+=(-e "security_patch_allow_reboot=${ALLOW_REBOOT}")
+          fi
           printf 'Executing: ansible-playbook'
           printf ' %q' "${args[@]}"
           printf '\n'

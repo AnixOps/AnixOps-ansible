@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_https:
+        description: 'Answer port 80 with a 301 to https:// (needs SSL enabled; keep false during HTTP-01 ACME)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -120,6 +125,7 @@ jobs:
       ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_EYEBALL_BIAS: ${{ secrets.ANIXOPS_NODE_PLATFORM_PROBE_GLOBALPING_EYEBALL_BIAS }}
       INVENTORY_PATH: inventories/production/node-platform.actions.yml
       DRY_RUN: ${{ inputs.dry_run }}
+      ANIXOPS_NODE_PLATFORM_FORCE_HTTPS: ${{ inputs.force_https }}
 
     steps:
       - name: Validate required environment

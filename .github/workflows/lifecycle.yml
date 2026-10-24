@@ -35,7 +35,7 @@ on:
         default: 'nginx'
 
       version:
-        description: 'Rollback version (prev or vYYYYMMDD_HHMMSS)'
+        description: 'Rollback version (prev, initial or vYYYYMMDDTHHMMSS)'
         required: false
         type: string
         default: 'prev'
@@ -64,7 +64,7 @@ on:
         default: 'all'
 
       force:
-        description: 'Force execution (required for rollback/cleanup on target_group=all)'
+        description: 'Confirm a group-wide rollback/cleanup (required for target_group=all and any multi-host group)'
         required: false
         type: boolean
         default: false
@@ -111,8 +111,8 @@ jobs:
             echo "::error::${ACTION} on target_group=all requires force=true"
             exit 1
           fi
-          if [[ "${ACTION}" == "rollback" && ! "${VERSION}" =~ ^(prev|v[0-9]{8}_[0-9]{6})$ ]]; then
-            echo "::error::version must be 'prev' or vYYYYMMDD_HHMMSS"
+          if [[ "${ACTION}" == "rollback" && ! "${VERSION}" =~ ^(prev|initial|v[0-9]{8}T[0-9]{6})$ ]]; then
+            echo "::error::version must be 'prev', 'initial' or vYYYYMMDDTHHMMSS"
             exit 1
           fi
           if [[ ! "${KEEP_BACKUPS}" =~ ^[0-9]+$ ]]; then
@@ -177,7 +177,7 @@ jobs:
             )
             case "${ACTION}" in
               rollback)
-                args+=(-e "lifecycle_version=${VERSION}" -e lifecycle_hook_type=post_rollback)
+                args+=(-e "lifecycle_version=${VERSION}")
                 ;;
               cleanup)
                 args+=(-e cleanup_confirm=yes -e "cleanup_keep_backups=${KEEP_BACKUPS}")
@@ -186,6 +186,11 @@ jobs:
                 fi
                 ;;
             esac
+            # The playbook refuses rollback/cleanup on more than one host without lifecycle_confirm_all;
+            # force=true is the operator's explicit confirmation of a group-wide run.
+            if [[ "${FORCE}" == "true" ]]; then
+              args+=(-e lifecycle_confirm_all=true)
+            fi
           fi
 
           printf 'Executing: ansible-playbook'

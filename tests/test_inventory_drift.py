@@ -187,10 +187,10 @@ def test_pl1_k8s_membership_and_host_vars():
     assert pl1["host_vars"] == {
         "k8s_role": "master",
         "k8s_provider": "k3s",
-        "k3s_version": "v1.27.3+k3s1",
+        "k3s_version": "v1.31.5+k3s1",
         "k3s_server_args": "--disable traefik --disable servicelb --write-kubeconfig-mode 644",
         "kubeconfig_remote_path": "/etc/rancher/k3s/k3s.yaml",
-        "kubeconfig_local_path": "/tmp/k3s-pl-1-kubeconfig.yaml",
+        "kubeconfig_local_path": "~/.kube/k3s-pl-1.yaml",
         "cluster_name": "k3s-test-pl1",
         "kubeconfig_path": "/etc/rancher/k3s/k3s.yaml",
     }

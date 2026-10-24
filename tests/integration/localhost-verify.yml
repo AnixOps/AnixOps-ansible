@@ -1,0 +1,96 @@
+---
+# =============================================================================
+# Localhost integration verify | 本机集成测试 - 验证
+# =============================================================================
+# Checks that tests/integration/localhost-converge.yml left every service
+# running and answering on its health endpoint. Read-only.
+#
+#   sudo -E env "PATH=$PATH" "HOME=$HOME" \
+#     ansible-playbook -i localhost, -c local tests/integration/localhost-verify.yml
+#
+# Scope: localhost only. Risk: LOW (read-only).
+# =============================================================================
+
+- name: Localhost integration verify | 本机集成测试验证
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: false
+  tags: [integration]
+
+  vars:
+    integration_services:
+      - node_exporter
+      - promtail
+      - nginx
+    integration_endpoints:
+      - name: node_exporter
+        url: "http://127.0.0.1:9100/metrics"
+        contains: "node_exporter_build_info"
+      - name: promtail
+        url: "http://127.0.0.1:9080/ready"
+        contains: "Ready"
+      - name: nginx
+        url: "http://127.0.0.1:80/health"
+        contains: "healthy"
+
+  tasks:
+    - name: Collect service facts | 收集服务状态
+      ansible.builtin.service_facts:
+
+    - name: Assert every converged service is running and enabled | 断言服务运行且开机自启
+      ansible.builtin.assert:
+        that:
+          - (item ~ '.service') in ansible_facts.services
+          - ansible_facts.services[item ~ '.service'].state == 'running'
+          - ansible_facts.services[item ~ '.service'].status == 'enabled'
+        fail_msg: >-
+          {{ item }}.service is
+          {{ ansible_facts.services[item ~ '.service'].state | default('missing') }} /
+          {{ ansible_facts.services[item ~ '.service'].status | default('missing') }},
+          expected running / enabled
+        quiet: true
+      loop: "{{ integration_services }}"
+
+    - name: Probe health endpoints | 探测健康检查端点
+      ansible.builtin.uri:
+        url: "{{ item.url }}"
+        method: GET
+        status_code: 200
+        return_content: true
+        timeout: 10
+      register: integration_endpoint_results
+      retries: 6
+      delay: 5
+      until: integration_endpoint_results.status | default(0) == 200
+      loop: "{{ integration_endpoints }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Assert endpoint bodies look right | 断言端点返回内容正确
+      ansible.builtin.assert:
+        that:
+          - item.item.contains in item.content
+        fail_msg: "{{ item.item.name }}: '{{ item.item.contains }}' not found in {{ item.item.url }}"
+        quiet: true
+      loop: "{{ integration_endpoint_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Read UFW status when the firewall was converged | 读取 UFW 状态
+      ansible.builtin.command:
+        argv: [ufw, status]
+      register: integration_ufw_status
+      changed_when: false
+      when: integration_firewall_enabled | default(true) | bool
+
+    - name: Assert UFW is active | 断言 UFW 已启用
+      ansible.builtin.assert:
+        that:
+          - "'Status: active' in integration_ufw_status.stdout"
+        fail_msg: "UFW is not active: {{ integration_ufw_status.stdout }}"
+        quiet: true
+      when: integration_firewall_enabled | default(true) | bool

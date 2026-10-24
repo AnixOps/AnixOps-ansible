@@ -722,7 +722,9 @@ cmd_rollback() {
   require_role_arg "$role"
   warn_tags_overridden
   TAGS="rollback"
-  local -a extra=(-e "lifecycle_target_role=${role}" -e "lifecycle_hook_type=post_rollback")
+  # The playbook refuses multi-host rollbacks without lifecycle_confirm_all; the prompt below
+  # (or --yes) is that confirmation.
+  local -a extra=(-e "lifecycle_target_role=${role}" -e "lifecycle_confirm_all=true")
   if [[ -n "$version" ]]; then
     extra+=(-e "lifecycle_version=${version}")
   fi
@@ -736,7 +738,9 @@ cmd_rollback() {
 cmd_rollback_files() {
   local role=${ARGS[0]:-}
   require_role_arg "$role"
-  local -a extra=(-e "rollback_role=${role}")
+  # The playbook refuses multi-host rollbacks without rollback_confirm_all; the prompt below
+  # (or --yes) is that confirmation.
+  local -a extra=(-e "rollback_role=${role}" -e "rollback_confirm_all=true")
   if [[ -n "$ROLLBACK_TIMESTAMP" ]]; then
     extra+=(-e "rollback_timestamp=${ROLLBACK_TIMESTAMP}")
   fi
@@ -758,7 +762,10 @@ cmd_cleanup_role() {
   require_role_arg "$role"
   warn_tags_overridden
   TAGS="cleanup"
-  local -a extra=(-e "lifecycle_target_role=${role}" -e "cleanup_confirm=yes" -e "cleanup_keep_backups=${keep}")
+  local -a extra=(
+    -e "lifecycle_target_role=${role}" -e "cleanup_confirm=yes" -e "cleanup_keep_backups=${keep}"
+    -e "lifecycle_confirm_all=true"
+  )
   show_plan maintenance/lifecycle.yml "${extra[@]}"
   if (( ! DRY_RUN )); then
     confirm_typed "cleanup-role removes the '${role}' service, its configuration and all but ${keep} backups on ${LIMIT:-all hosts}."
@@ -970,9 +977,9 @@ ${C_BOLD}Maintenance${C_RESET}
 
 ${C_BOLD}Lifecycle (roles: $(join_words "${VALID_ROLES[@]}"))${C_RESET}
   status <role>            lifecycle.yml --tags status
-  rollback <role> [ver]    lifecycle.yml --tags rollback (version defaults to prev)
+  rollback <role> [ver]    lifecycle.yml --tags rollback (prev | initial | vYYYYMMDDTHHMMSS)
   rollback-files <role>    maintenance/rollback.yml: restore config backups
-                             [--timestamp YYYYMMDD_HHMMSS] [--dry-run]
+                             [--timestamp YYYY-MM-DD@HH] [--dry-run]
   cleanup-role <role>      lifecycle.yml --tags cleanup [--keep-backups N] (typed confirmation)
 
 ${C_BOLD}Kubernetes platforms${C_RESET}
@@ -1015,7 +1022,7 @@ ${C_BOLD}Exit codes${C_RESET}
 ${C_BOLD}Examples${C_RESET}
   ${SCRIPT_NAME} deploy --dry-run --tags nginx --limit web_servers
   ${SCRIPT_NAME} security-patch --scan-only --limit jp-1
-  ${SCRIPT_NAME} rollback-files nginx --timestamp 20260424_120000 --dry-run
+  ${SCRIPT_NAME} rollback-files nginx --timestamp 2026-04-24@12 --dry-run
   ${SCRIPT_NAME} deploy --yes -- --start-at-task "Deploy nginx configuration"
 EOF
 }

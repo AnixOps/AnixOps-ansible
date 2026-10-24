@@ -1,0 +1,58 @@
+---
+# =============================================================================
+# Localhost integration converge | 本机集成测试 - 部署
+# =============================================================================
+# Converges the baseline roles on the machine running Ansible. Used by the
+# `integration-localhost` job in .github/workflows/ansible-ci.yml (ubuntu-latest)
+# and runnable on any disposable Debian/Ubuntu host with systemd (for example
+# WSL with systemd=true):
+#
+#   sudo -E env "PATH=$PATH" "HOME=$HOME" \
+#     ansible-playbook -i localhost, -c local tests/integration/localhost-converge.yml
+#
+# A second run must report changed=0 (CI asserts this).
+# Scope: localhost only, never a production inventory.
+# Risk: LOW (disposable host); SSH, time sync and hostname are left untouched.
+#
+# Variables:
+#   integration_firewall_enabled  true  set false where UFW cannot load netfilter
+#                                       modules (unprivileged containers)
+# =============================================================================
+
+- name: Localhost integration converge | 本机集成测试部署
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: false
+  tags: [integration]
+
+  vars:
+    # common: keep remote access, clock and hostname of the runner untouched.
+    common_manage_ssh: false
+    common_manage_time: false
+    common_manage_hostname: false
+    common_manage_users: false
+    # promtail: no Loki is running; promtail still starts and reports ready.
+    promtail_loki_url: "http://127.0.0.1:3100"
+    # firewall: UFW with permissive defaults so the runner keeps its connectivity.
+    firewall_enabled: "{{ integration_firewall_enabled | default(true) }}"
+    firewall_default_incoming_policy: allow
+    firewall_whitelist: []
+
+  pre_tasks:
+    - name: Assert the integration suite only targets localhost | 断言仅针对本机
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname in ['localhost', '127.0.0.1']
+        fail_msg: "tests/integration/localhost-converge.yml must only run against localhost"
+        quiet: true
+
+  roles:
+    - role: common
+    - role: node_exporter
+    - role: promtail
+    - role: nginx
+    - role: firewall
