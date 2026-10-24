@@ -41,22 +41,20 @@
     quiet: true
   when: v2board_db_type == 'postgres'
 
-- name: Include Docker deployment tasks | Docker 部署
-  ansible.builtin.include_tasks: "{{ v2board_docker_task }}"
-  loop:
-    - install-docker.yml
-    - configure-docker.yml
-  loop_control:
-    loop_var: v2board_docker_task
+- name: Include Docker installation tasks | Docker 安装
+  ansible.builtin.include_tasks: install-docker.yml
   when: v2board_deploy_method == 'docker'
 
-- name: Include binary deployment tasks | 二进制部署
-  ansible.builtin.include_tasks: "{{ v2board_binary_task }}"
-  loop:
-    - install.yml
-    - configure.yml
-  loop_control:
-    loop_var: v2board_binary_task
+- name: Include Docker configuration tasks | Docker 配置
+  ansible.builtin.include_tasks: configure-docker.yml
+  when: v2board_deploy_method == 'docker'
+
+- name: Include binary installation tasks | 二进制安装
+  ansible.builtin.include_tasks: install.yml
+  when: v2board_deploy_method == 'binary'
+
+- name: Include binary configuration tasks | 二进制配置
+  ansible.builtin.include_tasks: configure.yml
   when: v2board_deploy_method == 'binary'
 
 - name: Include verification tasks | 验证

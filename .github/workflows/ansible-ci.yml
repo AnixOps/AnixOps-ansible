@@ -123,19 +123,27 @@ jobs:
           failed=0
           for playbook in "${candidates[@]}"; do
             # Task files (e.g. playbooks/maintenance/security-patch/*.yml) are not playbooks: skip them.
-            if ! python3 - "${playbook}" <<'PY'
+            # Exit codes: 0 = playbook, 1 = task/vars file, 2 = unparseable YAML (counts as a failure).
+            kind=0
+            python3 - "${playbook}" <<'PY' || kind=$?
           import sys
           import yaml
-          with open(sys.argv[1], encoding="utf-8") as handle:
-              document = yaml.safe_load(handle)
+          try:
+              with open(sys.argv[1], encoding="utf-8") as handle:
+                  document = yaml.safe_load(handle)
+          except (yaml.YAMLError, UnicodeDecodeError) as exc:
+              print(f"::error file={sys.argv[1]}::cannot parse YAML: {str(exc).splitlines()[0]}")
+              sys.exit(2)
           plays = document if isinstance(document, list) else []
-          is_playbook = bool(plays) and all(
-              isinstance(play, dict) and ("hosts" in play or "import_playbook" in play) for play in plays
-          )
+          play_keys = {"hosts", "import_playbook", "ansible.builtin.import_playbook"}
+          is_playbook = any(isinstance(play, dict) and play_keys & set(play) for play in plays)
           sys.exit(0 if is_playbook else 1)
           PY
-            then
+            if (( kind == 1 )); then
               echo "skip (not a playbook): ${playbook}"
+              continue
+            elif (( kind != 0 )); then
+              failed=$((failed + 1))
               continue
             fi
             echo "::group::ansible-playbook --syntax-check ${playbook}"

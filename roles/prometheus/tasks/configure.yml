@@ -10,7 +10,8 @@
 # -----------------------------------------------------------------------------
 - name: Collect alert rule files from the repository | 收集仓库中的告警规则文件
   ansible.builtin.set_fact:
-    prometheus_rule_files: "{{ lookup('ansible.builtin.fileglob', prometheus_rules_src_dir ~ '/*.yml', wantlist=True) | sort }}"
+    prometheus_rule_files: >-
+      {{ lookup('ansible.builtin.fileglob', prometheus_rules_src_dir ~ '/*.yml', wantlist=True) | sort }}
 
 - name: Deploy alert rule files | 部署告警规则文件
   ansible.builtin.copy:
@@ -40,7 +41,8 @@
     state: absent
   loop: >-
     {{ (prometheus_rules_on_host.files | default([]) | map(attribute='path') | list)
-       | difference(prometheus_rule_files | map('basename') | map('regex_replace', '^', prometheus_rules_dir ~ '/') | list) }}
+       | difference(prometheus_rule_files | map('basename')
+                    | map('regex_replace', '^', prometheus_rules_dir ~ '/') | list) }}
   when: prometheus_rules_prune | bool
   notify: Reload prometheus
 

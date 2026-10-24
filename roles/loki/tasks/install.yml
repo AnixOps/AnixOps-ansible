@@ -87,7 +87,7 @@
 
     - name: Download loki release archive | 下载 loki 发布包
       ansible.builtin.get_url:
-        url: "{{ loki_download_url }}/v{{ loki_version }}/loki-linux-{{ loki_arch }}.zip"
+        url: "{{ loki_release_url }}"
         dest: "{{ loki_tmpdir.path }}/loki.zip"
         checksum: "{{ loki_checksum if loki_checksum | length > 0 else omit }}"
         timeout: "{{ loki_download_timeout }}"

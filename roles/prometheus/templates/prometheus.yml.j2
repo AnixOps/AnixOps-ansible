@@ -10,7 +10,7 @@
         target_label: target_ip
       - source_labels: [alias]
         target_label: instance
-{% endmacro %}
+{%- endmacro %}
 {% set prometheus_self_alias = server_alias | default(inventory_hostname) | string %}
 global:
   scrape_interval: {{ prometheus_scrape_interval }}
@@ -77,7 +77,7 @@ scrape_configs:
           inventory_host: {{ host | to_json }}
 {%   endif %}
 {% endfor %}
-{{ alias_relabel() -}}
+{{ alias_relabel() }}
     metric_relabel_configs:
       - regex: 'server|hostname'
         action: labeldrop
@@ -88,7 +88,7 @@ scrape_configs:
       - targets: ['localhost:{{ prometheus_promtail_port }}']
         labels:
           alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
-{{ alias_relabel() -}}
+{{ alias_relabel() }}
 {% endif %}
 {% if prometheus_scrape_loki | bool %}
 
@@ -97,7 +97,7 @@ scrape_configs:
       - targets: ['localhost:{{ prometheus_loki_port }}']
         labels:
           alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
-{{ alias_relabel() -}}
+{{ alias_relabel() }}
 {% endif %}
 {% if prometheus_scrape_grafana | bool %}
 
@@ -106,7 +106,7 @@ scrape_configs:
       - targets: ['localhost:{{ prometheus_grafana_port }}']
         labels:
           alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
-{{ alias_relabel() -}}
+{{ alias_relabel() }}
 {% endif %}
 {% if prometheus_speedtest_exporter_host | string | length > 0 %}
 

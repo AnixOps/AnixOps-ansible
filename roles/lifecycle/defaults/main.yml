@@ -43,6 +43,8 @@ lifecycle_pre_rollback_file: "{{ lifecycle_state_dir }}/{{ lifecycle_target_role
 # Hook execution | Hook 执行控制
 # -----------------------------------------------------------------------------
 lifecycle_hooks_enabled: "{{ hooks_enabled | default(true) }}"
+# Dry run: post_rollback and cleanup only print their plan and stop.
+lifecycle_dry_run: "{{ hooks_dry_run | default(false) }}"
 
 # -----------------------------------------------------------------------------
 # Backups (versioned snapshot directories) | 备份
@@ -118,6 +120,7 @@ lifecycle_cleanup_strategy: "{{ cleanup_strategy | default('conservative') }}"
 lifecycle_cleanup_keep_data: "{{ cleanup_keep_data | default(true) }}"
 lifecycle_cleanup_keep_package: "{{ cleanup_keep_package | default(false) }}"
 lifecycle_cleanup_keep_state: false
+lifecycle_cleanup_archive_enabled: true
 lifecycle_cleanup_remove_unit: true
 lifecycle_cleanup_archive_path: "{{ cleanup_archive_path | default('/var/lib/anixops/archive') }}"
 lifecycle_cleanup_keep_backups: "{{ cleanup_keep_backups | default(5) }}"

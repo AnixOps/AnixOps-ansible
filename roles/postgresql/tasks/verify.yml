@@ -3,11 +3,20 @@
 # PostgreSQL verification | PostgreSQL 验证
 # =============================================================================
 
-- name: Check the PostgreSQL instance service state | 检查实例服务状态
-  ansible.builtin.systemd:
-    name: "{{ postgresql_instance_service }}"
-  register: postgresql_service_status
-  failed_when: postgresql_service_status.status.ActiveState != 'active'
+- name: Gather service facts | 收集服务状态
+  ansible.builtin.service_facts:
+
+- name: Record the PostgreSQL instance state | 记录实例服务状态
+  ansible.builtin.set_fact:
+    postgresql_service_state: >-
+      {{ (ansible_facts.services[postgresql_instance_service ~ '.service'] | default({})).state | default('unknown') }}
+
+- name: Check the PostgreSQL instance is running | 检查实例运行状态
+  ansible.builtin.assert:
+    that:
+      - postgresql_service_state == 'running'
+    fail_msg: "{{ postgresql_instance_service }} state is '{{ postgresql_service_state }}' (expected 'running')."
+    quiet: true
 
 - name: Confirm PostgreSQL accepts connections | 确认 PostgreSQL 可接受连接
   ansible.builtin.command:
@@ -79,7 +88,7 @@
   ansible.builtin.debug:
     msg: >-
       PostgreSQL {{ postgresql_version }}/{{ postgresql_cluster_name }} on {{ inventory_hostname }}:
-      service={{ postgresql_service_status.status.ActiveState }} listen={{ postgresql_listen_addresses }}
+      service={{ postgresql_service_state }} listen={{ postgresql_listen_addresses }}
       port={{ postgresql_port }} database={{ postgresql_database }} role={{ postgresql_user }}
       allowed={{ postgresql_allowed_cidrs | join(',') }} tls={{ postgresql_ssl_active | default(false) }}
       shared_buffers={{ postgresql_shared_buffers }} backups={{ postgresql_backup_enabled | bool }}

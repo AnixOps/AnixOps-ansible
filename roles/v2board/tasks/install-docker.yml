@@ -28,6 +28,7 @@
   register: v2board_docker_check
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Install Docker Engine from the official apt repository | 从官方 apt 源安装 Docker
   when:

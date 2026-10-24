@@ -17,6 +17,7 @@
   become_user: postgres
   register: postgresql_role_check
   changed_when: false
+  check_mode: false
 
 - name: Create the application role | 创建应用账号
   ansible.builtin.command:
@@ -44,6 +45,7 @@
   become_user: postgres
   register: postgresql_db_check
   changed_when: false
+  check_mode: false
 
 - name: Create the application database | 创建应用数据库
   ansible.builtin.command:
@@ -72,6 +74,7 @@
   become_user: postgres
   register: postgresql_privilege_check
   changed_when: false
+  check_mode: false
 
 - name: Grant privileges on the database | 授予数据库权限
   ansible.builtin.command:
@@ -111,6 +114,7 @@
   register: postgresql_login_check
   changed_when: false
   failed_when: false
+  check_mode: false
   no_log: true
 
 - name: Set the application role password | 设置应用账号密码

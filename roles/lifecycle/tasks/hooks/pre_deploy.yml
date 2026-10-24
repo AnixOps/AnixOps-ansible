@@ -1,61 +1,104 @@
 ---
 # =============================================================================
-# Pre-Deploy Hook
+# Pre-deploy hook | 部署前 hook
 # =============================================================================
-# 部署前执行：备份关键文件、验证依赖、检查当前状态
+# Creates a new version directory <backup_root>/<YYYYMMDDTHHMMSS>/ and snapshots
+# the current configuration into its pre/ sub-directory (with manifest.json),
+# records the service state and prunes versions older than the retention period.
 
-- name: Set backup timestamp | 设置备份时间戳
+- name: Set deployment version and backup directory | 设置部署版本与备份目录
   ansible.builtin.set_fact:
-    backup_timestamp: "{{ ansible_date_time.iso8601 | replace(':', '-') }}"
+    lifecycle_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    lifecycle_deploy_version: "v{{ ansible_date_time.iso8601_basic_short }}"
+    lifecycle_deploy_start_epoch: "{{ ansible_date_time.epoch }}"
+    lifecycle_backup_dir: "{{ lifecycle_backup_root }}/{{ ansible_date_time.iso8601_basic_short }}"
 
-- name: Create backup directory | 创建备份目录
+- name: Ensure backup root exists | 确保备份根目录存在
   ansible.builtin.file:
-    path: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}/{{ backup_timestamp }}"
+    path: "{{ lifecycle_backup_root }}"
     state: directory
-    mode: '0755'
-  when: hooks_backup_enabled | default(true)
+    owner: root
+    group: root
+    mode: "0750"
+  when: lifecycle_hooks_backup_enabled | bool
 
-- name: Get role backup config | 获取 role 备份配置
-  ansible.builtin.set_fact:
-    role_backup_files: "{{ lookup('vars', lifecycle_target_role + '_backup_files', default=[]) }}"
-    role_backup_dirs: "{{ lookup('vars', lifecycle_target_role + '_backup_dirs', default=[]) }}"
-
-- name: Backup configuration files | 备份配置文件
-  ansible.builtin.copy:
-    src: "{{ item }}"
-    dest: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}/{{ backup_timestamp }}/{{ item | basename }}"
-    remote_src: yes
-    mode: 'preserve'
-  loop: "{{ role_backup_files }}"
+- name: Snapshot configuration before deployment | 部署前快照
+  ansible.builtin.include_tasks: snapshot.yml
+  vars:
+    lifecycle_snapshot_dir: "{{ lifecycle_backup_dir }}/pre"
+    lifecycle_snapshot_phase: pre
+    lifecycle_snapshot_version: "{{ lifecycle_deploy_version }}"
   when:
-    - hooks_backup_enabled | default(true)
-    - role_backup_files | length > 0
-  ignore_errors: yes
+    - lifecycle_hooks_backup_enabled | bool
+    - lifecycle_backup_files | length > 0
 
-- name: Check current service status | 检查当前服务状态
-  ansible.builtin.systemd:
-    name: "{{ lifecycle_target_role }}"
-  register: pre_deploy_service_status
-  ignore_errors: yes
+- name: Note when the role declares no backup files | 角色未声明备份文件时提示
+  ansible.builtin.debug:
+    msg: >-
+      {{ lifecycle_target_role }} declares no {{ lifecycle_target_role }}_backup_files;
+      nothing was snapshotted and rollback will not be possible for this deployment.
+  when: lifecycle_backup_files | length == 0
+
+- name: Probe service state before deployment | 部署前探测服务状态
+  ansible.builtin.systemd_service:
+    name: "{{ lifecycle_service_name }}"
+  register: lifecycle_pre_deploy_service
+  failed_when: false
+  when: lifecycle_service_name | length > 0
+
+- name: List all snapshot versions | 列出全部快照版本
+  ansible.builtin.find:
+    paths: "{{ lifecycle_backup_root }}"
+    file_type: directory
+    recurse: false
+  register: lifecycle_all_versions
+  when:
+    - lifecycle_hooks_backup_enabled | bool
+    - lifecycle_hooks_backup_retention_days | int > 0
+
+- name: List snapshot versions older than the retention period | 列出超过保留期的快照
+  ansible.builtin.find:
+    paths: "{{ lifecycle_backup_root }}"
+    file_type: directory
+    recurse: false
+    age: "{{ lifecycle_hooks_backup_retention_days }}d"
+  register: lifecycle_old_versions
+  when:
+    - lifecycle_hooks_backup_enabled | bool
+    - lifecycle_hooks_backup_retention_days | int > 0
+
+- name: Prune expired snapshot versions while keeping the newest ones | 清理过期快照
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ lifecycle_prunable_versions | select('in', lifecycle_expired_versions) | list }}"
+  vars:
+    lifecycle_prunable_versions: >-
+      {{ (lifecycle_all_versions.files | default([]) | sort(attribute='mtime', reverse=true)
+          | map(attribute='path') | list)[lifecycle_hooks_backup_min_keep | int:] }}
+    lifecycle_expired_versions: "{{ lifecycle_old_versions.files | default([]) | map(attribute='path') | list }}"
+  when:
+    - lifecycle_hooks_backup_enabled | bool
+    - lifecycle_hooks_backup_retention_days | int > 0
 
 - name: Record pre-deploy state | 记录部署前状态
-  ansible.builtin.set_fact:
-    pre_deploy_state:
-      service: "{{ pre_deploy_service_status.status.ActiveState | default('unknown') }}"
-      timestamp: "{{ ansible_date_time.iso8601 }}"
-
-- name: Create pre-deploy state record | 创建部署前状态记录
   ansible.builtin.copy:
-    content: |
-      # Pre-Deploy State
-      role: {{ lifecycle_target_role }}
-      host: {{ inventory_hostname }}
-      timestamp: {{ ansible_date_time.iso8601 }}
-      service_state: {{ pre_deploy_state.service }}
-      backup_location: {{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}/{{ backup_timestamp }}
-    dest: "{{ state_dir }}/{{ lifecycle_target_role }}_pre_deploy.log"
-    mode: '0644'
+    content: "{{ lifecycle_pre_deploy_state | to_nice_json }}\n"
+    dest: "{{ lifecycle_pre_deploy_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    lifecycle_pre_deploy_state:
+      role: "{{ lifecycle_target_role }}"
+      host: "{{ inventory_hostname }}"
+      version: "{{ lifecycle_deploy_version }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      service: "{{ lifecycle_service_name }}"
+      service_state: "{{ lifecycle_pre_deploy_service.status.ActiveState | default('unknown') }}"
+      backup_location: "{{ lifecycle_backup_dir }}"
+      files_backed_up: "{{ lifecycle_snapshot_entries | default([]) | length }}"
 
-- name: Set lifecycle result | 设置生命周期结果
+- name: Set lifecycle result | 设置结果
   ansible.builtin.set_fact:
     lifecycle_result: pre_deploy_completed

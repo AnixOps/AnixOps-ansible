@@ -1,59 +1,64 @@
 ---
 # =============================================================================
-# Pre-Rollback Hook
+# Pre-rollback hook | 回滚前 hook
 # =============================================================================
-# 回滚前执行：记录当前状态、停止服务
+# Records the current version and service state (fact + JSON file, so
+# post_rollback can run in a later play) and optionally stops the service.
 
 - name: Set rollback timestamp | 设置回滚时间戳
   ansible.builtin.set_fact:
-    rollback_timestamp: "{{ ansible_date_time.iso8601 | replace(':', '-') }}"
+    lifecycle_rollback_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
 
-- name: Read current state file | 读取当前状态文件
+- name: Check state file | 检查状态文件
+  ansible.builtin.stat:
+    path: "{{ lifecycle_state_file }}"
+    get_checksum: false
+  register: lifecycle_state_stat
+
+- name: Read state file | 读取状态文件
   ansible.builtin.slurp:
-    src: "{{ state_file }}"
-  register: current_state_raw
-  failed_when: false
-  ignore_errors: yes
+    src: "{{ lifecycle_state_file }}"
+  register: lifecycle_state_raw
+  when: lifecycle_state_stat.stat.exists
 
 - name: Parse current state | 解析当前状态
   ansible.builtin.set_fact:
-    current_state: "{{ current_state_raw.content | default('{}') | b64decode | from_json | default({}) }}"
-  when: current_state_raw.content is defined
+    lifecycle_current_state: "{{ (lifecycle_state_raw.content | b64decode | from_json) if lifecycle_state_stat.stat.exists else {} }}"
 
-- name: Get current service status | 获取当前服务状态
-  ansible.builtin.systemd:
-    name: "{{ lifecycle_target_role }}"
-  register: pre_rollback_service_status
-  ignore_errors: yes
+- name: Probe service state before rollback | 回滚前探测服务状态
+  ansible.builtin.systemd_service:
+    name: "{{ lifecycle_service_name }}"
+  register: lifecycle_pre_rollback_service
+  failed_when: false
+  when: lifecycle_service_name | length > 0
 
 - name: Record pre-rollback state | 记录回滚前状态
   ansible.builtin.set_fact:
-    pre_rollback_state:
-      service: "{{ pre_rollback_service_status.status.ActiveState | default('unknown') }}"
-      version: "{{ current_state.current_version | default('unknown') }}"
+    lifecycle_pre_rollback_state:
+      role: "{{ lifecycle_target_role }}"
+      host: "{{ inventory_hostname }}"
+      version: "{{ lifecycle_current_state.current_version | default('unknown') }}"
+      service: "{{ lifecycle_service_name }}"
+      service_state: "{{ lifecycle_pre_rollback_service.status.ActiveState | default('unknown') }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
 
-- name: Create rollback state record | 创建回滚状态记录
+- name: Write pre-rollback state file | 写入回滚前状态文件
   ansible.builtin.copy:
-    content: |
-      # Pre-Rollback State
-      role: {{ lifecycle_target_role }}
-      host: {{ inventory_hostname }}
-      timestamp: {{ rollback_timestamp }}
-      from_version: {{ pre_rollback_state.version }}
-      service_state: {{ pre_rollback_state.service }}
-    dest: "{{ state_dir }}/{{ lifecycle_target_role }}_pre_rollback.log"
-    mode: '0644'
+    content: "{{ lifecycle_pre_rollback_state | to_nice_json }}\n"
+    dest: "{{ lifecycle_pre_rollback_file }}"
+    owner: root
+    group: root
+    mode: "0644"
 
-- name: Stop service gracefully | 优雅停止服务
-  ansible.builtin.systemd:
-    name: "{{ lifecycle_target_role }}"
+- name: Stop service gracefully before rollback | 回滚前优雅停止服务
+  ansible.builtin.systemd_service:
+    name: "{{ lifecycle_service_name }}"
     state: stopped
   when:
-    - hooks_graceful_stop | default(false)
-    - pre_rollback_service_status.status.ActiveState == 'active'
-  ignore_errors: yes
+    - lifecycle_hooks_graceful_stop | bool
+    - lifecycle_service_name | length > 0
+    - lifecycle_pre_rollback_state.service_state == 'active'
 
-- name: Set lifecycle result | 设置生命周期结果
+- name: Set lifecycle result | 设置结果
   ansible.builtin.set_fact:
     lifecycle_result: pre_rollback_completed

@@ -80,7 +80,7 @@
 
     - name: Download prometheus release tarball | 下载 prometheus 发布包
       ansible.builtin.get_url:
-        url: "{{ prometheus_download_url }}/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}.tar.gz"
+        url: "{{ prometheus_release_url }}"
         dest: "{{ prometheus_tmpdir.path }}/prometheus.tar.gz"
         checksum: "{{ prometheus_checksum if prometheus_checksum | length > 0 else omit }}"
         timeout: "{{ prometheus_download_timeout }}"
@@ -98,7 +98,7 @@
 
     - name: Install prometheus and promtool binaries | 安装 prometheus 与 promtool
       ansible.builtin.copy:
-        src: "{{ prometheus_tmpdir.path }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}/{{ item }}"
+        src: "{{ prometheus_tmpdir.path }}/{{ prometheus_release_name }}/{{ item }}"
         dest: "{{ prometheus_install_dir }}/{{ item }}"
         owner: root
         group: root
@@ -112,12 +112,12 @@
     # Console templates were dropped from the release tarball in Prometheus 3.x.
     - name: Check for console templates in the release | 检查发布包中的控制台模板
       ansible.builtin.stat:
-        path: "{{ prometheus_tmpdir.path }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}/consoles"
+        path: "{{ prometheus_tmpdir.path }}/{{ prometheus_release_name }}/consoles"
       register: prometheus_consoles_stat
 
     - name: Install console templates and libraries | 安装控制台模板与库
       ansible.builtin.copy:
-        src: "{{ prometheus_tmpdir.path }}/prometheus-{{ prometheus_version }}.linux-{{ prometheus_arch }}/{{ item }}/"
+        src: "{{ prometheus_tmpdir.path }}/{{ prometheus_release_name }}/{{ item }}/"
         dest: "{{ prometheus_config_dir }}/{{ item }}/"
         owner: root
         group: "{{ prometheus_group }}"

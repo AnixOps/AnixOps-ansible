@@ -37,6 +37,18 @@
     - v2bx_authkey_stored.content is defined
     - (v2bx_authkey_stored.content | b64decode | trim) | length > 0
 
+- name: Validate panel API prerequisites | 校验面板 API 前置条件
+  ansible.builtin.assert:
+    that:
+      - v2bx_panel_api_token | length > 0
+    fail_msg: >-
+      No AuthKey is available for {{ inventory_hostname }} and v2bx_auto_generate_authkey is
+      enabled, but V2BOARD_API_TOKEN is empty; export it or provide V2BX_AUTH_KEY.
+    quiet: true
+  when:
+    - v2bx_auth_key | length == 0
+    - v2bx_auto_generate_authkey | bool
+
 - name: Request a new AuthKey from the panel API | 通过面板内部 API 申请 AuthKey
   ansible.builtin.uri:
     url: "{{ v2bx_api_host }}{{ v2bx_authkey_api_path }}"

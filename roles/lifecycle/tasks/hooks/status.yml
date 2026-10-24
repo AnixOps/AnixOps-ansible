@@ -1,79 +1,83 @@
 ---
 # =============================================================================
-# Status Hook
+# Status hook | 状态 hook
 # =============================================================================
-# 查询服务状态：显示部署历史和当前状态
+# Read-only: shows current version, service state, recent history and the
+# number of snapshot versions on disk.
 
-- name: Check state file exists | 检查状态文件是否存在
+- name: Check state file | 检查状态文件
   ansible.builtin.stat:
-    path: "{{ state_file }}"
-  register: state_file_stat
+    path: "{{ lifecycle_state_file }}"
+    get_checksum: false
+  register: lifecycle_state_stat
 
-- name: Read current state | 读取当前状态
+- name: Read state file | 读取状态文件
   ansible.builtin.slurp:
-    src: "{{ state_file }}"
-  register: current_state_raw
-  when: state_file_stat.stat.exists
+    src: "{{ lifecycle_state_file }}"
+  register: lifecycle_state_raw
+  when: lifecycle_state_stat.stat.exists
 
-- name: Parse current state | 解析当前状态
-  ansible.builtin.set_fact:
-    current_state: "{{ current_state_raw.content | b64decode | from_json }}"
-  when: state_file_stat.stat.exists
+- name: Check history file | 检查历史文件
+  ansible.builtin.stat:
+    path: "{{ lifecycle_history_file }}"
+    get_checksum: false
+  register: lifecycle_history_stat
 
 - name: Read history file | 读取历史文件
   ansible.builtin.slurp:
-    src: "{{ history_file }}"
-  register: history_raw
-  when: state_file_stat.stat.exists
-  ignore_errors: yes
+    src: "{{ lifecycle_history_file }}"
+  register: lifecycle_history_raw
+  when: lifecycle_history_stat.stat.exists
 
-- name: Parse history | 解析历史
+- name: Parse state and history | 解析状态与历史
   ansible.builtin.set_fact:
-    history_data: "{{ history_raw.content | default('[]') | b64decode | from_json | default([]) }}"
-  when: history_raw.content is defined
+    lifecycle_current_state: "{{ (lifecycle_state_raw.content | b64decode | from_json) if lifecycle_state_stat.stat.exists else {} }}"
+    lifecycle_history_data: "{{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}"
 
-- name: Get current service status | 获取当前服务状态
-  ansible.builtin.systemd:
-    name: "{{ lifecycle_target_role }}"
-  register: service_status
-  ignore_errors: yes
+- name: Probe service state | 探测服务状态
+  ansible.builtin.systemd_service:
+    name: "{{ lifecycle_service_name }}"
+  register: lifecycle_status_service
+  failed_when: false
+  when: lifecycle_service_name | length > 0
 
-- name: List backup files | 列出备份文件
+- name: Check backup root | 检查备份根目录
+  ansible.builtin.stat:
+    path: "{{ lifecycle_backup_root }}"
+    get_checksum: false
+  register: lifecycle_backup_root_stat
+
+- name: List snapshot versions | 列出快照版本
   ansible.builtin.find:
-    paths: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}"
-    patterns: "*"
+    paths: "{{ lifecycle_backup_root }}"
     file_type: directory
-  register: backup_dirs
-  ignore_errors: yes
+    recurse: false
+  register: lifecycle_status_versions
+  when: lifecycle_backup_root_stat.stat.exists and lifecycle_backup_root_stat.stat.isdir
 
-- name: Display status summary | 显示状态摘要
+- name: Show status summary | 显示状态摘要
   ansible.builtin.debug:
-    msg: |
-      ═══════════════════════════════════════════════════════════════════════
-      Service Status: {{ lifecycle_target_role }}
-      Host: {{ inventory_hostname }}
-      ═══════════════════════════════════════════════════════════════════════
+    msg:
+      - >-
+        Lifecycle status | role={{ lifecycle_target_role }} host={{ inventory_hostname }}
+        service={{ lifecycle_service_name | default('none', true) }}
+        ({{ lifecycle_status_service.status.ActiveState | default('unknown') }})
+      - >-
+        Current version: {{ lifecycle_current_state.current_version | default('none recorded') }}
+        status={{ lifecycle_current_state.status | default('n/a') }}
+        recorded={{ lifecycle_current_state.timestamp | default('n/a') }}
+        rollback_available={{ lifecycle_current_state.rollback_available | default(false) }}
+      - >-
+        History: {{ lifecycle_history_data | length }} record(s)
+        {%- for record in lifecycle_history_data[-5:] | reverse %}
+        | {{ record.version }} {{ record.status }} {{ record.timestamp }}
+        {%- endfor %}
+      - >-
+        Snapshots: {{ lifecycle_status_versions.files | default([]) | length }} version(s) under
+        {{ lifecycle_backup_root }}
+      - "Contract: port={{ lifecycle_port }} health_url={{ lifecycle_health_url_effective | default('', true) }}
+        backup_files={{ lifecycle_backup_files | join(', ') | default('none', true) }}"
 
-      {% if state_file_stat.stat.exists %}
-      Current Deployment:
-        Version: {{ current_state.current_version | default('unknown') }}
-        Deployed: {{ current_state.timestamp | default('unknown') }}
-        Status: {{ current_state.status | default('unknown') }}
-        Service: {{ service_status.status.ActiveState | default('unknown') }}
-        Rollback: {{ current_state.rollback_available | default(false) }}
-
-      Deployment History ({{ history_data | length }} records):
-      {% for record in history_data[-5:] | reverse %}
-        {{ record.version }} | {{ record.timestamp }} | {{ record.status }}
-      {% endfor %}
-
-      Available Backups: {{ backup_dirs.files | length }}
-      {% else %}
-      ⚠ No deployment state found for {{ lifecycle_target_role }}
-      {% endif %}
-      ═══════════════════════════════════════════════════════════════════════
-  when: hooks_enabled | default(true)
-
-- name: Set lifecycle result | 设置生命周期结果
+- name: Set lifecycle result | 设置结果
   ansible.builtin.set_fact:
     lifecycle_result: status_displayed

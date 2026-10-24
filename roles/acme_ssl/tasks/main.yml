@@ -1,87 +1,159 @@
 ---
-# ACME SSL Certificate Role Tasks
-# 使用 acme.sh 获取和管理 SSL 证书
+# =============================================================================
+# acme_ssl role | ACME 证书管理 (acme.sh + DNS-01)
+# =============================================================================
+# install dependencies -> install pinned acme.sh (once) -> issue missing
+# certificates -> install (re)issued certificates for Nginx -> renewal cron.
+# Run it after the nginx role: `--install-cert` executes acme_ssl_reload_cmd.
+# =============================================================================
 
-- name: Install dependencies for acme.sh
-  ansible.builtin.apt:
-    name:
-      - curl
-      - socat
-      - openssl
-      - cron
+- name: Validate acme_ssl variables
+  ansible.builtin.assert:
+    that:
+      - acme_ssl_domains is not string
+      - acme_ssl_domains is iterable
+      - acme_ssl_domains | length == 0 or acme_ssl_email | length > 0
+      - >-
+        acme_ssl_domains | length == 0 or acme_ssl_dns_provider != 'cloudflare'
+        or acme_ssl_cloudflare_api_token | length > 0
+    fail_msg: >-
+      acme_ssl needs acme_ssl_domains as a list, acme_ssl_email (or acme_email) and, for the
+      cloudflare provider, acme_ssl_cloudflare_api_token (or cloudflare_api_token).
+    quiet: true
+
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: Install acme.sh dependencies
+  ansible.builtin.package:
+    name: "{{ acme_ssl_packages }}"
     state: present
-    update_cache: yes
-  when: ansible_os_family == "Debian"
+  register: acme_ssl_packages_result
+  retries: 3
+  delay: 10
+  until: acme_ssl_packages_result is succeeded
 
-- name: Check if acme.sh is already installed
+- name: Ensure the cron service is running for unattended renewals
+  ansible.builtin.service:
+    name: "{{ acme_ssl_service_name }}"
+    state: started
+    enabled: true
+
+- name: Check whether acme.sh is already installed
   ansible.builtin.stat:
-    path: /root/.acme.sh/acme.sh
-  register: acme_installed
+    path: "{{ acme_ssl_home }}/acme.sh"
+  register: acme_ssl_installed
 
-- name: Download and install acme.sh
-  ansible.builtin.shell: |
-    curl https://get.acme.sh | sh -s email={{ acme_email }}
-  args:
-    creates: /root/.acme.sh/acme.sh
-  when: not acme_installed.stat.exists
+- name: Install acme.sh from the pinned release
+  when: not acme_ssl_installed.stat.exists
+  block:
+    - name: Download the acme.sh release archive
+      ansible.builtin.get_url:
+        url: "{{ acme_ssl_download_url }}"
+        dest: "{{ acme_ssl_download_dir }}/acme.sh-{{ acme_ssl_version }}.tar.gz"
+        checksum: "{{ acme_ssl_checksum if acme_ssl_checksum | length > 0 else omit }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: acme_ssl_download
+      retries: 5
+      delay: 10
+      until: acme_ssl_download is succeeded
 
-- name: Configure Cloudflare DNS API (if using Cloudflare)
-  ansible.builtin.lineinfile:
-    path: /root/.acme.sh/account.conf
-    regexp: "^{{ item.key }}="
-    line: "{{ item.key }}='{{ item.value }}'"
-    create: yes
-  loop:
-    - { key: 'CF_Token', value: '{{ cloudflare_api_token }}' }
-    - { key: 'CF_Zone_ID', value: '{{ cloudflare_zone_id }}' }
-  when:
-    - acme_dns_provider == 'cloudflare'
-    - cloudflare_api_token is defined
-    - cloudflare_zone_id is defined
+    - name: Unpack the acme.sh release archive
+      ansible.builtin.unarchive:
+        src: "{{ acme_ssl_download_dir }}/acme.sh-{{ acme_ssl_version }}.tar.gz"
+        dest: "{{ acme_ssl_download_dir }}"
+        remote_src: true
+        creates: "{{ acme_ssl_download_dir }}/acme.sh-{{ acme_ssl_version }}/acme.sh"
+        owner: root
+        group: root
+
+    - name: Install acme.sh into its home directory
+      ansible.builtin.command:
+        argv: "{{ acme_ssl_install_argv }}"
+        chdir: "{{ acme_ssl_download_dir }}/acme.sh-{{ acme_ssl_version }}"
+        creates: "{{ acme_ssl_home }}/acme.sh"
+      vars:
+        acme_ssl_install_argv: >-
+          {{ ['./acme.sh', '--install', '--home', acme_ssl_home, '--nocron', '--noprofile']
+             + (['--accountemail', acme_ssl_email] if acme_ssl_email | length > 0 else []) }}
+
+- name: Check which certificates acme.sh already holds
+  ansible.builtin.stat:
+    path: "{{ acme_ssl_home }}/{{ item }}{{ acme_ssl_ecc_suffix }}/fullchain.cer"
+    get_checksum: false
+  loop: "{{ acme_ssl_domains }}"
+  register: acme_ssl_cert_stat
+
+- name: Issue missing certificates with acme.sh
+  ansible.builtin.command:
+    argv: >-
+      {{ [acme_ssl_home ~ '/acme.sh', '--issue', '--dns', acme_ssl_dns_hook,
+          '--server', acme_ssl_ca_server, '--keylength', acme_ssl_key_length | string,
+          '-d', item.item]
+         + (['--force'] if acme_ssl_force_renew | bool else [])
+         + acme_ssl_extra_issue_args }}
+  environment: "{{ acme_ssl_dns_env | combine(acme_ssl_extra_env) }}"
+  loop: "{{ acme_ssl_cert_stat.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: acme_ssl_force_renew | bool or not item.stat.exists
+  register: acme_ssl_issue
+  changed_when: acme_ssl_issue.rc == 0
+  failed_when: false
   no_log: true
 
-- name: Issue SSL certificate
-  ansible.builtin.shell: |
-    /root/.acme.sh/acme.sh --issue \
-      --dns dns_cf \
-      -d {{ item }} \
-      --force
-  args:
-    creates: /root/.acme.sh/{{ item }}_ecc/{{ item }}.cer
-  loop: "{{ acme_domains }}"
-  when:
-    - acme_dns_provider == 'cloudflare'
-    - acme_domains is defined
-  register: acme_issue
-  failed_when:
-    - acme_issue.rc != 0
-    - "'Cert success' not in acme_issue.stdout"
-  ignore_errors: yes
-  no_log: true
+- name: Report certificate issuance failures
+  ansible.builtin.fail:
+    msg: >-
+      acme.sh could not issue a certificate for {{ acme_ssl_failed_domains | join(', ') }}
+      on {{ inventory_hostname }}. The output is hidden because it may contain DNS API
+      credentials; inspect {{ acme_ssl_home }}/acme.sh.log on the host.
+  vars:
+    acme_ssl_failed_domains: >-
+      {{ acme_ssl_issue.results | default([]) | selectattr('rc', 'defined')
+         | rejectattr('rc', 'in', [0, 2]) | map(attribute='item.item') | list }}
+  when: acme_ssl_failed_domains | length > 0
 
-- name: Create SSL certificate directory
+- name: Create the certificate directory used by Nginx
   ansible.builtin.file:
-    path: /etc/nginx/ssl
+    path: "{{ acme_ssl_cert_dir }}"
     state: directory
-    mode: '0700'
     owner: root
     group: root
+    mode: "{{ acme_ssl_cert_dir_mode }}"
 
-- name: Install SSL certificates to Nginx
-  ansible.builtin.shell: |
-    /root/.acme.sh/acme.sh --install-cert -d {{ item }} \
-      --key-file /etc/nginx/ssl/{{ item }}.key \
-      --fullchain-file /etc/nginx/ssl/{{ item }}.crt \
-      --reloadcmd "systemctl reload nginx"
-  loop: "{{ acme_domains }}"
-  when: acme_domains is defined
-  notify: reload nginx
-  no_log: true
+- name: Check which certificates are already installed for Nginx
+  ansible.builtin.stat:
+    path: "{{ acme_ssl_cert_dir }}/{{ item }}.crt"
+    get_checksum: false
+  loop: "{{ acme_ssl_domains }}"
+  register: acme_ssl_installed_cert_stat
 
-- name: Set up auto-renewal cron job
+- name: Install issued certificates into the Nginx certificate directory
+  ansible.builtin.command:
+    argv: >-
+      {{ [acme_ssl_home ~ '/acme.sh', '--install-cert', '-d', item,
+          '--key-file', acme_ssl_cert_dir ~ '/' ~ item ~ '.key',
+          '--fullchain-file', acme_ssl_cert_dir ~ '/' ~ item ~ '.crt',
+          '--reloadcmd', acme_ssl_reload_cmd]
+         + (['--ecc'] if acme_ssl_ecc_suffix | length > 0 else []) }}
+  loop: "{{ acme_ssl_domains }}"
+  loop_control:
+    index_var: acme_ssl_domain_index
+  when: >-
+    (acme_ssl_issue.results[acme_ssl_domain_index] is changed)
+    or not acme_ssl_installed_cert_stat.results[acme_ssl_domain_index].stat.exists
+  register: acme_ssl_install_cert
+  changed_when: true
+  notify: Reload nginx
+
+- name: Manage the acme.sh renewal cron job
   ansible.builtin.cron:
-    name: "acme.sh auto-renewal"
-    minute: "0"
-    hour: "0"
-    job: "/root/.acme.sh/acme.sh --cron --home /root/.acme.sh > /dev/null"
-    state: present
+    name: acme.sh auto-renewal
+    user: root
+    minute: "{{ acme_ssl_cron_minute }}"
+    hour: "{{ acme_ssl_cron_hour }}"
+    job: "{{ acme_ssl_home }}/acme.sh --cron --home {{ acme_ssl_home }} > /dev/null"
+    state: "{{ 'present' if acme_ssl_cron_enabled | bool else 'absent' }}"

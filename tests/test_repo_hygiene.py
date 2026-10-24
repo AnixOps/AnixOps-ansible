@@ -58,13 +58,13 @@ INVISIBLE_SUFFIXES = {".yml", ".yaml", ".py", ".sh", ".cfg", ".ini", ".j2", ".to
 INVISIBLE_FILES = tuple(p for p in TEXT_FILES if p.suffix.lower() in INVISIBLE_SUFFIXES)
 
 # --- mojibake detection -----------------------------------------------------
-# Characters that only ever appear when UTF-8 Chinese was decoded as GBK
-# (the coordinator's list), plus a structural heuristic: GBK-decoding UTF-8
-# bytes (E4..E9 lead bytes) can only produce GB2312 level-2 / GBK-extension
-# characters (GBK lead byte outside B0..D7), whereas genuine simplified Chinese
-# is dominated by level-1 characters (lead byte B0..D7).  A run of CJK
-# characters with no level-1 character is therefore garbage, and a "?" next to
-# such characters is a lost byte rather than punctuation.
+# Characters that only ever appear when UTF-8 Chinese was decoded as GBK (the
+# coordinator's list) plus a structural heuristic.  A UTF-8 CJK character is
+# [E4-E9][80-BF][80-BF]; read as GBK, the bytes pair up so that every garbage
+# run contains characters whose GBK code is exactly [E4-E9][80-BF].  Those are
+# rare GB2312 level-2 hanzi that genuine simplified Chinese prose essentially
+# never uses, while real prose is dominated by level-1 hanzi (lead byte B0-D7).
+# Built with chr()/encode() so this source stays pure ASCII.
 GBK_MOJIBAKE_CHARS = "".join(chr(cp) for cp in (
     0x923A, 0x93C8, 0x95AE, 0x9428, 0x951B, 0x9286, 0x934F, 0x93B4, 0x6D60,
     0x7481, 0x9359, 0x9422, 0x95B0, 0x93C2, 0x935A, 0x9352, 0x9365,
@@ -79,23 +79,36 @@ QUESTION_NON_ASCII_RE = re.compile("\\?([^\\x00-\\x7f])")
 EURO_NEAR_CJK_RE = re.compile("[" + CJK + "]" + EURO + "|" + EURO + "[" + CJK + "]")
 
 
+def _gbk(char: str) -> bytes:
+    try:
+        return char.encode("gbk")
+    except UnicodeEncodeError:
+        return b""
+
+
 def _is_common_hanzi(char: str) -> bool:
     """GB2312 level-1 character (GBK lead byte B0..D7): the bulk of real simplified text."""
-    try:
-        return 0xB0 <= char.encode("gbk")[0] <= 0xD7
-    except UnicodeEncodeError:
-        return False
+    code = _gbk(char)
+    return len(code) == 2 and 0xB0 <= code[0] <= 0xD7
 
 
-def _looks_garbled(run: str) -> bool:
-    common = sum(1 for char in run if _is_common_hanzi(char))
-    return common * 2 < len(run)
+def _is_utf8_shaped(char: str) -> bool:
+    """GBK code [E4-E9][80-BF]: a UTF-8 lead+trail pair read as one GBK character."""
+    code = _gbk(char)
+    return len(code) == 2 and 0xE4 <= code[0] <= 0xE9 and 0x80 <= code[1] <= 0xBF
 
 
 def _garbage_run(run: str) -> bool:
-    """3+ CJK chars without a single common hanzi, or 5+ with at most a quarter common."""
+    """A CJK run is garbage when it holds UTF-8-shaped characters and little common prose."""
+    shaped = sum(1 for char in run if _is_utf8_shaped(char))
     common = sum(1 for char in run if _is_common_hanzi(char))
-    return (len(run) >= 3 and common == 0) or (len(run) >= 5 and common * 4 <= len(run))
+    if shaped == 0:
+        return len(run) >= 4 and common == 0
+    return shaped >= 2 or common * 2 <= len(run)
+
+
+def _looks_garbled(run: str) -> bool:
+    return any(_is_utf8_shaped(char) for char in run) or not any(_is_common_hanzi(char) for char in run)
 
 
 def mojibake_problems(text: str) -> list[tuple[int, str, str]]:
@@ -106,7 +119,7 @@ def mojibake_problems(text: str) -> list[tuple[int, str, str]]:
         if MOJIBAKE_CHAR_RE.search(line):
             reason = "GBK-decoded UTF-8 character"
         elif any(_garbage_run(m.group(0)) for m in CJK_RUN_RE.finditer(line)):
-            reason = "run of CJK characters with (almost) no common hanzi (GBK-decoded UTF-8)"
+            reason = "run of CJK characters that is GBK-decoded UTF-8"
         elif any(_looks_garbled(m.group(1)[-4:]) for m in CJK_QUESTION_RE.finditer(line)):
             reason = "'?' right after garbled CJK text (lost byte)"
         elif any(not (CJK_RUN_RE.match(m.group(1)) and _is_common_hanzi(m.group(1)))

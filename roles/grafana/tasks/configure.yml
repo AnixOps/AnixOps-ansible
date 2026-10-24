@@ -61,7 +61,8 @@
 
 - name: Collect dashboard files from the repository | 收集仓库中的仪表盘文件
   ansible.builtin.set_fact:
-    grafana_dashboard_files: "{{ lookup('ansible.builtin.fileglob', grafana_dashboards_src_dir ~ '/*.json', wantlist=True) | sort }}"
+    grafana_dashboard_files: >-
+      {{ lookup('ansible.builtin.fileglob', grafana_dashboards_src_dir ~ '/*.json', wantlist=True) | sort }}
 
 # The file provider re-reads the directory every grafana_dashboards_update_interval
 # seconds, so dashboard changes need no restart.
@@ -90,5 +91,6 @@
     state: absent
   loop: >-
     {{ (grafana_dashboards_on_host.files | default([]) | map(attribute='path') | list)
-       | difference(grafana_dashboard_files | map('basename') | map('regex_replace', '^', grafana_dashboards_dir ~ '/') | list) }}
+       | difference(grafana_dashboard_files | map('basename')
+                    | map('regex_replace', '^', grafana_dashboards_dir ~ '/') | list) }}
   when: grafana_dashboards_prune | bool

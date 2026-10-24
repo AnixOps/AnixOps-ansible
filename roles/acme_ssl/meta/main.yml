@@ -1,7 +1,10 @@
 ---
 galaxy_info:
+  role_name: acme_ssl
+  namespace: anixops
   author: AnixOps
-  description: ACME.sh SSL certificate management
+  description: Issue and renew TLS certificates with acme.sh (DNS-01 via Cloudflare) and install them for Nginx
+  company: AnixOps
   license: MIT
   min_ansible_version: "2.15"
   platforms:
@@ -13,5 +16,11 @@ galaxy_info:
       versions:
         - jammy
         - noble
-  galaxy_tags: []
+  galaxy_tags:
+    - acme
+    - letsencrypt
+    - tls
+    - ssl
+    - certificates
+    - nginx
 dependencies: []

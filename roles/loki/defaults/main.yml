@@ -11,6 +11,7 @@
 # -----------------------------------------------------------------------------
 loki_version: "{{ (loki | default({})).version | default('2.9.0') }}"
 loki_download_url: "https://github.com/grafana/loki/releases/download"
+loki_release_url: "{{ loki_download_url }}/v{{ loki_version }}/loki-linux-{{ loki_arch }}.zip"
 loki_arch_map:
   x86_64: amd64
   aarch64: arm64

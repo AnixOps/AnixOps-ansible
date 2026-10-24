@@ -17,15 +17,6 @@
       - V2BX_NODE_NAME  (defaults to the inventory hostname)
     quiet: true
 
-- name: Validate AuthKey prerequisites | 校验 AuthKey 前置条件
-  ansible.builtin.assert:
-    that:
-      - v2bx_auth_key | length > 0 or not (v2bx_auto_generate_authkey | bool) or v2bx_panel_api_token | length > 0
-    fail_msg: >-
-      v2bx_auto_generate_authkey is enabled but V2BOARD_API_TOKEN is empty;
-      export it or provide V2BX_AUTH_KEY.
-    quiet: true
-
 - name: Include AuthKey resolution tasks | 解析 AuthKey
   ansible.builtin.include_tasks: authkey.yml
 

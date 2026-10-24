@@ -1,131 +1,177 @@
 ---
 # =============================================================================
-# Cleanup Hook
+# Cleanup hook | 清理 hook
 # =============================================================================
-# 清理服务：停止服务、删除配置、清理备份
+# Stops/disables the service, removes packages, archives (or removes) the
+# configuration directories, prunes snapshot versions, removes the unit file
+# and the state files. Requires cleanup_confirm=yes (or cleanup_force=yes).
 
-- name: Validate cleanup confirmation | 验证清理确认
+- name: Require explicit confirmation | 要求明确确认
   ansible.builtin.fail:
-    msg: "必须设置 cleanup_confirm=yes 才能执行清理"
-  when: cleanup_confirm | default('no') != 'yes'
+    msg: >-
+      Refusing to clean up {{ lifecycle_target_role }} on {{ inventory_hostname }}:
+      pass -e cleanup_confirm=yes (or -e cleanup_force=yes) to confirm.
+  when: not (lifecycle_cleanup_confirm | bool or lifecycle_cleanup_force | bool)
 
-- name: Display cleanup warning | 显示清理警告
+- name: Resolve effective cleanup options | 解析有效的清理选项
+  ansible.builtin.set_fact:
+    lifecycle_cleanup_keep_data_effective: "{{ lifecycle_cleanup_keep_data | bool and lifecycle_cleanup_strategy != 'aggressive' }}"
+    lifecycle_cleanup_keep_package_effective: "{{ lifecycle_cleanup_keep_package | bool and lifecycle_cleanup_strategy != 'aggressive' }}"
+    lifecycle_cleanup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Show cleanup plan | 显示清理计划
   ansible.builtin.debug:
-    msg: |
-      ⚠ WARNING: Cleanup will permanently remove {{ lifecycle_target_role }}
-      Host: {{ inventory_hostname }}
-      Strategy: {{ cleanup_strategy }}
+    msg:
+      - "Cleanup {{ lifecycle_target_role }} on {{ inventory_hostname }} (strategy={{ lifecycle_cleanup_strategy }})"
+      - "Service to stop/disable: {{ lifecycle_service_name | default('none', true) }}"
+      - "Packages to remove: {{ 'none (kept)' if lifecycle_cleanup_keep_package_effective | bool else (lifecycle_packages | join(', ') | default('none', true)) }}"
+      - "Config dirs: {{ lifecycle_config_dirs | join(', ') }} -> {{ 'archived to ' ~ lifecycle_cleanup_archive_path if lifecycle_cleanup_keep_data_effective | bool else 'REMOVED' }}"
+      - "Snapshot versions kept: {{ lifecycle_cleanup_keep_backups }} newest under {{ lifecycle_backup_root }}"
+      - "State files: {{ 'kept' if lifecycle_cleanup_keep_state | bool else 'removed' }}"
 
-      This will:
-      - Stop and disable the service
-      - Remove configuration files
-      - Delete backups (keeping {{ cleanup_keep_backups }} most recent)
-      {% if not cleanup_keep_data %}
-      - Remove data directories
-      {% endif %}
-      {% if not cleanup_keep_package %}
-      - Uninstall packages
-      {% endif %}
+- name: Stop here in dry-run mode | 干运行模式到此为止
+  ansible.builtin.meta: end_host
+  when: lifecycle_dry_run | bool
 
-- name: Stop service | 停止服务
-  ansible.builtin.systemd:
-    name: "{{ lifecycle_target_role }}"
+- name: Probe service unit | 探测服务 unit
+  ansible.builtin.systemd_service:
+    name: "{{ lifecycle_service_name }}"
+  register: lifecycle_cleanup_service
+  failed_when: false
+  when: lifecycle_service_name | length > 0
+
+- name: Stop and disable service | 停止并禁用服务
+  ansible.builtin.systemd_service:
+    name: "{{ lifecycle_service_name }}"
     state: stopped
-    enabled: no
-  ignore_errors: yes
-
-- name: Get role package list | 获取 role 包列表
-  ansible.builtin.set_fact:
-    role_packages: "{{ lookup('vars', lifecycle_target_role + '_packages', default=[]) }}"
-
-- name: Remove packages | 删除包
-  ansible.builtin.package:
-    name: "{{ item }}"
-    state: absent
-  loop: "{{ role_packages }}"
+    enabled: false
   when:
-    - not cleanup_keep_package | default(false)
-    - role_packages | length > 0
-  ignore_errors: yes
+    - lifecycle_service_name | length > 0
+    - lifecycle_cleanup_service.status.LoadState | default('not-found') == 'loaded'
 
-- name: Get role config directories | 获取 role 配置目录
-  ansible.builtin.set_fact:
-    role_config_dirs: "{{ lookup('vars', lifecycle_target_role + '_config_dirs', default=['/etc/' + lifecycle_target_role]) }}"
+- name: Remove packages | 删除软件包
+  ansible.builtin.package:
+    name: "{{ lifecycle_packages }}"
+    state: absent
+  register: lifecycle_cleanup_packages
+  retries: 3
+  delay: 5
+  until: lifecycle_cleanup_packages is succeeded
+  failed_when: lifecycle_cleanup_packages is failed and not lifecycle_cleanup_force | bool
+  when:
+    - not lifecycle_cleanup_keep_package_effective | bool
+    - lifecycle_packages | length > 0
 
-- name: Archive data before cleanup | 清理前归档数据
-  ansible.builtin.archive:
+- name: Check configuration directories | 检查配置目录
+  ansible.builtin.stat:
     path: "{{ item }}"
-    dest: "{{ cleanup_archive_path }}/{{ lifecycle_target_role }}_{{ ansible_date_time.iso8601_basic_short }}.tar.gz"
+    get_checksum: false
+  loop: "{{ lifecycle_config_dirs }}"
+  register: lifecycle_cleanup_dir_stat
+
+- name: Collect existing configuration directories | 收集存在的配置目录
+  ansible.builtin.set_fact:
+    lifecycle_cleanup_existing_dirs: >-
+      {{ lifecycle_cleanup_dir_stat.results | selectattr('stat.exists') | map(attribute='item') | list }}
+
+- name: Ensure archive directory exists | 确保归档目录存在
+  ansible.builtin.file:
+    path: "{{ lifecycle_cleanup_archive_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when:
+    - lifecycle_cleanup_archive_enabled | bool
+    - lifecycle_cleanup_existing_dirs | length > 0
+
+- name: Archive configuration directories | 归档配置目录
+  community.general.archive:
+    path: "{{ lifecycle_cleanup_existing_dirs }}"
+    dest: "{{ lifecycle_cleanup_archive_path }}/{{ lifecycle_target_role }}_{{ lifecycle_cleanup_timestamp }}.tar.gz"
     format: gz
-  loop: "{{ role_config_dirs }}"
-  when: cleanup_keep_data | default(true)
-  ignore_errors: yes
+    owner: root
+    group: root
+    mode: "0600"
+  register: lifecycle_cleanup_archive
+  failed_when: lifecycle_cleanup_archive is failed and not lifecycle_cleanup_force | bool
+  when:
+    - lifecycle_cleanup_archive_enabled | bool
+    - lifecycle_cleanup_existing_dirs | length > 0
 
 - name: Remove configuration directories | 删除配置目录
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
-  loop: "{{ role_config_dirs }}"
-  when: not cleanup_keep_data | default(true)
-  ignore_errors: yes
+  loop: "{{ lifecycle_cleanup_existing_dirs }}"
+  when: not lifecycle_cleanup_keep_data_effective | bool
 
-- name: List backup directories | 列出备份目录
+- name: Check backup root | 检查备份根目录
+  ansible.builtin.stat:
+    path: "{{ lifecycle_backup_root }}"
+    get_checksum: false
+  register: lifecycle_backup_root_stat
+
+- name: List snapshot versions | 列出快照版本
   ansible.builtin.find:
-    paths: "{{ hooks_backup_base_dir }}/{{ lifecycle_target_role }}"
+    paths: "{{ lifecycle_backup_root }}"
     file_type: directory
-  register: all_backup_dirs
-  ignore_errors: yes
+    recurse: false
+  register: lifecycle_cleanup_versions
+  when: lifecycle_backup_root_stat.stat.exists and lifecycle_backup_root_stat.stat.isdir
 
-- name: Remove old backups | 删除旧备份
+- name: Remove snapshot versions beyond the keep limit | 删除超出保留数量的快照
   ansible.builtin.file:
-    path: "{{ item.path }}"
+    path: "{{ item }}"
     state: absent
-  loop: "{{ all_backup_dirs.files | sort(attribute='mtime', reverse=true) | slice(cleanup_keep_backups) | last }}"
-  when: all_backup_dirs.files | length > cleanup_keep_backups
-  ignore_errors: yes
+  loop: >-
+    {{ (lifecycle_cleanup_versions.files | default([]) | sort(attribute='mtime', reverse=true)
+        | map(attribute='path') | list)[lifecycle_cleanup_keep_backups | int:] }}
 
 - name: Remove systemd unit file | 删除 systemd unit 文件
   ansible.builtin.file:
-    path: "/etc/systemd/system/{{ lifecycle_target_role }}.service"
+    path: "/etc/systemd/system/{{ lifecycle_service_name }}.service"
     state: absent
-  ignore_errors: yes
+  register: lifecycle_cleanup_unit
+  when:
+    - lifecycle_cleanup_remove_unit | bool
+    - lifecycle_service_name | length > 0
 
-- name: Reload systemd daemon | 重载 systemd
-  ansible.builtin.systemd:
-    daemon_reload: yes
+- name: Reload systemd after removing the unit | 删除 unit 后重载 systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: lifecycle_cleanup_unit.changed | default(false)
 
 - name: Remove state files | 删除状态文件
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - "{{ state_file }}"
-    - "{{ history_file }}"
-  ignore_errors: yes
+    - "{{ lifecycle_state_file }}"
+    - "{{ lifecycle_history_file }}"
+    - "{{ lifecycle_pre_deploy_file }}"
+    - "{{ lifecycle_pre_rollback_file }}"
+  when: not lifecycle_cleanup_keep_state | bool
 
-- name: Display cleanup summary | 显示清理摘要
+- name: Send cleanup notification | 发送清理通知
+  ansible.builtin.include_tasks: notify.yml
+  vars:
+    lifecycle_notify_event: cleanup
+    lifecycle_notify_status: success
+    lifecycle_notify_details:
+      strategy: "{{ lifecycle_cleanup_strategy }}"
+      archive: "{{ lifecycle_cleanup_archive.dest | default('') }}"
+      config_dirs_removed: "{{ not lifecycle_cleanup_keep_data_effective | bool }}"
+
+- name: Show cleanup summary | 显示清理摘要
   ansible.builtin.debug:
-    msg: |
-      ═══════════════════════════════════════════════════════════════════════
-      ✓ Cleanup Completed: {{ lifecycle_target_role }}
-      Host: {{ inventory_hostname }}
-      ═══════════════════════════════════════════════════════════════════════
+    msg:
+      - "Cleanup completed: {{ lifecycle_target_role }} on {{ inventory_hostname }}"
+      - "Service: {{ 'stopped and disabled' if lifecycle_cleanup_service.status.LoadState | default('not-found') == 'loaded' else 'not installed' }}"
+      - "Archive: {{ lifecycle_cleanup_archive.dest | default('none') }}"
+      - "Config dirs removed: {{ not lifecycle_cleanup_keep_data_effective | bool }}"
+      - "Snapshot versions kept: {{ [lifecycle_cleanup_versions.files | default([]) | length, lifecycle_cleanup_keep_backups | int] | min }}"
 
-      Removed:
-      - Service: stopped and disabled
-      {% if not cleanup_keep_package %}
-      - Packages: {{ role_packages | join(', ') }}
-      {% endif %}
-      {% if not cleanup_keep_data %}
-      - Config dirs: {{ role_config_dirs | join(', ') }}
-      {% else %}
-      - Data archived: {{ cleanup_archive_path }}/{{ lifecycle_target_role }}_*.tar.gz
-      {% endif %}
-      - Backups: {{ all_backup_dirs.files | length - cleanup_keep_backups }} removed
-      - State files: deleted
-
-      ═══════════════════════════════════════════════════════════════════════
-
-- name: Set lifecycle result | 设置生命周期结果
+- name: Set lifecycle result | 设置结果
   ansible.builtin.set_fact:
     lifecycle_result: cleanup_completed
