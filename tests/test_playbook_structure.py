@@ -74,7 +74,7 @@ IMPORT_KEYS = ("ansible.builtin.import_playbook", "import_playbook")
 
 # Common GBK-decoded UTF-8 artefacts, U+FFFD, and a "?" replacement before non-ASCII text.
 MOJIBAKE_RE = re.compile(
-    "[鈺鏈閮鐨锛銆鍏鎴浠璁鍙�]"
+    "[\u923a\u93c8\u95ae\u9428\u951b\u9286\u934f\u93b4\u6d60\u7481\u9359\ufffd]"
     r"|\?[^\x09\x0a\x0d\x20-\x7e]"
 )
 

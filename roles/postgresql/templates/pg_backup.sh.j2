@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# =============================================================================
+# PostgreSQL logical backup | PostgreSQL 逻辑备份
+# Managed by Ansible (role: postgresql) - do not edit manually.
+# Runs as the postgres user from cron: pg_dump (custom format) of the
+# application database plus pg_dumpall --globals-only, then prunes old files.
+# =============================================================================
+set -euo pipefail
+
+BACKUP_DIR="{{ postgresql_backup_dir }}"
+DATABASE="{{ postgresql_database }}"
+PORT="{{ postgresql_port }}"
+SOCKET_DIR="{{ postgresql_socket_dir }}"
+RETENTION_DAYS="{{ postgresql_backup_retention_days }}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+
+umask 027
+mkdir -p "${BACKUP_DIR}"
+
+DUMP_FILE="${BACKUP_DIR}/${DATABASE}-${STAMP}.dump"
+GLOBALS_FILE="${BACKUP_DIR}/globals-${STAMP}.sql"
+
+pg_dump -h "${SOCKET_DIR}" -p "${PORT}" --format=custom --file="${DUMP_FILE}.tmp" "${DATABASE}"
+mv "${DUMP_FILE}.tmp" "${DUMP_FILE}"
+
+pg_dumpall -h "${SOCKET_DIR}" -p "${PORT}" --globals-only --file="${GLOBALS_FILE}.tmp"
+mv "${GLOBALS_FILE}.tmp" "${GLOBALS_FILE}"
+
+# Retention | 保留策略
+find "${BACKUP_DIR}" -maxdepth 1 -type f -name "${DATABASE}-*.dump" -mtime "+${RETENTION_DAYS}" -delete
+find "${BACKUP_DIR}" -maxdepth 1 -type f -name "globals-*.sql" -mtime "+${RETENTION_DAYS}" -delete
+
+echo "backup completed: ${DUMP_FILE} ${GLOBALS_FILE}"

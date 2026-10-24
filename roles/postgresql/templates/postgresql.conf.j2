@@ -1,49 +1,77 @@
-# PostgreSQL Configuration File | PostgreSQL 配置文件
-# Managed by Ansible - do not edit manually
-# 由 Ansible 管理 - 请勿手动编辑
+# =============================================================================
+# PostgreSQL configuration | PostgreSQL 配置文件
+# Managed by Ansible (role: postgresql) - do not edit manually, changes are
+# overwritten on the next run. Local overrides belong in conf.d/*.conf.
+# 由 Ansible 管理，请勿手动编辑；本地覆盖请放入 conf.d/*.conf。
+# =============================================================================
 
-# Connection Settings | 连接设置
-data_directory = '/var/lib/postgresql/{{ postgresql_version }}/main'
+# --- File locations (Debian layout) | 文件位置 --------------------------------
+data_directory = '{{ postgresql_data_dir }}'
+hba_file = '{{ postgresql_conf_dir }}/pg_hba.conf'
+ident_file = '{{ postgresql_conf_dir }}/pg_ident.conf'
+external_pid_file = '{{ postgresql_socket_dir }}/{{ postgresql_version }}-{{ postgresql_cluster_name }}.pid'
+cluster_name = '{{ postgresql_version }}/{{ postgresql_cluster_name }}'
+
+# --- Connections and authentication | 连接与认证 ------------------------------
 listen_addresses = '{{ postgresql_listen_addresses }}'
 port = {{ postgresql_port }}
 max_connections = {{ postgresql_max_connections }}
+unix_socket_directories = '{{ postgresql_socket_dir }}'
+password_encryption = {{ postgresql_password_encryption }}
+{% if postgresql_ssl_active | default(false) | bool %}
+ssl = on
+ssl_cert_file = '{{ postgresql_ssl_cert_file }}'
+ssl_key_file = '{{ postgresql_ssl_key_file }}'
+{% else %}
+ssl = off
+{% endif %}
 
-# Memory Settings | 内存设置
+# --- Memory | 内存 ------------------------------------------------------------
 shared_buffers = {{ postgresql_shared_buffers }}
-effective_cache_size = '512MB'
-work_mem = '4MB'
-maintenance_work_mem = '64MB'
+effective_cache_size = {{ postgresql_effective_cache_size }}
+work_mem = {{ postgresql_work_mem }}
+maintenance_work_mem = {{ postgresql_maintenance_work_mem }}
+dynamic_shared_memory_type = posix
 
-# Write Ahead Log | WAL 设置
-wal_level = replica
-min_wal_size = '80MB'
-max_wal_size = '1GB'
+# --- Write-ahead log and checkpoints | WAL 与检查点 ----------------------------
+wal_level = {{ postgresql_wal_level }}
+min_wal_size = {{ postgresql_min_wal_size }}
+max_wal_size = {{ postgresql_max_wal_size }}
+checkpoint_timeout = {{ postgresql_checkpoint_timeout }}
+checkpoint_completion_target = {{ postgresql_checkpoint_completion_target }}
 
-# Logging | 日志设置
-log_timezone = 'Asia/Shanghai'
+# --- Logging | 日志 -----------------------------------------------------------
 log_destination = 'stderr'
 logging_collector = on
 log_directory = 'log'
 log_filename = 'postgresql-%Y-%m-%d.log'
-log_rotation_age = '1d'
-log_rotation_size = '10MB'
-log_line_prefix = '%m [%p] %q%u@%d '
+log_rotation_age = '{{ postgresql_log_rotation_age }}'
+log_rotation_size = '{{ postgresql_log_rotation_size }}'
+log_line_prefix = '{{ postgresql_log_line_prefix }}'
+log_min_duration_statement = {{ postgresql_log_min_duration_statement }}
+log_timezone = '{{ postgresql_timezone }}'
 
-# Locale | 本地化
-lc_messages = 'en_US.UTF-8'
-lc_monetary = 'en_US.UTF-8'
-lc_numeric = 'en_US.UTF-8'
-lc_time = 'en_US.UTF-8'
+# --- Locale | 本地化 ----------------------------------------------------------
+datestyle = 'iso, mdy'
+timezone = '{{ postgresql_timezone }}'
+lc_messages = '{{ postgresql_locale }}'
+lc_monetary = '{{ postgresql_locale }}'
+lc_numeric = '{{ postgresql_locale }}'
+lc_time = '{{ postgresql_locale }}'
 default_text_search_config = 'pg_catalog.english'
 
-# Checkpoint | 检查点
-checkpoint_timeout = '5min'
-checkpoint_completion_target = '0.9'
-
-# Statistics | 统计信息
+# --- Statistics and autovacuum | 统计与自动清理 -------------------------------
 track_activities = on
 track_counts = on
-
-# Autovacuum | 自动清理
 autovacuum = on
-autovacuum_max_workers = 3
+autovacuum_max_workers = {{ postgresql_autovacuum_max_workers }}
+{% if postgresql_extra_settings | length > 0 %}
+
+# --- Extra settings (postgresql_extra_settings) | 额外参数 --------------------
+{% for key, value in postgresql_extra_settings.items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+{% endif %}
+
+# --- Local overrides | 本地覆盖 ----------------------------------------------
+include_dir = 'conf.d'

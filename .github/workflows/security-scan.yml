@@ -92,7 +92,8 @@ jobs:
           fi
 
           rc=0
-          pem_blocks="$(git grep -nI -E -e '-----BEGIN (RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----' -- . ':(exclude)*.md' ':(exclude).github/workflows/security-scan.yml')" || rc=$?
+          # A real key block starts the line with the header; quoted mentions in tools/docs do not match.
+          pem_blocks="$(git grep -nI -E -e '^[[:space:]]*-----BEGIN (RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----[[:space:]]*$' -- . ':(exclude)*.md' ':(exclude).github/workflows/security-scan.yml')" || rc=$?
           if (( rc == 0 )); then
             echo "::error::Inline private key blocks found in tracked files:"
             echo "${pem_blocks}"
