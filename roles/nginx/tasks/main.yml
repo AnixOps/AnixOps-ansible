@@ -1,301 +1,343 @@
 ---
-# Nginx role - Web 服务器
-# 安装和配置 Nginx
+# =============================================================================
+# Nginx role | Nginx 角色
+# =============================================================================
+# Zero-downtime, self-healing roll-out | 零停机、可自愈的配置发布:
+#   1. install packages, optionally stop conflicting services, create directories
+#   2. snapshot the current state (which managed files exist, which vhosts are enabled)
+#   3. template every configuration file (backup: true); nginx.conf is validated
+#      with `nginx -t -c %s` before it is written, then the whole tree with `nginx -t`
+#   4. on ANY failure in step 3: restore the backups, remove new files, put
+#      sites-enabled back, re-validate and fail with the captured error (rollback.yml)
+#   5. ensure the service is started and enabled (diagnostics on failure), then
+#      flush the `Reload nginx` handler (graceful reload, no dropped connections)
+#   6. probe nginx_health_url; on failure roll back and reload the previous config
+# The vhost tasks must stay in this file (tests/test_node_platform_structure.py).
+# =============================================================================
 
-- name: Fix broken apt sources (Debian/Ubuntu)
-  shell: |
-    # Remove conflicting Grafana apt sources
-    rm -f /etc/apt/sources.list.d/grafana.list /etc/apt/sources.list.d/grafana.list.save
-    # Clean any broken sources
-    find /etc/apt/sources.list.d -name '*.list' -exec grep -l 'apt.grafana.com' {} \; 2>/dev/null | while read f; do
-      if ! grep -q '\[signed-by=' "$f" 2>/dev/null; then
-        rm -f "$f"
-      fi
-    done
-    apt-get update 2>/dev/null || true
-  ignore_errors: yes
-  when: ansible_os_family == "Debian"
+- name: Install Nginx packages
+  ansible.builtin.import_tasks: install.yml
 
-- name: Update apt cache
-  apt:
-    update_cache: yes
-    cache_valid_time: 3600
-  when: ansible_os_family == "Debian"
+- name: Stop services that conflict with Nginx
+  ansible.builtin.include_tasks: conflicts.yml
+  when: nginx_stop_conflicting_services | bool
 
-- name: Install Nginx
-  apt:
-    name: nginx
-    state: present
-  when: ansible_os_family == "Debian"
-
-- name: Install Nginx (RedHat)
-  package:
-    name: nginx
-    state: present
-  when: ansible_os_family == "RedHat"
-
-- name: Stop services that may already bind ports 80/443
-  service:
-    name: "{{ item }}"
-    state: stopped
-    enabled: no
-  loop: "{{ nginx_conflicting_services }}"
-  ignore_errors: yes
-  when: nginx_stop_conflicting_services | default(true) | bool
-
-- name: Inspect processes listening on ports 80 and 443
-  ansible.builtin.shell: |
-    ss -H -ltnp '( sport = :80 or sport = :443 )' | awk '{
-      if (match($0, /pid=([0-9]+)/, m)) {
-        print m[1]
-      }
-    }' | sort -u
-  args:
-    executable: /bin/bash
-  register: nginx_port_pids
-  changed_when: false
-  failed_when: false
-  when: nginx_stop_conflicting_services | default(true) | bool
-
-- name: Stop listeners bound to ports 80 and 443
-  ansible.builtin.shell: |
-    set -euo pipefail
-
-    for pid in {{ nginx_port_pids.stdout_lines | default([]) | join(' ') }}; do
-      kill -TERM "$pid" || true
-    done
-
-    sleep 2
-
-    for pid in {{ nginx_port_pids.stdout_lines | default([]) | join(' ') }}; do
-      kill -KILL "$pid" || true
-    done
-  args:
-    executable: /bin/bash
-  register: nginx_port_stop_result
-  changed_when: nginx_port_stop_result.rc == 0 and (nginx_port_pids.stdout_lines | default([]) | length > 0)
-  failed_when: false
-  when:
-    - nginx_stop_conflicting_services | default(true) | bool
-    - nginx_port_pids.stdout_lines | default([]) | length > 0
-
-- name: Re-check web ports after cleanup
-  ansible.builtin.shell: |
-    ss -H -ltn '( sport = :80 or sport = :443 )' || true
-  args:
-    executable: /bin/bash
-  register: nginx_port_recheck
-  changed_when: false
-  failed_when: false
-  when: nginx_stop_conflicting_services | default(true) | bool
-
-- name: Report any remaining web port listeners
-  ansible.builtin.debug:
-    msg: >-
-      Web ports still have listeners after cleanup on {{ inventory_hostname }}:
-      {{ nginx_port_recheck.stdout | default('none') | trim | default('none', true) }}
-  when:
-    - nginx_stop_conflicting_services | default(true) | bool
-    - nginx_port_recheck.stdout | default('') | trim != ''
-
-- name: Validate Nginx configuration before starting service
-  ansible.builtin.command: nginx -t
-  register: nginx_config_test
-  changed_when: false
-  failed_when: nginx_config_test.rc != 0
-
-- name: Show Nginx configuration test output
-  ansible.builtin.debug:
-    msg: |
-      nginx -t stdout:
-      {{ nginx_config_test.stdout | default('') }}
-
-      nginx -t stderr:
-      {{ nginx_config_test.stderr | default('') }}
-  when: nginx_config_test.rc != 0
-
-- name: Create Nginx configuration directories
-  file:
+- name: Create Nginx configuration and log directories
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    mode: '0755'
+    owner: root
+    group: root
+    mode: "0755"
   loop:
+    - /etc/nginx
+    - /etc/nginx/conf.d
     - /etc/nginx/sites-available
     - /etc/nginx/sites-enabled
-    - /etc/nginx/conf.d
-    - /var/log/nginx
+    - "{{ nginx_log_dir }}"
 
-- name: Deploy main Nginx configuration
-  template:
-    src: nginx.conf.j2
-    dest: /etc/nginx/nginx.conf
-    mode: '0644'
-    backup: yes
-  notify: reload nginx
+# --- Pre-run snapshot used by tasks/rollback.yml -----------------------------
+- name: Check for a host-specific raw configuration template
+  ansible.builtin.stat:
+    path: "{{ role_path }}/templates/hosts/{{ inventory_hostname }}.conf.j2"
+  delegate_to: localhost
+  become: false
+  register: nginx_host_config_stat
 
-- name: Create proxy_params
-  copy:
-    content: |
-      proxy_set_header Host $http_host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_connect_timeout {{ nginx_proxy_timeout }};
-      proxy_send_timeout {{ nginx_proxy_timeout }};
-      proxy_read_timeout {{ nginx_proxy_timeout }};
-      send_timeout {{ nginx_proxy_timeout }};
-    dest: /etc/nginx/proxy_params
-    mode: '0644'
+- name: Compute the configuration files and symlinks managed by this role
+  ansible.builtin.set_fact:
+    nginx_managed_files: >-
+      {{ ['/etc/nginx/nginx.conf',
+          '/etc/nginx/proxy_params',
+          '/etc/nginx/conf.d/security-headers.conf',
+          '/etc/nginx/sites-available/default',
+          '/etc/nginx/sites-available/' ~ inventory_hostname ~ '_custom.conf',
+          '/etc/logrotate.d/nginx']
+         + (nginx_custom_configs | map(attribute='name')
+            | map('regex_replace', '^(.*)$', '/etc/nginx/conf.d/\\1.conf') | list)
+         + (nginx_all_sites | map(attribute='name')
+            | map('regex_replace', '^(.*)$', '/etc/nginx/sites-available/\\1.conf') | list) }}
+    nginx_managed_links: >-
+      {{ (['default'] if nginx_default_site_enabled | bool else [])
+         + (nginx_enabled_site_names | map('regex_replace', '^(.*)$', '\\1.conf') | list)
+         + ([inventory_hostname ~ '_custom.conf'] if nginx_host_config_stat.stat.exists else []) }}
+  vars:
+    nginx_enabled_site_names: >-
+      {{ ((nginx_all_sites | rejectattr('enabled', 'defined') | list)
+          + (nginx_all_sites | selectattr('enabled', 'defined')
+             | selectattr('enabled', 'truthy', convert_bool=True) | list))
+         | map(attribute='name') | list }}
 
-- name: Deploy custom configuration snippets
-  copy:
-    content: "{{ item.content }}"
-    dest: "/etc/nginx/conf.d/{{ item.name }}.conf"
-    mode: '0644'
-  loop: "{{ nginx_custom_configs }}"
-  notify: reload nginx
+- name: Record which managed configuration files already exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop: "{{ nginx_managed_files }}"
+  register: nginx_managed_files_stat
 
-- name: Deploy default virtual host
-  template:
-    src: default-site.conf.j2
-    dest: /etc/nginx/sites-available/default
-    mode: '0644'
-    backup: yes
-  when: nginx_default_site_enabled | default(true) | bool
-  notify: reload nginx
+- name: Remember the pre-existing configuration files
+  ansible.builtin.set_fact:
+    nginx_preexisting_files: >-
+      {{ nginx_managed_files_stat.results | selectattr('stat.exists') | map(attribute='item') | list }}
 
-- name: Enable default site
-  file:
-    src: /etc/nginx/sites-available/default
-    dest: /etc/nginx/sites-enabled/default
-    state: link
-  when: nginx_default_site_enabled | default(true) | bool
-  notify: reload nginx
+- name: Record the virtual host symlinks enabled before this run
+  ansible.builtin.find:
+    paths: /etc/nginx/sites-enabled
+    file_type: link
+  register: nginx_links_before
 
-- name: Disable default site
-  file:
-    path: /etc/nginx/sites-enabled/default
-    state: absent
-  when: not (nginx_default_site_enabled | default(true) | bool)
-  notify: reload nginx
+- name: Record the targets of the pre-existing virtual host symlinks
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop: "{{ nginx_links_before.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: nginx_links_before_stat
 
-- name: Deploy dynamic virtual hosts
-  template:
-    src: site.conf.j2
-    dest: "/etc/nginx/sites-available/{{ item.name }}.conf"
-    mode: '0644'
-    backup: yes
-  loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
-  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true) | bool)
-  notify: reload nginx
-
-- name: Enable dynamic virtual hosts
-  file:
-    src: "/etc/nginx/sites-available/{{ item.name }}.conf"
-    dest: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
-    state: link
-  loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
-  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and (item.enabled | default(true) | bool)
-  notify: reload nginx
-
-- name: Disable unwanted virtual hosts
-  file:
-    path: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
-    state: absent
-  loop: "{{ nginx_sites + nginx_group_sites + nginx_host_sites }}"
-  when: (nginx_sites + nginx_group_sites + nginx_host_sites) | length > 0 and not (item.enabled | default(true) | bool)
-  notify: reload nginx
-
-- name: Check for host-specific raw config files
-  local_action: stat path="{{ role_path }}/templates/hosts/{{ inventory_hostname }}.conf.j2"
-  register: host_specific_config
-  become: no
-
-- name: Deploy host-specific raw config
-  template:
-    src: "hosts/{{ inventory_hostname }}.conf.j2"
-    dest: "/etc/nginx/sites-available/{{ inventory_hostname }}_custom.conf"
-    mode: '0644'
-  when: host_specific_config.stat.exists
-  notify: reload nginx
-
-- name: Enable host-specific raw config
-  file:
-    src: "/etc/nginx/sites-available/{{ inventory_hostname }}_custom.conf"
-    dest: "/etc/nginx/sites-enabled/{{ inventory_hostname }}_custom.conf"
-    state: link
-  when: host_specific_config.stat.exists
-  notify: reload nginx
-
-- name: Remove default Nginx welcome page (if exists)
-  file:
-    path: /var/www/html/index.nginx-debian.html
-    state: absent
-
-- name: Create web root directory
-  file:
-    path: /var/www/html
-    state: directory
-    mode: '0755'
-    owner: www-data
-    group: www-data
-
-- name: Deploy custom index page
-  template:
-    src: index.html.j2
-    dest: /var/www/html/index.html
-    mode: '0644'
-    owner: www-data
-    group: www-data
-
-- name: Ensure Nginx is enabled and running
+# --- Configuration roll-out with automatic rollback --------------------------
+- name: Deploy the Nginx configuration (rolled back automatically on error)
   block:
-    - name: Start Nginx
-      ansible.builtin.service:
-        name: nginx
-        state: started
-        enabled: yes
+    - name: Deploy proxy_params
+      ansible.builtin.template:
+        src: proxy_params.j2
+        dest: /etc/nginx/proxy_params
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: nginx_proxy_params_result
+      notify: Reload nginx
+
+    - name: Deploy the security headers snippet
+      ansible.builtin.template:
+        src: security-headers.conf.j2
+        dest: /etc/nginx/conf.d/security-headers.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: nginx_security_headers_result
+      when: nginx_security_headers_enabled | bool
+      notify: Reload nginx
+
+    - name: Remove the security headers snippet when disabled
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/security-headers.conf
+        state: absent
+      when: not (nginx_security_headers_enabled | bool)
+      notify: Reload nginx
+
+    - name: Deploy custom configuration snippets
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "/etc/nginx/conf.d/{{ item.name }}.conf"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      loop: "{{ nginx_custom_configs }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: nginx_custom_configs_result
+      notify: Reload nginx
+
+    - name: Deploy the default virtual host
+      ansible.builtin.template:
+        src: default-site.conf.j2
+        dest: /etc/nginx/sites-available/default
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: nginx_default_site_result
+      when: nginx_default_site_enabled | bool
+      notify: Reload nginx
+
+    - name: Enable default site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/default
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+      when: nginx_default_site_enabled | bool
+      notify: Reload nginx
+
+    - name: Disable default site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      when: not (nginx_default_site_enabled | bool)
+      notify: Reload nginx
+
+    - name: Deploy dynamic virtual hosts
+      ansible.builtin.template:
+        src: site.conf.j2
+        dest: "/etc/nginx/sites-available/{{ item.name }}.conf"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      loop: "{{ nginx_all_sites }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.enabled | default(true) | bool
+      register: nginx_sites_result
+      notify: Reload nginx
+
+    - name: Enable dynamic virtual hosts
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ item.name }}.conf"
+        dest: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
+        state: link
+      loop: "{{ nginx_all_sites }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.enabled | default(true) | bool
+      notify: Reload nginx
+
+    - name: Disable virtual hosts whose enabled flag is false
+      ansible.builtin.file:
+        path: "/etc/nginx/sites-enabled/{{ item.name }}.conf"
+        state: absent
+      loop: "{{ nginx_all_sites }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: not (item.enabled | default(true) | bool)
+      notify: Reload nginx
+
+    - name: Prune virtual host symlinks not managed by this role
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ nginx_links_before.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when:
+        - nginx_prune_unmanaged_sites | bool
+        - item.path | basename not in nginx_managed_links
+      notify: Reload nginx
+
+    - name: Deploy the host-specific raw configuration
+      ansible.builtin.template:
+        src: "hosts/{{ inventory_hostname }}.conf.j2"
+        dest: "/etc/nginx/sites-available/{{ inventory_hostname }}_custom.conf"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: nginx_host_config_result
+      when: nginx_host_config_stat.stat.exists
+      notify: Reload nginx
+
+    - name: Enable the host-specific raw configuration
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ inventory_hostname }}_custom.conf"
+        dest: "/etc/nginx/sites-enabled/{{ inventory_hostname }}_custom.conf"
+        state: link
+      when: nginx_host_config_stat.stat.exists
+      notify: Reload nginx
+
+    # Written last so `nginx -t -c %s` validates it together with the vhosts and
+    # snippets deployed above (includes use absolute paths). A broken pre-existing
+    # vhost can therefore be repaired by the same run instead of blocking it.
+    - name: Deploy the main Nginx configuration
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+        validate: nginx -t -c %s
+      register: nginx_main_config_result
+      notify: Reload nginx
+
+    - name: Deploy the logrotate policy for Nginx logs
+      ansible.builtin.template:
+        src: logrotate.j2
+        dest: /etc/logrotate.d/nginx
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: nginx_logrotate_result
+      when: nginx_logrotate_managed | bool
+
+    - name: Remove the distribution welcome page
+      ansible.builtin.file:
+        path: "{{ nginx_web_root }}/index.nginx-debian.html"
+        state: absent
+
+    - name: Create the web root directory
+      ansible.builtin.file:
+        path: "{{ nginx_web_root }}"
+        state: directory
+        owner: "{{ nginx_user }}"
+        group: "{{ nginx_group }}"
+        mode: "0755"
+
+    - name: Deploy the landing page
+      ansible.builtin.template:
+        src: index.html.j2
+        dest: "{{ nginx_web_root }}/index.html"
+        owner: "{{ nginx_user }}"
+        group: "{{ nginx_group }}"
+        mode: "0644"
+      when: nginx_deploy_index | bool
+
+    - name: Validate the complete Nginx configuration
+      ansible.builtin.command:
+        argv:
+          - nginx
+          - -t
+      register: nginx_config_test
+      changed_when: false
+
   rescue:
-    - name: Capture Nginx service status
-      ansible.builtin.shell: systemctl status nginx --no-pager -l || true
-      args:
-        executable: /bin/bash
-      register: nginx_service_status
-      changed_when: false
-      failed_when: false
+    - name: Roll back the Nginx configuration after a failed deployment
+      ansible.builtin.include_tasks: rollback.yml
+      vars:
+        nginx_rollback_reason: the new configuration was rejected before it was applied
 
-    - name: Capture Nginx journal output
-      ansible.builtin.shell: journalctl -xeu nginx --no-pager | tail -n 80 || true
-      args:
-        executable: /bin/bash
-      register: nginx_journal
-      changed_when: false
-      failed_when: false
+# --- Activate and verify -----------------------------------------------------
+- name: Ensure Nginx is running before pending reloads are applied
+  ansible.builtin.import_tasks: service.yml
 
-    - name: Show Nginx startup diagnostics
-      ansible.builtin.debug:
-        msg: |
-          nginx service status:
-          {{ nginx_service_status.stdout | default('') }}
+- name: Apply configuration changes with a graceful reload
+  ansible.builtin.meta: flush_handlers
 
-          nginx journal tail:
-          {{ nginx_journal.stdout | default('') }}
-  always:
-    - name: Check whether Nginx is active
-      ansible.builtin.command: systemctl is-active nginx
-      register: nginx_active_state
-      changed_when: false
-      failed_when: false
+- name: Verify Nginx health (rolled back automatically on failure)
+  block:
+    - name: Verify Nginx answers on the health URL
+      ansible.builtin.uri:
+        url: "{{ nginx_health_url }}"
+        status_code: "{{ nginx_health_status_codes }}"
+        follow_redirects: none
+        validate_certs: "{{ nginx_health_validate_certs | bool }}"
+        timeout: 10
+      register: nginx_health_check
+      retries: "{{ nginx_health_retries }}"
+      delay: "{{ nginx_health_delay }}"
+      until: nginx_health_check is succeeded
 
-    - name: Report Nginx active state
-      ansible.builtin.debug:
-        msg: "Nginx active state on {{ inventory_hostname }}: {{ nginx_active_state.stdout | default('unknown') }}"
+  rescue:
+    - name: Roll back the Nginx configuration after a failed health check
+      ansible.builtin.include_tasks: rollback.yml
+      vars:
+        nginx_rollback_reason: >-
+          {{ nginx_health_url }} did not answer with {{ nginx_health_status_codes | join('/') }}
+          after {{ nginx_health_retries }} attempts
+        nginx_rollback_reload: true
+      when: nginx_rollback_on_health_failure | bool
 
-- name: Verify Nginx is responding
-  uri:
-    url: "http://localhost"
-    status_code: 200
-  register: nginx_health
-  retries: 3
-  delay: 5
-  until: nginx_health.status == 200
+    - name: Fail because Nginx is unhealthy (rollback disabled)
+      ansible.builtin.fail:
+        msg: >-
+          Nginx on {{ inventory_hostname }} did not answer {{ nginx_health_url }} with
+          {{ nginx_health_status_codes | join('/') }}: {{ ansible_failed_result.msg | default('no response') }}.
+          nginx_rollback_on_health_failure is false, so the new configuration was kept.

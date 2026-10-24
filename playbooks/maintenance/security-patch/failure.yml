@@ -2,6 +2,9 @@
 # Failure summary (rescue) | 失败汇总
 # Produces the same keys as summary.yml with status `scan_failed` and the error
 # message of the failed task as alert_reason, so the report never misses a host.
+# A host that never returned facts (unreachable, or fact gathering failed) is
+# flagged with unreachable: true. set_fact/debug run on the controller, so this
+# works even when the host cannot be contacted.
 
 - name: Record scan failure summary
   ansible.builtin.set_fact:
@@ -26,7 +29,7 @@
           'apply_updates': security_patch_apply_updates | bool,
           'severity': security_patch_severity,
           'trivy_version': security_patch_trivy_version_detected | default('unknown'),
-          'placeholder': false,
+          'unreachable': ansible_os_family is not defined,
           'findings': (security_patch_findings_after | default([]))[:(security_patch_max_findings_in_report | int)]
         }
       }}

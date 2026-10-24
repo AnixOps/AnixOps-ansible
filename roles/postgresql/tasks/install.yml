@@ -54,21 +54,14 @@
         enabled: true
       register: postgresql_pgdg_repo
 
-    - name: Refresh the apt cache after adding the PGDG repository | 刷新 apt 缓存
-      ansible.builtin.apt:
-        update_cache: true
-      register: postgresql_pgdg_cache
-      retries: 5
-      delay: 10
-      until: postgresql_pgdg_cache is succeeded
-      when: postgresql_pgdg_repo is changed
-
+# The apt cache is refreshed unconditionally right after the PGDG source was
+# added (cache_valid_time 0) and at most hourly otherwise.
 - name: Install PostgreSQL packages | 安装 PostgreSQL 软件包
   ansible.builtin.apt:
     name: "{{ postgresql_packages }}"
     state: present
     update_cache: true
-    cache_valid_time: 3600
+    cache_valid_time: "{{ 0 if (postgresql_pgdg_repo is defined and postgresql_pgdg_repo is changed) else 3600 }}"
   register: postgresql_apt_install
   retries: 5
   delay: 10

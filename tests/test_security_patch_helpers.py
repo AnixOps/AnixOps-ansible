@@ -265,7 +265,7 @@ def test_render_report_body_includes_marker_mode_and_new_counters():
                 "after_count": 0,
                 "reboot_required": False,
                 "alert_reason": "no host summary was produced (unreachable or failed before reporting)",
-                "placeholder": True,
+                "unreachable": True,
                 "update_rc": 0,
             }
         ],

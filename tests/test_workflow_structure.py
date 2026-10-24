@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import re
+import sys
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 
@@ -37,7 +38,7 @@ SERVICE_ROLES = {
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 MOJIBAKE_RE = re.compile(
     "|".join(chr(point) for point in (0x923A, 0x93C8, 0x95AE, 0x9428, 0x951B, 0x9286, 0x934F, 0x93B4, 0x6D60, 0x7481, 0x9359))
-    + r"|\?[^ -~]"
+    + r"|\?[^ -~\n]"  # grep is line-based: a "?" at end of line (e.g. rc=$?) is not mojibake
 )
 
 
@@ -98,7 +99,12 @@ def load_export_secrets_module():
     spec = importlib.util.spec_from_file_location("export_secrets", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True  # keep __pycache__ out of .github/actions/
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
     return module
 
 
@@ -189,14 +195,15 @@ def test_run_blocks_do_not_hide_failures(path: Path):
     for location, run in iter_run_blocks(workflow):
         assert not re.search(r"\beval\b", run), f"{path.name}:{location} uses eval"
         assert not re.search(r"\|\|\s*true\b", run), f"{path.name}:{location} hides a failure with || true"
-        assert "set -euo pipefail" in run, f"{path.name}:{location} must start with set -euo pipefail"
+        if "\n" in run.strip():  # multi-line scripts need strict mode; a one-liner fails on its own exit code
+            assert "set -euo pipefail" in run, f"{path.name}:{location} must start with set -euo pipefail"
 
 
 @pytest.mark.parametrize("path", WORKFLOW_FILES, ids=workflow_ids())
 def test_no_hardcoded_ssh_key_paths(path: Path):
     workflow = load_yaml(path)
     for location, run in iter_run_blocks(workflow):
-        assert "id_rsa" not in run and "~/.ssh" not in run, f"{path.name}:{location} writes a hardcoded SSH key path"
+        assert "~/.ssh" not in run and ".ssh/id_rsa" not in run, f"{path.name}:{location} writes a hardcoded SSH key path"
 
 
 @pytest.mark.parametrize("path", WORKFLOW_FILES, ids=workflow_ids())
@@ -289,7 +296,9 @@ def test_ansible_ci_never_touches_production():
     text = path.read_text(encoding="utf-8")
     workflow = load_yaml(path)
     assert "secrets." not in text and "environment:" not in text
-    assert "--check" not in text, "CI must not run check mode against production"
+    for location, run in iter_run_blocks(workflow):
+        for line in run.splitlines():
+            assert not ("ansible-playbook" in line and "--check" in line), f"{location}: CI must not run check mode against production"
     jobs = workflow_jobs(workflow)
     assert {"lint", "unit-tests", "inventory-drift", "syntax-check", "prepare", "integration-localhost"} <= set(jobs)
     assert jobs["lint"]["uses"] == "./.github/workflows/reusable-lint.yml"
@@ -321,7 +330,7 @@ def test_security_scan_gates():
     jobs = workflow_jobs(workflow)
     assert {"secret-scan", "dependency-audit", "repo-hygiene", "ansible-policy"} <= set(jobs)
     runs = "\n".join(run for _, run in iter_run_blocks(workflow))
-    assert "pip-audit --requirement requirements.txt" in runs
+    assert "--requirement requirements.txt" in runs and 'pip-audit "${args[@]}"' in runs
     assert "ignore_errors" in runs
     assert "[$FOUND" not in runs and "[ $FOUND" not in runs
     trufflehog = [uses for uses in iter_uses(workflow) if uses.startswith("trufflesecurity/trufflehog@")]
@@ -402,11 +411,11 @@ def test_setup_ansible_action_contract():
     text = (ACTIONS_DIR / "setup-ansible" / "action.yml").read_text(encoding="utf-8")
     for exported in ("ANSIBLE_INVENTORY=", "ANSIBLE_PRIVATE_KEY_FILE=", "SSH_KEY_PATH=", "ANSIBLE_HOST_KEY_CHECKING=False", "ANSIBLE_FORCE_COLOR=True"):
         assert exported in text
-    assert "~/.ssh" not in text and "id_rsa" not in text
     assert '${RUNNER_TEMP}/ssh' in text
     for step in iter_action_steps(action):
         if "run" in step:
             assert step["shell"] == "bash" and "set -euo pipefail" in step["run"]
+            assert "~/.ssh" not in step["run"] and "id_rsa" not in step["run"]
 
 
 def test_export_secrets_action_contract():

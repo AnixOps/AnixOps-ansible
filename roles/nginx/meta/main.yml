@@ -1,7 +1,10 @@
 ---
 galaxy_info:
+  role_name: nginx
+  namespace: anixops
   author: AnixOps
-  description: Nginx web server with dynamic virtual hosts
+  description: Nginx web server and reverse proxy with validated, zero-downtime, self-healing configuration roll-outs
+  company: AnixOps
   license: MIT
   min_ansible_version: "2.15"
   platforms:
@@ -13,5 +16,10 @@ galaxy_info:
       versions:
         - jammy
         - noble
-  galaxy_tags: []
+  galaxy_tags:
+    - nginx
+    - web
+    - proxy
+    - tls
+    - system
 dependencies: []

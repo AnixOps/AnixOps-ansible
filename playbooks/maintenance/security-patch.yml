@@ -21,16 +21,19 @@
   hosts: all:!localhost
   serial: 1
   become: true
-  gather_facts: true
+  # Facts are gathered INSIDE the block (first task of setup.yml): with serial: 1 any
+  # host that fails outside block/rescue ends the whole playbook (Ansible stops when
+  # every host of a batch failed) and the report play would never run.
+  gather_facts: false
   # The run must visit every host and report on all of them, so a failing host must
   # never stop the batch. Per-host failures are caught by the block/rescue below.
   max_fail_percentage: 100
   any_errors_fatal: false
   # ignore_unreachable is the ONE sanctioned exception to the "fail loudly" rule:
-  # report.yml emits a placeholder `scan_failed` summary (and counts it in
-  # `unreachable_count`) for every target host that produced no summary, so an
-  # unreachable host still shows up in the JSON report and the GitHub issue instead
-  # of silently dropping out of the run.
+  # an unreachable host is kept in the play, fails the facts check in setup.yml and is
+  # recorded by failure.yml as `scan_failed` (unreachable: true); report.yml adds a
+  # placeholder summary for hosts that produced no summary at all and counts both in
+  # `unreachable_count`, so no host silently drops out of the report / GitHub issue.
   ignore_unreachable: true
   tags: [security_patch]
 
@@ -141,7 +144,7 @@
           apply_updates: "{{ security_patch_apply_updates | bool }}"
           severity: "{{ security_patch_severity }}"
           trivy_version: "unknown"
-          placeholder: false
+          unreachable: false
           findings: []
 
   tasks:

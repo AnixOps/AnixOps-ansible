@@ -193,6 +193,41 @@ def test_static_content_and_backup_copies_are_not_configuration(repo):
     assert report.ok, report.findings
 
 
+def test_restore_from_backup_is_the_rollback_and_not_gated(repo):
+    write(
+        repo / "roles/nginx/tasks/main.yml",
+        """
+        - name: Roll out nginx.conf
+          block:
+            - name: Deploy nginx.conf
+              ansible.builtin.template:
+                src: nginx.conf.j2
+                dest: /etc/nginx/nginx.conf
+                backup: true
+              register: nginx_conf_result
+          rescue:
+            - name: Restore the previous nginx.conf
+              ansible.builtin.copy:
+                src: "{{ nginx_conf_result.backup_file }}"
+                dest: /etc/nginx/nginx.conf
+                remote_src: true
+              when: nginx_conf_result.backup_file is defined
+            - name: Restore from a timestamped backup path
+              ansible.builtin.copy:
+                src: /etc/nginx/nginx.conf.backup.20260424_120000
+                dest: /etc/nginx/nginx.conf
+                remote_src: true
+            - name: Not a restore (controller side source)
+              ansible.builtin.copy:
+                src: files/nginx.conf
+                dest: /etc/nginx/nginx.conf
+        """,
+    )
+    report = run_scan(repo)
+    assert [f.task for f in report.findings] == ["Not a restore (controller side source)"]
+    assert report.tasks_checked == 4
+
+
 def test_jinja_prefix_is_resolved_from_role_defaults(repo):
     write(
         repo / "roles/v2board/defaults/main.yml",

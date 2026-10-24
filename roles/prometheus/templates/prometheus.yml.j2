@@ -2,6 +2,16 @@
 # Prometheus server configuration | Prometheus 服务端配置
 # Managed by roles/prometheus; edit the inventory / role variables, not this file.
 ---
+{#- Relabelling shared by every job: keep the scraped address in `target_ip`
+    and expose the friendly alias as `instance` (applies to `up` as well). -#}
+{% macro alias_relabel() %}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: target_ip
+      - source_labels: [alias]
+        target_label: instance
+{% endmacro %}
+{% set prometheus_self_alias = server_alias | default(inventory_hostname) | string %}
 global:
   scrape_interval: {{ prometheus_scrape_interval }}
   scrape_timeout: {{ prometheus_scrape_timeout }}
@@ -28,18 +38,26 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:{{ prometheus_port }}']
         labels:
-          alias: {{ server_alias | default(inventory_hostname) | string | to_json }}
+          alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
+{{ alias_relabel() -}}
 
 {# ---------------------------------------------------------------------------
-   node_exporter: one target per inventory host. Hosts without a resolvable
-   address, hosts that opt out (prometheus_scrape_enabled: false) and duplicate
-   addresses (several inventory names for one machine) are skipped.
+   node_exporter: one target per inventory host.
+   - skipped: hosts whose ansible_host renders empty (e.g. unset env var), hosts
+     with prometheus_scrape_enabled: false, and duplicate addresses (several
+     inventory names for one machine). Priority on duplicates: this host first,
+     then hosts that define server_alias, then the rest (all sorted).
+   - hosts without ansible_host are scraped by inventory name.
    --------------------------------------------------------------------------- #}
+{% set prometheus_group_hosts = groups[prometheus_node_exporter_group] | default([]) | sort %}
+{% set prometheus_ordered_hosts = ([inventory_hostname] if inventory_hostname in prometheus_group_hosts else [])
+     + (prometheus_group_hosts | select('ne', inventory_hostname) | select('in', hostvars | dict2items | selectattr('value.server_alias', 'defined') | map(attribute='key') | list) | list)
+     + (prometheus_group_hosts | select('ne', inventory_hostname) | reject('in', hostvars | dict2items | selectattr('value.server_alias', 'defined') | map(attribute='key') | list) | list) %}
 {% set prometheus_ns = namespace(seen=[]) %}
   - job_name: node_exporter
     static_configs:
-{% for host in groups[prometheus_node_exporter_group] | default([]) | sort %}
-{%   set host_address = hostvars[host]['ansible_host'] | default(host, true) | string | trim %}
+{% for host in prometheus_ordered_hosts %}
+{%   set host_address = (hostvars[host]['ansible_host'] if hostvars[host]['ansible_host'] is defined else host) | string | trim %}
 {%   if host_address | length > 0
         and host_address not in prometheus_ns.seen
         and (hostvars[host]['prometheus_scrape_enabled'] | default(true) | bool) %}
@@ -47,20 +65,14 @@ scrape_configs:
       - targets:
           - {{ (host_address ~ ':' ~ prometheus_node_exporter_port) | to_json }}
         labels:
-          alias: {{ hostvars[host]['server_alias'] | default(host) | string | to_json }}
-          location: {{ hostvars[host]['location'] | default('unknown') | string | to_json }}
-          environment: {{ hostvars[host]['server_environment'] | default('unknown') | string | to_json }}
-          description: {{ hostvars[host]['description'] | default('') | string | to_json }}
+          alias: {{ hostvars[host]['server_alias'] | default(host) | string | to_json(ensure_ascii=False) }}
+          location: {{ hostvars[host]['location'] | default('unknown') | string | to_json(ensure_ascii=False) }}
+          environment: {{ hostvars[host]['server_environment'] | default('unknown') | string | to_json(ensure_ascii=False) }}
+          description: {{ hostvars[host]['description'] | default('') | string | to_json(ensure_ascii=False) }}
           inventory_host: {{ host | to_json }}
 {%   endif %}
 {% endfor %}
-    # Target relabelling: keep the scraped address in `target_ip` and show the
-    # friendly alias as `instance` (applies to `up` and every scraped series).
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: target_ip
-      - source_labels: [alias]
-        target_label: instance
+{{ alias_relabel() -}}
     metric_relabel_configs:
       - regex: 'server|hostname'
         action: labeldrop
@@ -70,12 +82,8 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:{{ prometheus_promtail_port }}']
         labels:
-          alias: {{ server_alias | default(inventory_hostname) | string | to_json }}
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: target_ip
-      - source_labels: [alias]
-        target_label: instance
+          alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
+{{ alias_relabel() -}}
 {% endif %}
 {% if prometheus_scrape_loki | bool %}
 
@@ -83,12 +91,8 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:{{ prometheus_loki_port }}']
         labels:
-          alias: {{ server_alias | default(inventory_hostname) | string | to_json }}
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: target_ip
-      - source_labels: [alias]
-        target_label: instance
+          alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
+{{ alias_relabel() -}}
 {% endif %}
 {% if prometheus_scrape_grafana | bool %}
 
@@ -96,17 +100,14 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:{{ prometheus_grafana_port }}']
         labels:
-          alias: {{ server_alias | default(inventory_hostname) | string | to_json }}
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: target_ip
-      - source_labels: [alias]
-        target_label: instance
+          alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
+{{ alias_relabel() -}}
 {% endif %}
 {% if prometheus_speedtest_exporter_host | string | length > 0 %}
 
   - job_name: speedtest
     honor_labels: true
+    scrape_interval: {{ prometheus_speedtest_scrape_interval }}
     scrape_timeout: {{ prometheus_speedtest_scrape_timeout }}
     static_configs:
       - targets:

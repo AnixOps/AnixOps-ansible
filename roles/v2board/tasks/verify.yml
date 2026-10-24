@@ -88,7 +88,12 @@
           (last status: {{ v2board_health_check.status | default('no response') }}).
           Previous config.yaml restored: {{ v2board_config_restored is changed }}.
           Last log lines:
-          {{ (v2board_container_logs.stderr | default('') ~ v2board_container_logs.stdout | default('')) if v2board_deploy_method == 'docker' else v2board_journal.stdout | default('') }}
+          {% if v2board_deploy_method == 'docker' %}
+          {{ v2board_container_logs.stderr | default('') }}
+          {{ v2board_container_logs.stdout | default('') }}
+          {% else %}
+          {{ v2board_journal.stdout | default('') }}
+          {% endif %}
 
 - name: Show deployment summary | 显示部署摘要
   ansible.builtin.debug:

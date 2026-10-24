@@ -74,7 +74,9 @@
         state: restarted
       register: v2bx_restore_restart
       failed_when: false
-      when: v2bx_config_restored is changed
+      when:
+        - v2bx_config_result is changed
+        - v2bx_config_result.backup_file is defined
 
     - name: Collect the V2bX journal | 收集 V2bX 日志
       ansible.builtin.command:

@@ -77,7 +77,10 @@ jobs:
           set -euo pipefail
           found=0
 
-          key_files="$(git ls-files -- '*.pem' '*.key' '*.ppk' '*.p12' '*.pfx' '*id_rsa' '*id_ed25519' '*id_ecdsa' ':(exclude)*.pub')"
+          key_files="$(
+            git ls-files -- '*.pem' '*.key' '*.ppk' '*.p12' '*.pfx' \
+              '*id_rsa' '*id_ed25519' '*id_ecdsa' ':(exclude)*.pub'
+          )"
           if [[ -n "${key_files}" ]]; then
             echo "::error::Private key material is tracked in git:"
             echo "${key_files}"
@@ -93,7 +96,10 @@ jobs:
 
           rc=0
           # A real key block starts the line with the header; quoted mentions in tools/docs do not match.
-          pem_blocks="$(git grep -nI -E -e '^[[:space:]]*-----BEGIN (RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----[[:space:]]*$' -- . ':(exclude)*.md' ':(exclude).github/workflows/security-scan.yml')" || rc=$?
+          pem_pattern='^[[:space:]]*-----BEGIN (RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----[[:space:]]*$'
+          pem_blocks="$(
+            git grep -nI -E -e "${pem_pattern}" -- . ':(exclude)*.md' ':(exclude).github/workflows/security-scan.yml'
+          )" || rc=$?
           if (( rc == 0 )); then
             echo "::error::Inline private key blocks found in tracked files:"
             echo "${pem_blocks}"
@@ -122,7 +128,10 @@ jobs:
           set -euo pipefail
           # The hardening brief forbids ignore_errors; use failed_when/block-rescue/register instead.
           rc=0
-          matches="$(git grep -nI -i -E 'ignore_errors:[[:space:]]*"?(true|yes)"?' -- 'roles/**/*.yml' 'roles/**/*.yaml' 'playbooks/**/*.yml' 'playbooks/**/*.yaml' 'tests/integration/*.yml')" || rc=$?
+          matches="$(
+            git grep -nI -i -E 'ignore_errors:[[:space:]]*"?(true|yes)"?' -- \
+              'roles/**/*.yml' 'roles/**/*.yaml' 'playbooks/**/*.yml' 'playbooks/**/*.yaml' 'tests/integration/*.yml'
+          )" || rc=$?
           if (( rc == 0 )); then
             echo "::error::ignore_errors is forbidden (use failed_when: false, block/rescue or register + conditions):"
             echo "${matches}"

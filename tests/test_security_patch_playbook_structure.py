@@ -116,7 +116,11 @@ def test_security_patch_host_play_settings():
     assert host_play["hosts"] == "all:!localhost"
     assert host_play["serial"] == 1
     assert host_play["become"] is True
-    assert host_play["gather_facts"] is True
+    # Facts are gathered inside the rescued block (setup.yml); a play-level failure
+    # would abort the whole playbook under serial: 1 and skip the report play.
+    assert host_play["gather_facts"] is False
+    setup_tasks = _load(TASK_DIR / "setup.yml")
+    assert "ansible.builtin.setup" in setup_tasks[0], "setup.yml must gather facts first"
     assert host_play["max_fail_percentage"] == 100
     assert host_play["any_errors_fatal"] is False
     # The one sanctioned ignore_unreachable: report.yml emits placeholder summaries.
@@ -223,7 +227,7 @@ def test_security_patch_summary_schemas_agree():
 
     required = {
         "host", "status", "alert_reason", "before_count", "after_count", "reboot_required", "rebooted",
-        "apply_updates", "severity", "trivy_version", "update_rc", "findings", "placeholder",
+        "apply_updates", "severity", "trivy_version", "update_rc", "findings", "unreachable",
     }
     assert required <= init_keys
     assert init_keys == summary_keys == failure_keys == placeholder_keys

@@ -106,7 +106,8 @@ jobs:
       - name: Validate inputs
         run: |
           set -euo pipefail
-          if [[ "${ACTION}" == "rollback" || "${ACTION}" == "cleanup" ]] && [[ "${TARGET_GROUP}" == "all" && "${FORCE}" != "true" ]]; then
+          if [[ "${ACTION}" == "rollback" || "${ACTION}" == "cleanup" ]] \
+             && [[ "${TARGET_GROUP}" == "all" && "${FORCE}" != "true" ]]; then
             echo "::error::${ACTION} on target_group=all requires force=true"
             exit 1
           fi
@@ -136,7 +137,9 @@ jobs:
       - name: Resolve target hosts
         run: |
           set -euo pipefail
-          mapfile -t members < <(ansible "${TARGET_GROUP}" --list-hosts | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d')
+          mapfile -t members < <(
+            ansible "${TARGET_GROUP}" --list-hosts | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d'
+          )
           if (( ${#members[@]} == 0 )); then
             echo "::error::Target '${TARGET_GROUP}' matches no host in the generated inventory"
             exit 1
@@ -164,7 +167,13 @@ jobs:
           if [[ -n "${site_tags}" ]]; then
             args=(playbooks/provision/site.yml --limit "${TARGET_GROUP}" --tags "${site_tags}" -v)
           else
-            args=(playbooks/maintenance/lifecycle.yml --limit "${TARGET_GROUP}" --tags "${ACTION}" -e "lifecycle_target_role=${ROLE}" -v)
+            args=(
+              playbooks/maintenance/lifecycle.yml
+              --limit "${TARGET_GROUP}"
+              --tags "${ACTION}"
+              -e "lifecycle_target_role=${ROLE}"
+              -v
+            )
             case "${ACTION}" in
               rollback)
                 args+=(-e "lifecycle_version=${VERSION}" -e lifecycle_hook_type=post_rollback)

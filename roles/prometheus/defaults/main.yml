@@ -91,6 +91,9 @@ prometheus_grafana_port: 3000
 # Falls back to the legacy global `speedtest_exporter_host`.
 prometheus_speedtest_exporter_host: "{{ speedtest_exporter_host | default('') }}"
 prometheus_speedtest_exporter_port: 9091
+# A speedtest run is slow: scrape rarely and allow a long timeout
+# (scrape_timeout must not exceed scrape_interval).
+prometheus_speedtest_scrape_interval: 60s
 prometheus_speedtest_scrape_timeout: 30s
 
 # Raw scrape_configs entries appended verbatim (list of dicts).

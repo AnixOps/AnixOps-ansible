@@ -19,6 +19,9 @@ How it works
   plain string (e.g. ``v2board_config_dir: /etc/v2board``).
 * Static content (HTML, CSS, images, fonts) and backup copies
   (``*.backup.*``, ``*.bak``, ``*.orig``) are not configuration and are skipped.
+* Rescue tasks that restore a previous backup (``copy`` with ``remote_src: true``
+  and a ``src`` of ``{{ result.backup_file }}`` or ``*.backup.*``) are the
+  rollback itself and are not gated.
 
 Opt-out
 -------
@@ -326,6 +329,22 @@ def backup_state(value: Any) -> str:
     return "off"
 
 
+def is_restore_from_backup(args: Dict[str, Any]) -> bool:
+    """True for rescue tasks that copy a previous backup back into place.
+
+    The roll-out pattern of this repository is: template (``backup: true``) ->
+    flush handlers -> verify -> on failure copy ``<register>.backup_file`` back
+    with ``remote_src: true``. That restore *is* the rollback; it must not be
+    gated on producing yet another backup of the broken file.
+    """
+    src = args.get("src")
+    if not isinstance(src, str):
+        return False
+    if backup_state(args.get("remote_src")) != "on":
+        return False
+    return "backup_file" in src or bool(BACKUP_COPY.search(src.strip()))
+
+
 def is_protected_config(dest: str) -> bool:
     """True when *dest* is a configuration file under a protected prefix."""
     candidate = dest.strip()
@@ -400,6 +419,8 @@ def check_file(path: Path, root: Path, roles_dir: Optional[Path]) -> Tuple[List[
                 continue
             dest = resolve_dest(dest.strip(), variables)
             if not is_protected_config(dest):
+                continue
+            if is_restore_from_backup(args):
                 continue
             state = backup_state(args.get("backup"))
             if state == "on":

@@ -1,0 +1,101 @@
+---
+# Rollback | 回滚
+# Included from a rescue block. Restores every file this run backed up, removes
+# files this run created, puts sites-enabled back to the pre-run snapshot and
+# re-validates. The caller passes nginx_rollback_reason and, when the new
+# configuration was already live, nginx_rollback_reload: true.
+
+- name: Collect the results of every configuration task in this run
+  ansible.builtin.set_fact:
+    nginx_rollback_results: >-
+      {{ [nginx_proxy_params_result | default({}),
+          nginx_security_headers_result | default({}),
+          nginx_default_site_result | default({}),
+          nginx_host_config_result | default({}),
+          nginx_main_config_result | default({}),
+          nginx_logrotate_result | default({})]
+         + ((nginx_custom_configs_result | default({})).results | default([]))
+         + ((nginx_sites_result | default({})).results | default([])) }}
+
+- name: Restore configuration files from the backups taken in this run
+  ansible.builtin.copy:
+    src: "{{ item.backup_file }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    mode: preserve
+  loop: "{{ nginx_rollback_results | selectattr('backup_file', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  register: nginx_rollback_restored
+
+- name: Remove configuration files that did not exist before this run
+  ansible.builtin.file:
+    path: "{{ item.dest }}"
+    state: absent
+  loop: >-
+    {{ nginx_rollback_results
+       | selectattr('dest', 'defined')
+       | selectattr('changed', 'defined') | selectattr('changed')
+       | rejectattr('backup_file', 'defined')
+       | rejectattr('dest', 'in', nginx_preexisting_files)
+       | list }}
+  loop_control:
+    label: "{{ item.dest }}"
+  register: nginx_rollback_removed
+
+- name: Find the virtual host symlinks present after the failed run
+  ansible.builtin.find:
+    paths: /etc/nginx/sites-enabled
+    file_type: link
+  register: nginx_links_after
+
+- name: Remove virtual host symlinks created in this run
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{ nginx_links_after.files | map(attribute='path')
+       | reject('in', nginx_links_before.files | map(attribute='path') | list) | list }}
+
+- name: Restore virtual host symlinks removed in this run
+  ansible.builtin.file:
+    src: "{{ item.stat.lnk_target }}"
+    dest: "{{ item.stat.path }}"
+    state: link
+    force: true
+  loop: >-
+    {{ nginx_links_before_stat.results
+       | selectattr('stat.exists')
+       | rejectattr('stat.path', 'in', nginx_links_after.files | map(attribute='path') | list)
+       | list }}
+  loop_control:
+    label: "{{ item.stat.path }}"
+
+- name: Re-validate the restored Nginx configuration
+  ansible.builtin.command:
+    argv:
+      - nginx
+      - -t
+  register: nginx_rollback_config_test
+  changed_when: false
+  failed_when: false
+
+- name: Reload Nginx with the restored configuration
+  ansible.builtin.service:
+    name: "{{ nginx_service_name }}"
+    state: reloaded
+  when:
+    - nginx_rollback_reload | default(false) | bool
+    - nginx_rollback_config_test.rc == 0
+
+- name: Fail after rolling back the Nginx configuration
+  ansible.builtin.fail:
+    msg: |
+      Nginx deployment failed on {{ inventory_hostname }}: {{ nginx_rollback_reason | default('configuration error') }}.
+      Failed task: {{ ansible_failed_task.name | default('unknown') }}
+      {{ ansible_failed_result.stderr | default(ansible_failed_result.msg | default('')) }}
+
+      Rollback: restored {{ nginx_rollback_restored.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | list | length }} file(s) from backup,
+      removed {{ nginx_rollback_removed.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | list | length }} newly created file(s).
+      Restored configuration (nginx -t): {{ 'OK' if nginx_rollback_config_test.rc == 0 else 'STILL INVALID - manual intervention required' }}
+      {{ nginx_rollback_config_test.stderr | default('') if nginx_rollback_config_test.rc != 0 else '' }}

@@ -1,8 +1,22 @@
 ---
 # Setup stage | 准备阶段
-# Validate the OS, make sure Trivy (optionally a pinned release) is installed and
-# refresh its vulnerability database so that the scans themselves are fast and
-# predictable.
+# Gather facts, validate the OS, make sure Trivy (optionally a pinned release) is
+# installed and refresh its vulnerability database so that the scans themselves are
+# fast and predictable.
+
+- name: Gather the facts needed for patching
+  ansible.builtin.setup:
+    # "!all" keeps the minimal subset (platform, distribution, pkg_mgr, ...).
+    gather_subset:
+      - "!all"
+
+- name: Verify the host returned facts
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family is defined
+      - ansible_pkg_mgr is defined
+    quiet: true
+    fail_msg: "host unreachable or fact gathering failed: no facts available for {{ inventory_hostname }}"
 
 - name: Validate supported operating systems
   ansible.builtin.fail:

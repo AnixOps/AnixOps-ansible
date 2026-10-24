@@ -2,8 +2,10 @@
 # Report stage (localhost) | 报告阶段
 # Aggregates every host summary into security-patch-report.json (schema_version 1)
 # and a short Markdown twin (<report>.md) that fits $GITHUB_STEP_SUMMARY.
-# Hosts that produced no summary at all (unreachable, or failed before pre_tasks ran)
-# get a placeholder `scan_failed` summary and are counted in unreachable_count.
+# Hosts that produced no summary at all (excluded by --limit, or failed before the
+# pre_tasks ran) get a placeholder `scan_failed` summary with unreachable: true;
+# unreachable_count therefore covers those placeholders plus every host that
+# failure.yml flagged as unreachable.
 
 - name: Determine security patch target group
   ansible.builtin.set_fact:
@@ -49,7 +51,7 @@
       apply_updates: "{{ security_patch_apply_updates | bool }}"
       severity: "{{ security_patch_severity }}"
       trivy_version: "unknown"
-      placeholder: true
+      unreachable: true
       findings: []
   loop: "{{ security_patch_target_hosts }}"
 
@@ -73,7 +75,7 @@
           'alert_count': security_patch_report_hosts
                          | selectattr('status', 'in', ['needs_attention', 'scan_failed']) | list | length,
           'unreachable_count': security_patch_report_hosts
-                               | selectattr('placeholder', 'defined') | selectattr('placeholder') | list | length,
+                               | selectattr('unreachable', 'defined') | selectattr('unreachable') | list | length,
           'reboot_required_count': security_patch_report_hosts
                                    | selectattr('reboot_required', 'defined') | selectattr('reboot_required')
                                    | list | length,

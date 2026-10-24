@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+# Shared reverse-proxy headers and timeouts (include /etc/nginx/proxy_params;)
+proxy_set_header Host $http_host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_connect_timeout {{ nginx_proxy_timeout }};
+proxy_send_timeout {{ nginx_proxy_timeout }};
+proxy_read_timeout {{ nginx_proxy_timeout }};
+send_timeout {{ nginx_proxy_timeout }};

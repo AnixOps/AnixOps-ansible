@@ -146,7 +146,9 @@ jobs:
       - name: Resolve target hosts
         run: |
           set -euo pipefail
-          mapfile -t members < <(ansible "${TARGET_GROUP}" --list-hosts | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d')
+          mapfile -t members < <(
+            ansible "${TARGET_GROUP}" --list-hosts | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d'
+          )
           if (( ${#members[@]} == 0 )); then
             echo "::error::Target group '${TARGET_GROUP}' has no hosts in the generated inventory"
             exit 1

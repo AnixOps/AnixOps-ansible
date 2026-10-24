@@ -28,7 +28,7 @@
           'apply_updates': security_patch_apply_updates | bool,
           'severity': security_patch_severity,
           'trivy_version': security_patch_trivy_version_detected | default('unknown'),
-          'placeholder': false,
+          'unreachable': false,
           'findings': security_patch_findings_after[:(security_patch_max_findings_in_report | int)]
         }
       }}

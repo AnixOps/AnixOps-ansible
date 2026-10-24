@@ -93,9 +93,10 @@
 
     - name: Show the active firewall configuration | 显示当前防火墙配置
       ansible.builtin.debug:
-        msg: >-
-          {{ (firewall_setup_ufw_status if ansible_os_family == 'Debian' else firewall_setup_firewalld_status).stdout_lines
-             | default([]) }}
+        msg: "{{ firewall_setup_status.stdout_lines | default([]) }}"
+      vars:
+        firewall_setup_status: >-
+          {{ firewall_setup_ufw_status if ansible_os_family == 'Debian' else firewall_setup_firewalld_status }}
       when: firewall_enabled | default(true) | bool
 
     - name: Firewall setup summary | 防火墙设置摘要

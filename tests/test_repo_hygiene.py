@@ -7,7 +7,9 @@ as a parse error), contain no tabs and no trailing whitespace.  Shell scripts
 need a shebang and the executable bit in the git index.
 
 Each check is parametrized per file so a failure names the file, and messages
-carry ``file:line`` pointers wherever a line is known.
+carry ``file:line`` pointers wherever a line is known.  This source file is
+kept pure ASCII (non-ASCII characters are built with ``chr()``) so it can never
+trip its own checks.
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ pytestmark = pytest.mark.hygiene
 
 TEXT_FILES = tracked_text_files()
 YAML_FILES = yaml_files()
-# Rendered YAML templates are YAML too as far as tabs/invisible characters go.
+# Rendered YAML templates are YAML too as far as tabs go.
 YAML_LIKE_FILES = tuple(
     p for p in TEXT_FILES
     if p.suffix.lower() in (".yml", ".yaml") or p.name.lower().endswith((".yml.j2", ".yaml.j2"))
@@ -55,25 +57,63 @@ TRAILING_WS_FILES = tuple(
 INVISIBLE_SUFFIXES = {".yml", ".yaml", ".py", ".sh", ".cfg", ".ini", ".j2", ".toml"}
 INVISIBLE_FILES = tuple(p for p in TEXT_FILES if p.suffix.lower() in INVISIBLE_SUFFIXES)
 
-# Characters that only ever appear when UTF-8 Chinese was decoded as GBK, a
-# CJK character directly followed by "?" (a lost trailing byte), "?" followed by
-# any non-ASCII character, and the U+FFFD replacement character.  Written as
-# escapes so this file never trips its own check.
-# Code points are spelled out with chr() so this source file stays pure ASCII
-# and can never trip its own checks.
+# --- mojibake detection -----------------------------------------------------
+# Characters that only ever appear when UTF-8 Chinese was decoded as GBK
+# (the coordinator's list), plus a structural heuristic: GBK-decoding UTF-8
+# bytes (E4..E9 lead bytes) can only produce GB2312 level-2 / GBK-extension
+# characters (GBK lead byte outside B0..D7), whereas genuine simplified Chinese
+# is dominated by level-1 characters (lead byte B0..D7).  A run of CJK
+# characters with no level-1 character is therefore garbage, and a "?" next to
+# such characters is a lost byte rather than punctuation.
 GBK_MOJIBAKE_CHARS = "".join(chr(cp) for cp in (
     0x923A, 0x93C8, 0x95AE, 0x9428, 0x951B, 0x9286, 0x934F, 0x93B4, 0x6D60,
     0x7481, 0x9359, 0x9422, 0x95B0, 0x93C2, 0x935A, 0x9352, 0x9365,
 ))
-CJK_RANGE = chr(0x4E00) + "-" + chr(0x9FFF)
+CJK = chr(0x4E00) + "-" + chr(0x9FFF)
+EURO = chr(0x20AC)  # GBK byte 0x80 decodes to the euro sign; it shows up inside garbage runs
 REPLACEMENT_CHAR = chr(0xFFFD)
-MOJIBAKE_RE = re.compile(
-    "[" + GBK_MOJIBAKE_CHARS + "]"          # GBK-decoded UTF-8 Chinese
-    + "|[" + CJK_RANGE + "]\\?"              # CJK char immediately followed by "?" (lost byte)
-    + "|\\?[^\\x00-\\x7f]"                 # "?" immediately followed by any non-ASCII char
-    + "|" + REPLACEMENT_CHAR                 # U+FFFD
-)
-INVISIBLE_RE = re.compile("[" + "".join(chr(cp) for cp in (0x00A0, 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF)) + "]")
+MOJIBAKE_CHAR_RE = re.compile("[" + GBK_MOJIBAKE_CHARS + REPLACEMENT_CHAR + "]")
+CJK_RUN_RE = re.compile("[" + CJK + "]+")
+CJK_QUESTION_RE = re.compile("([" + CJK + "]+)\\?")
+QUESTION_NON_ASCII_RE = re.compile("\\?([^\\x00-\\x7f])")
+EURO_NEAR_CJK_RE = re.compile("[" + CJK + "]" + EURO + "|" + EURO + "[" + CJK + "]")
+
+
+def _is_common_hanzi(char: str) -> bool:
+    """GB2312 level-1 character (GBK lead byte B0..D7): the bulk of real simplified text."""
+    try:
+        return 0xB0 <= char.encode("gbk")[0] <= 0xD7
+    except UnicodeEncodeError:
+        return False
+
+
+def _looks_garbled(run: str) -> bool:
+    common = sum(1 for char in run if _is_common_hanzi(char))
+    return common * 2 < len(run)
+
+
+def mojibake_problems(text: str) -> list[tuple[int, str, str]]:
+    """``[(lineno, reason, snippet), ...]`` for every line that carries mojibake."""
+    problems = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        reason = None
+        if MOJIBAKE_CHAR_RE.search(line):
+            reason = "GBK-decoded UTF-8 character"
+        elif any(len(m.group(0)) >= 3 and not any(_is_common_hanzi(c) for c in m.group(0))
+                 for m in CJK_RUN_RE.finditer(line)):
+            reason = "run of CJK characters with no common hanzi (GBK-decoded UTF-8)"
+        elif any(_looks_garbled(m.group(1)[-4:]) for m in CJK_QUESTION_RE.finditer(line)):
+            reason = "'?' right after garbled CJK text (lost byte)"
+        elif any(not (CJK_RUN_RE.match(m.group(1)) and _is_common_hanzi(m.group(1)))
+                 for m in QUESTION_NON_ASCII_RE.finditer(line)):
+            reason = "'?' followed by a non-ASCII character (lost byte)"
+        elif EURO_NEAR_CJK_RE.search(line):
+            reason = "euro sign glued to CJK text (GBK byte 0x80)"
+        if reason:
+            problems.append((number, reason, line.strip()[:100]))
+    return problems
+
+
 CONFLICT_RE = re.compile(r"^(?:<{7} |>{7} |\|{7} )")
 
 _PEM_HEADER = "-----BEGIN " + r"(?:RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY" + "-----"
@@ -104,47 +144,30 @@ def _line_of_offset(data: bytes, offset: int) -> int:
 
 
 @pytest.mark.parametrize("path", TEXT_FILES, ids=ids_for(TEXT_FILES))
-def test_decodes_as_utf8(path: Path) -> None:
+def test_encoding_and_line_endings(path: Path) -> None:
+    """UTF-8 without BOM, LF only, exactly one trailing newline (empty files are fine)."""
     data = read_bytes(path)
+    name = rel(path)
+    problems: list[str] = []
+    if data.startswith(b"\xef\xbb\xbf"):
+        problems.append(f"{name}:1: starts with a UTF-8 BOM (bytes EF BB BF); re-save as UTF-8 without BOM")
     try:
         data.decode("utf-8")
     except UnicodeDecodeError as exc:
-        line = _line_of_offset(data, exc.start)
-        pytest.fail(
-            f"{rel(path)}:{line}: not valid UTF-8 at byte offset {exc.start} "
-            f"({data[exc.start:exc.start + 8]!r}): {exc.reason}. Re-save the file as UTF-8."
+        problems.append(
+            f"{name}:{_line_of_offset(data, exc.start)}: not valid UTF-8 at byte offset {exc.start} "
+            f"({data[exc.start:exc.start + 8]!r}): {exc.reason}; re-save the file as UTF-8"
         )
-
-
-@pytest.mark.parametrize("path", TEXT_FILES, ids=ids_for(TEXT_FILES))
-def test_no_utf8_bom(path: Path) -> None:
-    data = read_bytes(path)
-    assert not data.startswith(b"\xef\xbb\xbf"), (
-        f"{rel(path)}:1: starts with a UTF-8 BOM (EF BB BF); strip it: "
-        f"sed -i '1s/^\\xEF\\xBB\\xBF//' {rel(path)}"
-    )
-
-
-@pytest.mark.parametrize("path", TEXT_FILES, ids=ids_for(TEXT_FILES))
-def test_no_crlf_line_endings(path: Path) -> None:
-    data = read_bytes(path)
     offset = data.find(b"\r")
-    assert offset == -1, (
-        f"{rel(path)}:{_line_of_offset(data, offset)}: carriage return found; "
-        f"convert to LF line endings (e.g. `sed -i 's/\\r$//' {rel(path)}`)"
-    )
-
-
-@pytest.mark.parametrize("path", TEXT_FILES, ids=ids_for(TEXT_FILES))
-def test_ends_with_exactly_one_newline(path: Path) -> None:
-    data = read_bytes(path)
-    if not data:
-        return  # empty files are fine
-    last_line = data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
-    assert data.endswith(b"\n"), f"{rel(path)}:{last_line}: missing trailing newline at end of file"
-    assert not data.endswith(b"\n\n"), (
-        f"{rel(path)}:{last_line}: more than one trailing newline at end of file; keep exactly one"
-    )
+    if offset != -1:
+        problems.append(f"{name}:{_line_of_offset(data, offset)}: carriage return found; convert to LF (dos2unix)")
+    if data:
+        last_line = data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
+        if not data.endswith(b"\n"):
+            problems.append(f"{name}:{last_line}: missing trailing newline at end of file")
+        elif data.endswith(b"\n\n"):
+            problems.append(f"{name}:{last_line}: more than one trailing newline at end of file; keep exactly one")
+    assert not problems, format_problems(f"{name}: encoding / line endings", problems)
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +195,9 @@ def test_no_trailing_whitespace(path: Path) -> None:
     )
 
 
+INVISIBLE_RE = re.compile("[" + "".join(chr(cp) for cp in (0x00A0, 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF)) + "]")
+
+
 @pytest.mark.parametrize("path", INVISIBLE_FILES, ids=ids_for(INVISIBLE_FILES))
 def test_no_invisible_unicode_characters(path: Path) -> None:
     hits = find_lines(path, INVISIBLE_RE)
@@ -192,11 +218,11 @@ def test_no_invisible_unicode_characters(path: Path) -> None:
 
 @pytest.mark.parametrize("path", TEXT_FILES, ids=ids_for(TEXT_FILES))
 def test_no_mojibake(path: Path) -> None:
-    hits = find_lines(path, MOJIBAKE_RE)
+    hits = mojibake_problems(read_text(path))
     assert not hits, format_problems(
-        f"{rel(path)}: mojibake (UTF-8 text decoded as GBK, or a lost byte shown as '?'); "
+        f"{rel(path)}: mojibake (UTF-8 text that was decoded as GBK, or a lost byte shown as '?'); "
         "the original text cannot be recovered: rewrite the comment/string from scratch",
-        [f"{rel(path)}:{number}: {line.strip()[:100]!r}" for number, line in hits],
+        [f"{rel(path)}:{number}: {reason}: {snippet!r}" for number, reason, snippet in hits],
         limit=10,
     )
 
@@ -299,7 +325,9 @@ def test_env_example_exists_and_has_no_values_for_secrets() -> None:
     assert example.is_file(), ".env.example is missing; operators need it to bootstrap a local .env"
     problems = []
     for number, line in enumerate(read_text(example).splitlines(), start=1):
-        match = re.match(r"^\s*(?:export\s+)?([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*)=(.*)$", line)
+        match = re.match(
+            r"^\s*(?:export\s+)?([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*)=(.*)$", line
+        )
         if not match:
             continue
         value = match.group(2).split("#", 1)[0].strip().strip("\"'")
