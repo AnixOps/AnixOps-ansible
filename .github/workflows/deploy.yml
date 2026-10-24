@@ -128,7 +128,8 @@ jobs:
               exit 1
               ;;
           esac
-          echo "Inputs OK: playbook=${PLAYBOOK} target_group=${TARGET_GROUP} limit_hosts=${LIMIT_HOSTS:-<none>} tags=${PLAY_TAGS:-<all>} dry_run=${DRY_RUN}"
+          echo "Inputs OK: playbook=${PLAYBOOK} target_group=${TARGET_GROUP} dry_run=${DRY_RUN}"
+          echo "           limit_hosts=${LIMIT_HOSTS:-<none>} tags=${PLAY_TAGS:-<all>} verbosity=-${VERBOSITY}"
 
       - name: Checkout code
         uses: actions/checkout@v4

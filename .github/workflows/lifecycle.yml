@@ -119,7 +119,8 @@ jobs:
             echo "::error::keep_backups must be a non-negative integer"
             exit 1
           fi
-          echo "Inputs OK: action=${ACTION} role=${ROLE} target_group=${TARGET_GROUP} version=${VERSION} force=${FORCE} keep_backups=${KEEP_BACKUPS}"
+          echo "Inputs OK: action=${ACTION} role=${ROLE} target_group=${TARGET_GROUP}"
+          echo "           version=${VERSION} force=${FORCE} keep_backups=${KEEP_BACKUPS}"
 
       - name: Checkout code
         uses: actions/checkout@v4

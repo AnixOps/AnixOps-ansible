@@ -85,7 +85,7 @@ Release URLs are architecture-aware (`x86_64 -> amd64`, `aarch64 -> arm64`, `arm
           tls-san: [k3s.example.com]
 ```
 
-Tags: `prerequisites`, `kind`, `k3s`, `verification`.
+The role defines no tags of its own; use the play tags (`k3s`, `k3s_test`, `kind`) of `playbooks/platform/*.yml`.
 
 ## Verification | 验证
 

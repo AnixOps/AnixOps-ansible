@@ -273,10 +273,12 @@ def test_secret_references_go_through_export_secrets(path: Path):
             assert step["with"]["secrets-json"] == "${{ toJSON(secrets) }}"
 
 
-@pytest.mark.parametrize("path", sorted((ROOT / ".github").rglob("*")), ids=lambda p: str(p.relative_to(ROOT)))
+@pytest.mark.parametrize(
+    "path",
+    sorted(p for p in (ROOT / ".github").rglob("*") if p.is_file() and p.suffix in {".yml", ".yaml", ".py", ".md"}),
+    ids=lambda p: str(p.relative_to(ROOT)),
+)
 def test_github_files_are_clean_utf8(path: Path):
-    if not path.is_file():
-        return
     raw = path.read_bytes()
     assert not raw.startswith(b"\xef\xbb\xbf"), f"{path} has a UTF-8 BOM"
     assert b"\r" not in raw, f"{path} has CRLF line endings"
