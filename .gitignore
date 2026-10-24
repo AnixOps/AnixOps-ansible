@@ -1,10 +1,12 @@
 # Ansible
 *.retry
+*.pre-rollback.*
 
 # Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest_cache
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -13,6 +15,7 @@ htmlcov/
 
 # Virtual environments
 venv/
+venv*/
 .venv/
 
 # Local environment and secrets
@@ -34,6 +37,7 @@ ansible.local.cfg
 *.log
 *.zip
 security-patch-report.json
+security-patch-report.md
 
 # Ansible local runtime state (logs, fact cache, control sockets)
 .ansible/

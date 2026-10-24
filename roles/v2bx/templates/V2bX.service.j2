@@ -1,16 +1,28 @@
+# Managed by Ansible (role: v2bx) - do not edit manually.
 [Unit]
 Description=V2bX Proxy Node
 Documentation=https://github.com/{{ v2bx_repo_owner }}/{{ v2bx_repo_name }}
-After=network.target warp-svc.service
-Requires=warp-svc.service
+After={{ (['network-online.target'] + (v2bx_extra_after_units | default([]))) | join(' ') }}
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=root
+User={{ v2bx_service_user }}
+WorkingDirectory={{ v2bx_install_dir }}
+Environment=XRAY_LOCATION_ASSET={{ v2bx_install_dir }}
 ExecStart={{ v2bx_install_dir }}/{{ v2bx_bin_name }} -c {{ v2bx_config_dir }}/config.json
 Restart=on-failure
-RestartSec=5
+RestartSec=5s
 LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths={{ v2bx_config_dir }} {{ v2bx_data_dir }}
 
 [Install]
 WantedBy=multi-user.target

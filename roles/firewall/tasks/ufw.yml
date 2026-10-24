@@ -107,10 +107,12 @@
     firewall_ufw_deny_line: >-
       {{ firewall_ufw_lines | select('match', '^ufw deny ' ~ item ~ '/tcp( comment .*)?$') | first | default('') }}
     firewall_ufw_lines_after_deny: >-
-      {{ firewall_ufw_lines[firewall_ufw_lines.index(firewall_ufw_deny_line) + 1:] if firewall_ufw_deny_line else [] }}
+      {{ firewall_ufw_lines[firewall_ufw_lines.index(firewall_ufw_deny_line) + 1 :] if firewall_ufw_deny_line else [] }}
   when:
     - firewall_whitelist_rules_enabled | bool
-    - firewall_ufw_lines_after_deny | select('match', '^ufw allow from \S+ to any port ' ~ item ~ ' proto tcp') | list | length > 0
+    - >-
+      firewall_ufw_lines_after_deny
+      | select('match', '^ufw allow from \S+ to any port ' ~ item ~ ' proto tcp') | list | length > 0
 
 - name: Deny restricted ports from everywhere else | 拒绝其他来源访问受限端口
   community.general.ufw:
@@ -182,6 +184,11 @@
 - name: Show the UFW summary | 显示 UFW 摘要
   ansible.builtin.debug:
     msg:
-      - "UFW active on {{ inventory_hostname }}: default incoming {{ firewall_default_incoming_policy }}, IPv6 {{ 'on' if firewall_ipv6_enabled | bool else 'off' }}, logging {{ firewall_ufw_logging }}"
-      - "SSH ports: {{ firewall_ssh_ports | join(', ') }} | public ports: {{ firewall_effective_public_ports | join(', ') }}"
-      - "Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }} | whitelist entries: {{ firewall_effective_whitelist | length }}"
+      - >-
+        UFW active on {{ inventory_hostname }}: default incoming {{ firewall_default_incoming_policy }},
+        IPv6 {{ 'on' if firewall_ipv6_enabled | bool else 'off' }}, logging {{ firewall_ufw_logging }}
+      - "SSH ports: {{ firewall_ssh_ports | join(', ') }}"
+      - "Public ports: {{ firewall_effective_public_ports | join(', ') }}"
+      - >-
+        Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }}
+        (whitelist entries: {{ firewall_effective_whitelist | length }})

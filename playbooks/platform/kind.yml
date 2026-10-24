@@ -1,81 +1,50 @@
 ---
 # =============================================================================
-# Local Development Playbook
+# Local kind cluster | 本地 kind 集群
 # =============================================================================
-# 用于在本地创建 Kind 集群（不使用 Helm，不自动部署应用）
-# Create local Kind cluster (without Helm, no automatic application deployment)
+# Scope      : k8s_local (localhost, connection: local)
+# Risk       : LOW - local development only
+# Rollback   : kind delete cluster --name <kind_cluster_name>
+# Pre-flight : k8s_provision prerequisites (Docker daemon, pinned kind + kubectl)
+# Post-check : k8s_provision verification
 #
-# Scope: k8s_local (localhost only)
-# Rollback: N/A — run `kind delete cluster --name {{ kind_cluster_name }}`
-# Risk Level: LOW (local development environment only)
-# Pre-flight: No (localhost is assumed to be available)
-# Post-check: No (kind cluster status is printed)
-# =============================================================================
+# Runs as the invoking user (become: false) because kind talks to the user's Docker
+# daemon; the role elevates only to install binaries under /usr/local/bin.
+# No Helm and no application deployment: use kubectl apply -f <manifest> afterwards.
 #
-# 使用方法 | Usage:
+# Usage | 使用:
+#   ansible-playbook -i inventories/development/hosts.yml playbooks/platform/kind.yml
+#   bash scripts/anixops.sh deploy-local
 #
-#   基本使用 | Basic usage:
-#     ansible-playbook playbooks/platform/kind.yml
-#
-#   通过脚本 | Via script:
-#     bash scripts/anixops.sh deploy-local
-#
-# 说明：
-#   - 只创建 Kind 集群
-#   - 不使用 Helm
-#   - 不自动部署任何应用
-#   - 应用部署请使用 kubectl apply -f <manifest>
-#
+# Tags: kind
 # =============================================================================
 
-- name: "Provision Local Kubernetes Cluster (Kind)"
+- name: Provision the local kind cluster
   hosts: k8s_local
-  gather_facts: no
+  become: false
+  gather_facts: true
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: false
+  tags:
+    - kind
 
   tasks:
-    - name: Display stage information
+    - name: Show target summary
       ansible.builtin.debug:
         msg:
-          - "╔════════════════════════════════════════════════════════════════╗"
-          - "║  Provision Local Kubernetes Cluster (Kind)                    ║"
-          - "╚════════════════════════════════════════════════════════════════╝"
-          - ""
-          - "🎯 Target: localhost"
-          - "🔧 Provider: Kind"
-          - "📦 Cluster: {{ kind_cluster_name }}"
+          - "Target: {{ inventory_hostname }} (provider: kind)"
+          - "Cluster: {{ kind_cluster_name | default('anixops-dev') }}"
 
-    - name: Include k8s_provision role
-      ansible.builtin.include_role:
+    - name: Provision kind with the k8s_provision role
+      ansible.builtin.import_role:
         name: k8s_provision
-      tags:
-        - k8s
-        - provision
+      vars:
+        k8s_provision_provider: kind
 
-- name: "Display Deployment Summary"
-  hosts: k8s_local
-  gather_facts: no
-
-  tasks:
-    - name: Display final summary
+    - name: Show the deployment summary
       ansible.builtin.debug:
         msg:
-          - ""
-          - "╔════════════════════════════════════════════════════════════════╗"
-          - "║  🎉 Kind Cluster Created Successfully!                         ║"
-          - "╚════════════════════════════════════════════════════════════════╝"
-          - ""
-          - "✅ Kind cluster is running"
-          - "✅ Kubectl is configured"
-          - ""
-          - "📋 Next Steps:"
-          - "  1. Check cluster: kubectl cluster-info --context kind-{{ kind_cluster_name }}"
-          - "  2. View nodes: kubectl get nodes"
-          - "  3. View pods: kubectl get pods --all-namespaces"
-          - ""
-          - "📦 Deploy applications using kubectl:"
-          - "  kubectl apply -f your-manifest.yaml"
-          - ""
-          - "🔍 Useful Commands:"
-          - "  • Switch context: kubectl config use-context kind-{{ kind_cluster_name }}"
-          - "  • Delete cluster: kind delete cluster --name {{ kind_cluster_name }}"
-          - "  • Cleanup: bash scripts/anixops.sh cleanup-local"
+          - "kind cluster {{ kind_cluster_name | default('anixops-dev') }} is ready"
+          - "Context: kubectl cluster-info --context kind-{{ kind_cluster_name | default('anixops-dev') }}"
+          - "Rollback: kind delete cluster --name {{ kind_cluster_name | default('anixops-dev') }}"

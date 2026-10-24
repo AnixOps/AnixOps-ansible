@@ -1,0 +1,120 @@
+---
+# =============================================================================
+# Prometheus alert rules - observability stack | 可观测性组件告警规则
+# =============================================================================
+# Self-monitoring of the PLG stack: jobs `prometheus`, `loki`, `promtail` and
+# `grafana` are scraped on the observability host by roles/prometheus.
+# =============================================================================
+groups:
+  - name: observability_availability
+    rules:
+      - alert: PromtailDown
+        expr: up{job="promtail"} == 0
+        for: 3m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "Promtail is down on {{ $labels.instance }}"
+          description: "Promtail metrics endpoint (port 9080) has been unreachable for 3 minutes; logs are not shipped to Loki."
+
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Loki is down on {{ $labels.instance }}"
+          description: "Loki (port 3100) has been unreachable for 2 minutes; log ingestion and queries are failing."
+
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 3m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "Grafana is down on {{ $labels.instance }}"
+          description: "Grafana (port 3000) has been unreachable for 3 minutes."
+
+  - name: prometheus_health
+    rules:
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: critical
+          category: configuration
+        annotations:
+          summary: "Prometheus configuration reload failed on {{ $labels.instance }}"
+          description: "The last configuration reload failed; Prometheus keeps running with the previous configuration."
+
+      - alert: PrometheusRuleEvaluationFailures
+        expr: increase(prometheus_rule_evaluation_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: configuration
+        annotations:
+          summary: "Prometheus rule evaluation failures on {{ $labels.instance }}"
+          description: "{{ $value | printf \"%.0f\" }} rule evaluations failed in the last 5 minutes (rule group {{ $labels.rule_group }})."
+
+      - alert: PrometheusTSDBCompactionsFailing
+        expr: increase(prometheus_tsdb_compactions_failed_total[3h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "Prometheus TSDB compactions failing on {{ $labels.instance }}"
+          description: "{{ $value | printf \"%.0f\" }} TSDB compactions failed in the last 3 hours; check disk space under /var/lib/prometheus."
+
+      - alert: PrometheusNotificationQueueFull
+        expr: >-
+          prometheus_notifications_queue_length / prometheus_notifications_queue_capacity > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          category: alerting
+        annotations:
+          summary: "Prometheus alert notification queue filling on {{ $labels.instance }}"
+          description: "The Alertmanager notification queue is {{ $value | humanizePercentage }} full."
+
+  - name: loki_health
+    rules:
+      - alert: LokiRequestErrors
+        expr: >-
+          sum by (job, route) (rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            / sum by (job, route) (rate(loki_request_duration_seconds_count[5m])) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "Loki route {{ $labels.route }} returning errors"
+          description: "{{ $value | humanizePercentage }} of requests on {{ $labels.route }} failed with 5xx over 5 minutes."
+
+      - alert: LokiRequestLatency
+        expr: >-
+          histogram_quantile(0.99,
+            sum by (le, route) (rate(loki_request_duration_seconds_bucket{route!~"(?i).*tail.*|/schedulerpb.SchedulerForQuerier/QuerierLoop"}[5m]))) > 10
+        for: 15m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Loki route {{ $labels.route }} is slow"
+          description: "99th percentile latency on {{ $labels.route }} is {{ $value | humanizeDuration }}."
+
+      - alert: PromtailRequestErrors
+        expr: >-
+          sum by (instance) (rate(promtail_request_duration_seconds_count{status_code=~"5..|failed"}[5m]))
+            / sum by (instance) (rate(promtail_request_duration_seconds_count[5m])) > 0.10
+        for: 15m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "Promtail on {{ $labels.instance }} cannot push to Loki"
+          description: "{{ $value | humanizePercentage }} of Promtail push requests failed over the last 5 minutes."

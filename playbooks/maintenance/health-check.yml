@@ -262,7 +262,8 @@
               unhealthy_count: "{{ health_check_report_hosts | length - health_check_report_healthy | length }}"
               hosts: "{{ health_check_report_hosts }}"
           vars:
-            health_check_report_healthy: "{{ health_check_report_hosts | selectattr('status', 'equalto', 'healthy') | list }}"
+            health_check_report_healthy: >-
+              {{ health_check_report_hosts | selectattr('status', 'equalto', 'healthy') | list }}
 
         - name: Write the report file | 写入报告文件
           ansible.builtin.copy:

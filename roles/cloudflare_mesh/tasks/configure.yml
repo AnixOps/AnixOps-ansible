@@ -1,64 +1,133 @@
 ---
 # =============================================================================
-# Mesh Node Configuration Tasks
+# Mesh node configuration | Mesh 节点配置
 # =============================================================================
-# 注册节点 -> 连接 Mesh -> 验证状态
+# sysctl -> service -> enroll once (registration probe) -> connect -> verify
 
-- name: Check if warp-svc service is running | 检查 warp-svc 服务状态
-  ansible.builtin.systemd:
+- name: Apply the kernel settings recommended for Mesh nodes | 应用 sysctl
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: "{{ cloudflare_mesh_sysctl_file }}"
+    sysctl_set: true
+    reload: true
+    state: present
+  loop: "{{ cloudflare_mesh_sysctl | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+
+- name: Ensure warp-svc is enabled and running | 确保 warp-svc 已启用并运行
+  ansible.builtin.systemd_service:
     name: "{{ cloudflare_mesh_service_name }}"
     state: started
-    enabled: yes
+    enabled: true
 
-- name: Check existing registration status | 接受 TOS 并检查现有注册状态
-  ansible.builtin.command: warp-cli --accept-tos status
-  register: warp_status
+- name: Wait for the client daemon to accept CLI connections | 等待守护进程就绪
+  ansible.builtin.command:
+    argv:
+      - warp-cli
+      - --accept-tos
+      - status
+  register: cloudflare_mesh_daemon_status
+  changed_when: false
+  check_mode: false
+  retries: "{{ cloudflare_mesh_connect_retries }}"
+  delay: "{{ cloudflare_mesh_connect_delay }}"
+  until: cloudflare_mesh_daemon_status.rc == 0
+
+- name: Check for an existing registration | 检查现有注册
+  ansible.builtin.command:
+    argv:
+      - warp-cli
+      - --accept-tos
+      - registration
+      - show
+  register: cloudflare_mesh_registration
   changed_when: false
   failed_when: false
+  check_mode: false
 
-- name: Register Mesh node with enrollment token | 使用 enrollment token 注册 Mesh 节点
-  ansible.builtin.command: warp-cli --accept-tos connector new {{ cloudflare_mesh_token }}
-  args:
-    creates: /var/lib/cloudflare-warp/reg.json
-  when: >-
-    (warp_status.stdout | default('') is search('Registration: Missing')) or
-    (warp_status.rc | default(0) != 0)
+- name: Enroll the node with the Mesh token | 使用 Mesh token 注册节点
+  ansible.builtin.command:
+    argv:
+      - warp-cli
+      - --accept-tos
+      - connector
+      - new
+      - "{{ cloudflare_mesh_token }}"
+  register: cloudflare_mesh_enroll
+  changed_when: true
+  no_log: true
+  when: cloudflare_mesh_registration.rc != 0
 
-- name: Set Mesh node name | 设置 Mesh 节点名称
-  ansible.builtin.command: warp-cli device name {{ cloudflare_mesh_node_name }}
-  when: "warp_status.stdout | default('') is search('Registration: Missing')"
-
-- name: Connect to Mesh network | 连接到 Mesh 网络
-  ansible.builtin.command: warp-cli --accept-tos connect
-  when: "warp_status.stdout | default('') is search('Disconnected')"
-
-- name: Verify Mesh connection status | 验证 Mesh 连接状态
-  ansible.builtin.command: warp-cli --accept-tos status
-  register: mesh_connection_status
+- name: Read the connection status | 读取连接状态
+  ansible.builtin.command:
+    argv:
+      - warp-cli
+      - --accept-tos
+      - status
+  register: cloudflare_mesh_status
   changed_when: false
-  retries: 3
-  delay: 5
-  until: "mesh_connection_status.stdout is search('Connected')"
+  check_mode: false
 
-- name: Display Mesh deployment summary | 显示 Mesh 部署摘要
+- name: Connect to the Mesh network | 连接到 Mesh 网络
+  ansible.builtin.command:
+    argv:
+      - warp-cli
+      - --accept-tos
+      - connect
+  register: cloudflare_mesh_connect
+  changed_when: true
+  when: "'Status update: Connected' not in cloudflare_mesh_status.stdout"
+
+- name: Wait until the Mesh connection is established | 等待连接建立
+  ansible.builtin.command:
+    argv:
+      - warp-cli
+      - --accept-tos
+      - status
+  register: cloudflare_mesh_connection
+  changed_when: false
+  check_mode: false
+  retries: "{{ cloudflare_mesh_connect_retries }}"
+  delay: "{{ cloudflare_mesh_connect_delay }}"
+  until: "'Status update: Connected' in cloudflare_mesh_connection.stdout"
+
+- name: Configure the Mesh interface MTU | 配置 Mesh 接口 MTU
+  when: cloudflare_mesh_mtu | int > 0
+  block:
+    - name: Read the Mesh interface settings
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -o
+          - link
+          - show
+          - dev
+          - "{{ cloudflare_mesh_interface }}"
+      register: cloudflare_mesh_link
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Set the Mesh interface MTU to {{ cloudflare_mesh_mtu }}
+      ansible.builtin.command:
+        argv:
+          - ip
+          - link
+          - set
+          - dev
+          - "{{ cloudflare_mesh_interface }}"
+          - mtu
+          - "{{ cloudflare_mesh_mtu }}"
+      changed_when: true
+      when:
+        - cloudflare_mesh_link.rc == 0
+        - ('mtu ' ~ cloudflare_mesh_mtu ~ ' ') not in cloudflare_mesh_link.stdout
+
+- name: Show the Mesh node summary | 显示 Mesh 节点摘要
   ansible.builtin.debug:
-    msg: |
-      ═══════════════════════════════════════════════════════════
-      ✓ Cloudflare Mesh 节点部署成功 | Mesh Node Deployed Successfully
-      ═══════════════════════════════════════════════════════════
-      主机 | Host: {{ inventory_hostname }}
-      节点名称 | Node Name: {{ cloudflare_mesh_node_name }}
-      状态 | Status: {{ mesh_connection_status.stdout }}
-
-      Mesh 网络 | Mesh Network:
-      - 地址空间 | Address Space: 100.96.0.0/12
-      - MTU: {{ cloudflare_mesh_mtu }}
-
-      下一步 | Next Steps:
-      1. 在 Dashboard 配置路由 | Configure routes in Dashboard:
-         Networking > Mesh > Routes
-      2. 添加其他节点到 Mesh | Add other nodes to Mesh
-      3. 测试节点间连通性 | Test connectivity between nodes
-
-      Dashboard: https://one.dash.cloudflare.com/
-      ═══════════════════════════════════════════════════════════
+    msg:
+      - "Host: {{ inventory_hostname }} enrolled as a Cloudflare Mesh node"
+      - "Status: {{ cloudflare_mesh_connection.stdout_lines | first | default('unknown') }}"
+      - "Next: configure routes and policies in the Zero Trust dashboard (Networking > Mesh)"

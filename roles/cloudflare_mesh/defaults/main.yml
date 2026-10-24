@@ -1,16 +1,52 @@
 ---
-cloudflare_mesh_token: "{{ lookup('env', 'CLOUDFLARE_MESH_TOKEN') | default('') }}"
-cloudflare_mesh_node_name: "{{ inventory_hostname }}"
-cloudflare_mesh_mtu: 1381
-cloudflare_mesh_service_name: warp-svc
-cloudflare_mesh_advertise_subnets: "{{ lookup('env', 'CLOUDFLARE_MESH_ADVERTISE_SUBNETS') | default('') }}"
+# =============================================================================
+# cloudflare_mesh role defaults | cloudflare_mesh 角色默认变量
+# =============================================================================
+# Installs the Cloudflare One client (warp-cli) in headless mode and enrolls
+# the host as a Cloudflare Mesh node. Routes, device names and access policies
+# are managed in the Zero Trust dashboard, not by this role.
 
-# =============================================================================
-# Lifecycle Configuration | 生命周期配置
-# =============================================================================
+# Enrollment token: Zero Trust dashboard > Networking > Mesh > Add node (CLI enrollment string).
+# Never logged; tasks that use it run with no_log.
+cloudflare_mesh_token: "{{ lookup('env', 'CLOUDFLARE_MESH_TOKEN') | default('') }}"
+
+cloudflare_mesh_package: cloudflare-warp
+cloudflare_mesh_service_name: warp-svc
+cloudflare_mesh_interface: CloudflareWARP
+
+# Optional MTU override for the mesh interface (minimum 1281). 0 = keep the client default
+# (the client negotiates the MTU with Path MTU Discovery).
+cloudflare_mesh_mtu: 0
+
+# Kernel settings recommended by Cloudflare for mesh nodes.
+cloudflare_mesh_sysctl_file: /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
+cloudflare_mesh_sysctl:
+  net.ipv4.ip_forward: 1
+  net.ipv6.conf.all.forwarding: 1
+  net.ipv6.conf.all.accept_ra: 2
+
+# --- Package sources | 软件源 ---------------------------------------------------
+cloudflare_mesh_apt_key_url: https://pkg.cloudflareclient.com/pubkey.gpg
+cloudflare_mesh_apt_key_file: /usr/share/keyrings/cloudflare-warp-archive-keyring.asc
+cloudflare_mesh_apt_keyring: /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+cloudflare_mesh_apt_repo: >-
+  deb [signed-by={{ cloudflare_mesh_apt_keyring }}] https://pkg.cloudflareclient.com/
+  {{ ansible_distribution_release }} main
+cloudflare_mesh_rpm_baseurl: https://pkg.cloudflareclient.com/rpm/
+cloudflare_mesh_rpm_gpgkey: https://pkg.cloudflareclient.com/pubkey.gpg
+
+# --- Retry policy | 重试策略 ------------------------------------------------------
+cloudflare_mesh_download_retries: 5
+cloudflare_mesh_download_delay: 10
+cloudflare_mesh_connect_retries: 12
+cloudflare_mesh_connect_delay: 5
+
+# --- Lifecycle contract (consumed by roles/lifecycle) | 生命周期契约 -----------
 cloudflare_mesh_port: 0
 cloudflare_mesh_health_url: ""
-cloudflare_mesh_backup_files: []
+cloudflare_mesh_backup_files:
+  - "{{ cloudflare_mesh_sysctl_file }}"
+cloudflare_mesh_config_dirs:
+  - /var/lib/cloudflare-warp
 cloudflare_mesh_packages:
-  - cloudflare-warp
-cloudflare_mesh_config_dirs: []
+  - "{{ cloudflare_mesh_package }}"

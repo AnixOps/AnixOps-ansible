@@ -1,9 +1,13 @@
 ---
 # =============================================================================
-# PostgreSQL Handlers | PostgreSQL 处理器
+# PostgreSQL handlers | PostgreSQL 处理器
 # =============================================================================
-
-- name: Restart postgresql | 重启 PostgreSQL
+- name: Restart postgresql
   ansible.builtin.systemd:
-    name: "postgresql"
+    name: "{{ postgresql_instance_service }}"
     state: restarted
+
+- name: Reload postgresql
+  ansible.builtin.systemd:
+    name: "{{ postgresql_instance_service }}"
+    state: reloaded

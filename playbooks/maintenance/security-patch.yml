@@ -135,6 +135,7 @@
           after_patchable_count: 0
           after_unpatchable_count: 0
           update_rc: 0
+          update_changed: false
           reboot_required: false
           rebooted: false
           apply_updates: "{{ security_patch_apply_updates | bool }}"

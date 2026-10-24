@@ -128,5 +128,8 @@
   ansible.builtin.debug:
     msg:
       - "firewalld running on {{ inventory_hostname }}: zone {{ firewall_firewalld_zone }}"
-      - "SSH ports: {{ firewall_ssh_ports | join(', ') }} | public ports: {{ firewall_effective_public_ports | join(', ') }}"
-      - "Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }} | whitelist entries: {{ firewall_effective_whitelist | length }}"
+      - "SSH ports: {{ firewall_ssh_ports | join(', ') }}"
+      - "Public ports: {{ firewall_effective_public_ports | join(', ') }}"
+      - >-
+        Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }}
+        (whitelist entries: {{ firewall_effective_whitelist | length }})

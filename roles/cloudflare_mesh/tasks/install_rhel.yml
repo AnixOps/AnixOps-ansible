@@ -1,41 +1,23 @@
 ---
 # =============================================================================
-# RHEL/CentOS Installation Tasks
+# RHEL-compatible: Cloudflare rpm repository + cloudflare-warp | RHEL 安装
 # =============================================================================
-# 安装 Cloudflare WARP RPM repo 并安装 cloudflare-warp 包
+# RHEL 9+ needs EPEL enabled for the client's dependencies (see README).
 
-- name: Install Cloudflare WARP RPM repository | 安装 Cloudflare WARP RPM repo
+- name: Add the Cloudflare rpm repository | 添加 Cloudflare rpm 软件源
   ansible.builtin.yum_repository:
     name: cloudflare-warp
-    description: Cloudflare WARP Client
-    baseurl: https://pkg.cloudflareclient.com/rpm/
-    gpgcheck: yes
-    gpgkey: https://pkg.cloudflareclient.com/pubkey.gpg
-    enabled: yes
+    description: Cloudflare One Client
+    baseurl: "{{ cloudflare_mesh_rpm_baseurl }}"
+    gpgcheck: true
+    gpgkey: "{{ cloudflare_mesh_rpm_gpgkey }}"
+    enabled: true
 
-- name: Install cloudflare-warp package | 安装 cloudflare-warp 包
-  ansible.builtin.yum:
-    name: cloudflare-warp
+- name: Install the Cloudflare One client | 安装 Cloudflare One 客户端
+  ansible.builtin.dnf:
+    name: "{{ cloudflare_mesh_package }}"
     state: present
-
-- name: Configure sysctl for Mesh node | 配置 sysctl
-  ansible.builtin.copy:
-    dest: /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
-    content: |
-      net.ipv4.ip_forward=1
-      net.ipv6.conf.all.forwarding=1
-      net.ipv4.conf.all.accept_ra=1
-      net.ipv6.conf.all.accept_ra=1
-    mode: '0644'
-  notify: Restart warp-svc
-
-- name: Apply sysctl settings | 应用 sysctl 配置
-  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
-  changed_when: true
-
-- name: Configure MTU for Mesh interface | 配置 Mesh 接口 MTU
-  ansible.builtin.shell: |
-    ip link show | grep -q 'mtu {{ cloudflare_mesh_mtu }}' || \
-    ip link set dev CloudflareMesh mtu {{ cloudflare_mesh_mtu }} 2>/dev/null || true
-  changed_when: false
-  failed_when: false
+  register: cloudflare_mesh_dnf_install
+  retries: "{{ cloudflare_mesh_download_retries }}"
+  delay: "{{ cloudflare_mesh_download_delay }}"
+  until: cloudflare_mesh_dnf_install is succeeded

@@ -1,30 +1,30 @@
 # =============================================================================
-# AnixOps Ansible 依赖 | AnixOps Ansible Dependencies
+# AnixOps Ansible - Python runtime dependencies | Python 运行依赖
 # =============================================================================
-# Python 包依赖列表 | Python package dependencies list
+# Install:         pip install -r requirements.txt      (or: scripts/anixops.sh setup)
+# Developer tools: requirements-dev.txt (pytest, shellcheck, pre-commit, pip-audit)
+# Galaxy collections are NOT pip packages: ansible-galaxy collection install -r requirements.yml
+#
+# Version policy: lower bound = oldest version this repository is tested with,
+# upper bound = the next release line known (or likely) to break something.
+# Bump deliberately and run `make check` afterwards.
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# Ansible 核心 | Ansible Core
-# -----------------------------------------------------------------------------
-ansible>=2.15.0        # Ansible 自动化引擎 | Ansible automation engine
-ansible-lint>=6.0.0    # Ansible 代码质量检查工具 | Ansible code quality checker
+# --- Ansible engine ----------------------------------------------------------
+# ansible-core (not the "ansible" community bundle): collections come from requirements.yml.
+# 2.16 is the oldest line supporting the FQCN/production-profile conventions used here;
+# 2.18 is what CI runs. 2.19 changes templating/conditional semantics -> validate before lifting.
+ansible-core>=2.16,<2.19
 
-# -----------------------------------------------------------------------------
-# YAML 工具 | YAML Tools
-# -----------------------------------------------------------------------------
-yamllint>=1.32.0       # YAML 文件格式检查工具 | YAML file format checker
+# --- Linters (make lint / CI) ------------------------------------------------
+ansible-lint>=24.2          # production profile, config in .ansible-lint
+yamllint>=1.35              # config in .yamllint.yml
 
-# -----------------------------------------------------------------------------
-# SSH 密钥管理工具依赖 | SSH Key Management Tool Dependencies
-# -----------------------------------------------------------------------------
-PyNaCl>=1.5.0          # 加密库 | Cryptography library
-requests>=2.31.0       # HTTP 请求库 | HTTP requests library
-paramiko>=3.0.0        # SSH 协议实现 | SSH protocol implementation
-scp>=0.14.0            # SCP 文件传输 | SCP file transfer
-
-# -----------------------------------------------------------------------------
-# 可选：性能和调试工具 | Optional: Performance and Debugging Tools
-# -----------------------------------------------------------------------------
-ansible-runner>=2.3.0  # Ansible 运行器 | Ansible runner
-mitogen>=0.3.4         # 性能优化插件 | Performance optimization plugin
+# --- Libraries used by playbooks, filters and tools --------------------------
+pyyaml>=6.0                 # tools/generate_inventory.py, scripts/check-backup-coverage.py
+jmespath>=1.0               # community.general.json_query filter
+netaddr>=0.10               # ansible.utils ipaddr / ipv4 / ipv6 filters (roles/firewall, cloudflare_mesh)
+requests>=2.31              # tools/cloudflare_manager.py, tools/secrets_uploader.py, tools/ssh_key_manager.py
+PyNaCl>=1.5                 # GitHub secret encryption (tools/ssh_key_manager.py, tools/secrets_uploader.py)
+paramiko>=3.0               # SSH client (tools/ssh_key_deployer.py)
+scp>=0.14                   # SCP transfer over paramiko (tools/ssh_key_deployer.py)

@@ -1,79 +1,148 @@
 ---
 # =============================================================================
-# PostgreSQL Configuration Tasks | PostgreSQL 配置任务
+# PostgreSQL configuration (rollback-safe) | PostgreSQL 配置（支持自动回滚）
 # =============================================================================
+# template postgresql.conf / pg_hba.conf (backup) -> flush handlers -> wait for
+# pg_isready. On failure the backups are restored, the instance restarted and
+# the play fails with the journal tail.
 
-- name: Check PostgreSQL cluster status | 检查 PostgreSQL 集群状态
-  ansible.builtin.shell: pg_lsclusters -h {{ postgresql_version }} main 2>&1
-  register: pg_cluster_check
-  changed_when: false
-  failed_when: false
+- name: Check for the TLS certificate | 检查 TLS 证书
+  ansible.builtin.stat:
+    path: "{{ postgresql_ssl_cert_file }}"
+  register: postgresql_ssl_cert_stat
 
-- name: Recreate broken or missing PostgreSQL cluster | 重建或创建 PostgreSQL 集群
-  ansible.builtin.shell: |
-    pg_dropcluster {{ postgresql_version }} main --stop 2>/dev/null || true
-    rm -rf /etc/postgresql/{{ postgresql_version }}/main 2>/dev/null || true
-    rm -rf /var/lib/postgresql/{{ postgresql_version }}/main 2>/dev/null || true
-    rm -rf /var/log/postgresql/* 2>/dev/null || true
-    pg_createcluster {{ postgresql_version }} main -- --data-checksums
-  args:
-    executable: /bin/bash
-  when: >
-    pg_cluster_check.rc != 0 or
-    'down' in (pg_cluster_check.stdout | lower) or
-    'invalid' in (pg_cluster_check.stdout | lower)
-  register: pg_recreate_cluster
-  changed_when: "'Creating new cluster' in (pg_recreate_cluster.stdout | default(''))"
-  failed_when: false
+- name: Check for the TLS private key | 检查 TLS 私钥
+  ansible.builtin.stat:
+    path: "{{ postgresql_ssl_key_file }}"
+  register: postgresql_ssl_key_stat
 
-- name: Ensure PostgreSQL cluster is started | 确保 PostgreSQL 集群已启动
-  ansible.builtin.systemd:
-    name: "postgresql"
-    state: started
-    enabled: yes
+- name: Decide whether TLS can be enabled | 判断是否启用 TLS
+  ansible.builtin.set_fact:
+    postgresql_ssl_active: >-
+      {{ postgresql_ssl_enabled | bool
+         and postgresql_ssl_cert_stat.stat.exists
+         and postgresql_ssl_key_stat.stat.exists }}
 
-- name: Deploy postgresql.conf | 部署 postgresql.conf
-  ansible.builtin.template:
-    src: postgresql.conf.j2
-    dest: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
-    mode: '0644'
-    backup: yes
-  notify: Restart postgresql | 重启 PostgreSQL
+- name: Ensure the conf.d include directory exists | 确保 conf.d 目录存在
+  ansible.builtin.file:
+    path: "{{ postgresql_conf_dir }}/conf.d"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
 
-- name: Deploy pg_hba.conf | 部署 pg_hba.conf
-  ansible.builtin.template:
-    src: pg_hba.conf.j2
-    dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
-    mode: '0640'
-    backup: yes
-  notify: Restart postgresql | 重启 PostgreSQL
+- name: Deploy configuration with automatic rollback | 部署配置（失败自动回滚）
+  block:
+    - name: Deploy postgresql.conf | 部署 postgresql.conf
+      ansible.builtin.template:
+        src: postgresql.conf.j2
+        dest: "{{ postgresql_conf_dir }}/postgresql.conf"
+        owner: postgres
+        group: postgres
+        mode: "0644"
+        backup: true
+      register: postgresql_conf_result
+      notify: Restart postgresql
 
-- name: Flush handlers to apply config changes | 刷新处理器以应用配置更改
-  meta: flush_handlers
+    - name: Deploy pg_hba.conf | 部署 pg_hba.conf
+      ansible.builtin.template:
+        src: pg_hba.conf.j2
+        dest: "{{ postgresql_conf_dir }}/pg_hba.conf"
+        owner: postgres
+        group: postgres
+        mode: "0640"
+        backup: true
+      register: postgresql_hba_result
+      notify: Reload postgresql
 
-- name: Wait for PostgreSQL to restart | 等待 PostgreSQL 重启
-  ansible.builtin.pause:
-    seconds: 5
+    - name: Apply pending handlers | 执行挂起的处理器
+      ansible.builtin.meta: flush_handlers
 
-- name: Create PostgreSQL user | 创建 PostgreSQL 用户
-  ansible.builtin.shell: |
-    sudo -u postgres psql -t -A -c "SELECT 1 FROM pg_roles WHERE rolname='{{ postgresql_user }}'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE USER {{ postgresql_user }} WITH PASSWORD '{{ postgresql_password }}'"
-  register: pg_create_user
-  changed_when: "'CREATE ROLE' in (pg_create_user.stdout | default(''))"
-  failed_when: pg_create_user.rc != 0
+    - name: Wait until PostgreSQL accepts connections | 等待 PostgreSQL 就绪
+      ansible.builtin.command:
+        argv:
+          - pg_isready
+          - -q
+          - -h
+          - "{{ postgresql_socket_dir }}"
+          - -p
+          - "{{ postgresql_port }}"
+      become: true
+      become_user: postgres
+      register: postgresql_ready
+      changed_when: false
+      retries: "{{ postgresql_ready_retries }}"
+      delay: "{{ postgresql_ready_delay }}"
+      until: postgresql_ready.rc == 0
+  rescue:
+    - name: Restore the previous postgresql.conf | 恢复上一版 postgresql.conf
+      ansible.builtin.copy:
+        src: "{{ postgresql_conf_result.backup_file }}"
+        dest: "{{ postgresql_conf_dir }}/postgresql.conf"
+        remote_src: true
+        owner: postgres
+        group: postgres
+        mode: "0644"
+      register: postgresql_conf_restored
+      when:
+        - postgresql_conf_result is changed
+        - postgresql_conf_result.backup_file is defined
 
-- name: Create PostgreSQL database | 创建 PostgreSQL 数据库
-  ansible.builtin.shell: |
-    sudo -u postgres psql -t -A -c "SELECT 1 FROM pg_database WHERE datname='{{ postgresql_database }}'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE DATABASE {{ postgresql_database }} OWNER {{ postgresql_user }}"
-  register: pg_create_db
-  changed_when: "'CREATE DATABASE' in (pg_create_db.stdout | default(''))"
-  failed_when: pg_create_db.rc != 0
+    - name: Restore the previous pg_hba.conf | 恢复上一版 pg_hba.conf
+      ansible.builtin.copy:
+        src: "{{ postgresql_hba_result.backup_file }}"
+        dest: "{{ postgresql_conf_dir }}/pg_hba.conf"
+        remote_src: true
+        owner: postgres
+        group: postgres
+        mode: "0640"
+      register: postgresql_hba_restored
+      when:
+        - postgresql_hba_result is changed
+        - postgresql_hba_result.backup_file is defined
 
-- name: Grant privileges to user | 授予用户权限
-  ansible.builtin.command:
-    cmd: sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ postgresql_database }} TO {{ postgresql_user }}"
-  register: pg_grant
-  changed_when: "'GRANT' in (pg_grant.stdout | default(''))"
-  failed_when: pg_grant.rc != 0
+    - name: Restart PostgreSQL with the restored configuration | 使用恢复的配置重启
+      ansible.builtin.systemd:
+        name: "{{ postgresql_instance_service }}"
+        state: restarted
+      register: postgresql_restore_restart
+      failed_when: false
+      when: postgresql_conf_restored is changed or postgresql_hba_restored is changed
+
+    - name: Collect the PostgreSQL journal | 收集 PostgreSQL 日志
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - -u
+          - "{{ postgresql_instance_service }}"
+          - -n
+          - "50"
+          - --no-pager
+          - --no-hostname
+      register: postgresql_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Collect the cluster log tail | 收集集群日志
+      ansible.builtin.command:
+        argv:
+          - tail
+          - -n
+          - "50"
+          - "/var/log/postgresql/postgresql-{{ postgresql_version }}-{{ postgresql_cluster_name }}.log"
+      register: postgresql_cluster_log
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with diagnostics | 输出诊断信息并失败
+      ansible.builtin.fail:
+        msg: |
+          PostgreSQL did not become ready after applying the configuration on {{ inventory_hostname }}
+          (failed task: '{{ ansible_failed_task.name | default('unknown') }}').
+          Restored postgresql.conf: {{ postgresql_conf_restored is changed }},
+          restored pg_hba.conf: {{ postgresql_hba_restored is changed }},
+          restart after restore: {{ postgresql_restore_restart.state | default('not attempted') }}.
+          Journal tail:
+          {{ postgresql_journal.stdout | default('') }}
+          Cluster log tail:
+          {{ postgresql_cluster_log.stdout | default('') }}

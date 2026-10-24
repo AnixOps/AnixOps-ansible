@@ -1,53 +1,60 @@
 ---
 # =============================================================================
-# Debian/Ubuntu Installation Tasks
+# Debian/Ubuntu: Cloudflare apt repository + cloudflare-warp | Debian/Ubuntu 安装
 # =============================================================================
-# 添加 Cloudflare WARP apt repo 并安装 cloudflare-warp 包
 
-- name: Install prerequisites | 安装依赖
+- name: Install repository prerequisites | 安装软件源依赖
   ansible.builtin.apt:
     name:
+      - ca-certificates
       - gpg
-      - curl
     state: present
-    update_cache: yes
+    update_cache: true
+    cache_valid_time: 3600
+  register: cloudflare_mesh_apt_prereqs
+  retries: "{{ cloudflare_mesh_download_retries }}"
+  delay: "{{ cloudflare_mesh_download_delay }}"
+  until: cloudflare_mesh_apt_prereqs is succeeded
 
-- name: Download Cloudflare WARP GPG key | 下载 Cloudflare WARP GPG key
-  ansible.builtin.shell: |
-    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | \
-    gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-  args:
-    creates: /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+- name: Download the Cloudflare package signing key | 下载 Cloudflare 签名密钥
+  ansible.builtin.get_url:
+    url: "{{ cloudflare_mesh_apt_key_url }}"
+    dest: "{{ cloudflare_mesh_apt_key_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: cloudflare_mesh_apt_key
+  retries: "{{ cloudflare_mesh_download_retries }}"
+  delay: "{{ cloudflare_mesh_download_delay }}"
+  until: cloudflare_mesh_apt_key is succeeded
 
-- name: Add Cloudflare WARP apt repository | 添加 Cloudflare WARP apt repo
+- name: Dearmor the Cloudflare package signing key | 转换签名密钥为二进制格式
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --yes
+      - --dearmor
+      - --output
+      - "{{ cloudflare_mesh_apt_keyring }}"
+      - "{{ cloudflare_mesh_apt_key_file }}"
+    creates: "{{ cloudflare_mesh_apt_keyring }}"
+
+- name: Add the Cloudflare apt repository | 添加 Cloudflare apt 软件源
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ {{ ansible_distribution_release }} main"
+    repo: "{{ cloudflare_mesh_apt_repo }}"
     state: present
     filename: cloudflare-client
-    update_cache: yes
+    update_cache: true
+  register: cloudflare_mesh_apt_repo_result
+  retries: "{{ cloudflare_mesh_download_retries }}"
+  delay: "{{ cloudflare_mesh_download_delay }}"
+  until: cloudflare_mesh_apt_repo_result is succeeded
 
-- name: Install cloudflare-warp package | 安装 cloudflare-warp 包
+- name: Install the Cloudflare One client | 安装 Cloudflare One 客户端
   ansible.builtin.apt:
-    name: cloudflare-warp
+    name: "{{ cloudflare_mesh_package }}"
     state: present
-    update_cache: yes
-
-- name: Configure sysctl for Mesh node | 配置 sysctl
-  ansible.builtin.copy:
-    dest: /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
-    content: |
-      net.ipv4.ip_forward=1
-      net.ipv6.conf.all.forwarding=1
-    mode: '0644'
-  notify: Restart warp-svc
-
-- name: Apply sysctl settings | 应用 sysctl 配置
-  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf
-  changed_when: true
-
-- name: Configure MTU for Mesh interface | 配置 Mesh 接口 MTU
-  ansible.builtin.shell: |
-    ip link show | grep -q 'mtu {{ cloudflare_mesh_mtu }}' || \
-    ip link set dev CloudflareMesh mtu {{ cloudflare_mesh_mtu }} 2>/dev/null || true
-  changed_when: false
-  failed_when: false
+  register: cloudflare_mesh_apt_install
+  retries: "{{ cloudflare_mesh_download_retries }}"
+  delay: "{{ cloudflare_mesh_download_delay }}"
+  until: cloudflare_mesh_apt_install is succeeded

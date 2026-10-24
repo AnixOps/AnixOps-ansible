@@ -1,103 +1,90 @@
-# Cloudflare Mesh Role
+# cloudflare_mesh
 
-部署 Cloudflare Mesh 节点，实现服务器间原生 IP 路由（替代 Headscale/Tailscale 和旧的 WARP Connector）。
+Enroll a server as a [Cloudflare Mesh](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-mesh/)
+node with the headless Cloudflare One client (`warp-cli`). Mesh gives every enrolled server, laptop and
+phone a private Mesh IP (`100.96.0.0/12`) and routes TCP, UDP and ICMP natively between participants.
 
-## 功能
+将服务器注册为 Cloudflare Mesh 节点（headless `warp-cli`），实现节点间原生 IP 路由，替代
+Headscale/Tailscale 和旧的 WARP Connector 方案。
 
-- 安装 `cloudflare-warp` 包（Debian/Ubuntu 和 RHEL/CentOS）
-- 使用 enrollment token 注册节点到 Mesh 网络
-- 配置 sysctl（IPv4/IPv6 forwarding）
-- 设置 MTU 1381（Mesh 接口）
-- 验证连接状态
+## Behaviour | 行为
 
-## 架构
+1. Validates that `cloudflare_mesh_token` is set and the OS family is Debian/Ubuntu or RHEL-compatible.
+2. Installs `cloudflare-warp` from the official repository (apt: signing key downloaded with `get_url`,
+   dearmored once with `creates:`; rpm: `yum_repository` + `dnf`). Every network step retries `5 x 10s`.
+3. Applies the kernel settings Cloudflare recommends for Mesh nodes through `ansible.posix.sysctl`
+   (`net.ipv4.ip_forward=1`, `net.ipv6.conf.all.forwarding=1`, `net.ipv6.conf.all.accept_ra=2`).
+4. Starts and enables `warp-svc`, waits until `warp-cli status` answers.
+5. Enrolls **once**: `warp-cli --accept-tos registration show` is the probe; only when it reports no
+   registration does `warp-cli --accept-tos connector new <token>` run (`no_log: true`).
+6. Runs `warp-cli --accept-tos connect` when the status is not `Connected`, then waits
+   (`cloudflare_mesh_connect_retries x cloudflare_mesh_connect_delay`) for `Status update: Connected`.
+7. Optionally pins the interface MTU (`cloudflare_mesh_mtu > 0`).
 
-Cloudflare Mesh 提供：
-- **原生 IP 路由**：TCP、UDP、ICMP 全协议支持
-- **地址空间**：`100.96.0.0/12`（Carrier-grade NAT，避免与 RFC 1918 冲突）
-- **零信任安全**：Dashboard 端集中管理访问控制和设备验证
-- **高可用**：支持 active-passive replica 配置
+A second run reports `changed=0`. Device names, advertised routes and access policies are managed in the
+Zero Trust dashboard (Networking > Mesh), not by this role.
 
-## 使用方法
+## Variables | 变量
 
-### 1. 获取 Mesh Token
+| Variable | Default | Description |
+|---|---|---|
+| `cloudflare_mesh_token` | `$CLOUDFLARE_MESH_TOKEN` | enrollment token (dashboard > Networking > Mesh > Add node > CLI enrollment string); never logged |
+| `cloudflare_mesh_package` | `cloudflare-warp` | package name |
+| `cloudflare_mesh_service_name` | `warp-svc` | systemd unit |
+| `cloudflare_mesh_interface` | `CloudflareWARP` | tunnel interface name |
+| `cloudflare_mesh_mtu` | `0` (client default / PMTUD) | MTU override, minimum 1281 |
+| `cloudflare_mesh_sysctl_file` | `/etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf` | sysctl drop-in |
+| `cloudflare_mesh_sysctl` | see defaults | key/value map applied with `ansible.posix.sysctl` |
+| `cloudflare_mesh_apt_key_url`, `_apt_key_file`, `_apt_keyring`, `_apt_repo` | Cloudflare apt source | apt repository settings |
+| `cloudflare_mesh_rpm_baseurl`, `_rpm_gpgkey` | Cloudflare rpm source | rpm repository settings |
+| `cloudflare_mesh_download_retries` / `_download_delay` | `5` / `10` | retry policy for package/network steps |
+| `cloudflare_mesh_connect_retries` / `_connect_delay` | `12` / `5` | wait policy for daemon/connection |
 
-从 Cloudflare Dashboard 获取 enrollment token：
+Lifecycle contract: `cloudflare_mesh_port: 0`, `cloudflare_mesh_health_url: ""`,
+`cloudflare_mesh_backup_files: [<sysctl drop-in>]`, `cloudflare_mesh_config_dirs: [/var/lib/cloudflare-warp]`,
+`cloudflare_mesh_packages: [cloudflare-warp]`, `cloudflare_mesh_service_name: warp-svc`.
 
-1. 登录 https://one.dash.cloudflare.com/
-2. 导航到 **Networking > Mesh**
-3. 点击 **Add node**
-4. 复制 enrollment token（CLI enrollment string）
-
-### 2. 配置环境变量
+## Usage | 使用
 
 ```bash
-# .env 或 GitHub Secrets
-CLOUDFLARE_MESH_TOKEN=eyJh...your-enrollment-token
-CLOUDFLARE_MESH_NODE_NAME=server-jp-1   # 可选
-CLOUDFLARE_MESH_ADVERTISE_SUBNETS=10.0.0.0/24  # 可选
-```
-
-### 3. 部署
-
-```bash
-# 部署 Mesh 节点
+export CLOUDFLARE_MESH_TOKEN='<enrollment token>'   # or a GitHub Actions secret
 ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml --tags cloudflare_mesh
-
-# 或限制到 mesh_nodes 组
-ansible-playbook -i inventories/production/hosts.yml playbooks/provision/site.yml --limit mesh_nodes
 ```
 
-### 4. 配置路由
+```yaml
+- name: Cloudflare Mesh nodes
+  hosts: mesh_nodes
+  become: true
+  gather_facts: true
+  roles:
+    - role: cloudflare_mesh
+```
 
-部署完成后，在 Dashboard 配置路由：
+RHEL 9 and later need EPEL enabled before the client installs
+(`dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm`).
 
-1. **Networking > Mesh > Routes**
-2. 为每个节点配置要广播的子网
-3. 配置访问策略（哪些节点可以访问哪些子网）
-
-## 变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `cloudflare_mesh_token` | `{{ lookup('env', 'CLOUDFLARE_MESH_TOKEN') }}` | Enrollment token |
-| `cloudflare_mesh_node_name` | `{{ inventory_hostname }}` | 节点显示名称 |
-| `cloudflare_mesh_mtu` | `1381` | Mesh 接口 MTU |
-| `cloudflare_mesh_advertise_subnets` | `{{ lookup('env', 'CLOUDFLARE_MESH_ADVERTISE_SUBNETS') }}` | 要广播的子网 |
-| `cloudflare_mesh_service_name` | `warp-svc` | systemd 服务名 |
-
-## 验证
+## Verification | 验证
 
 ```bash
-# 检查节点状态
-warp-cli status
-
-# 查看 Mesh 接口
-ip addr show CloudflareMesh
-
-# 测试连通性（假设另一节点地址为 100.96.1.2）
-ping 100.96.1.2
+warp-cli --accept-tos status            # Status update: Connected
+warp-cli --accept-tos registration show
+ip addr show CloudflareWARP
+ping <mesh ip of another node>          # e.g. 100.96.x.y
 ```
 
-## 与旧方案对比
+The node must show as **Online** on the Mesh overview page with its assigned Mesh IP.
 
-| 特性 | Headscale/Tailscale | Cloudflare Tunnel | Cloudflare Mesh |
-|------|--------------------|------------------|-----------------|
-| 路由方式 | WireGuard overlay | HTTP proxy | 原生 IP (L3) |
-| 协议支持 | TCP/UDP | HTTP/WebSocket | TCP/UDP/ICMP |
-| 地址空间 | 100.64.0.0/10 | 无 | 100.96.0.0/12 |
-| 管理界面 | Headscale CLI | Dashboard | Dashboard |
-| 部署复杂度 | 中 | 低 | 低 |
+## Rollback | 回滚
 
-## 回滚
+Mesh enrollment is state in `/var/lib/cloudflare-warp`, not a config file, so rollback is manual:
 
-Mesh 节点配置不生成备份文件。回滚需要：
+1. Dashboard: Networking > Mesh > Nodes > delete the node.
+2. Server: `warp-cli --accept-tos disconnect && warp-cli --accept-tos registration delete`.
+3. `systemctl disable --now warp-svc` (and `apt remove cloudflare-warp` if the client is no longer wanted).
 
-1. Dashboard 端移除节点：Networking > Mesh > Nodes > Delete
-2. 服务器端取消注册：`warp-cli disconnect && warp-cli registration delete`
-3. 停止服务：`systemctl stop warp-svc`
+The sysctl drop-in can be removed with `rm /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf && sysctl --system`.
 
-## 参考
+## References | 参考
 
-- [Cloudflare Mesh Documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-mesh/)
-- [Get Started with Cloudflare Mesh](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-mesh/get-started/)
+- [Cloudflare Mesh](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-mesh/)
+- [Get started with Cloudflare Mesh](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-mesh/get-started/)

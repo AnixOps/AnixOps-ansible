@@ -41,6 +41,7 @@ INVENTORIES_DIR = REPO_ROOT / "inventories"
 INTEGRATION_DIR = REPO_ROOT / "tests" / "integration"
 
 YAML_SUFFIXES = (".yml", ".yaml")
+BOM = chr(0xFEFF)  # built with chr() so this source stays pure ASCII
 
 BINARY_EXTENSIONS = frozenset(
     {
@@ -235,7 +236,7 @@ for _tag in ("!vault", "!vault-encrypted", "!unsafe"):
 def load_yaml(path: Path) -> list[Any]:
     """Every YAML document in *path* (multi-document aware). Raises ``yaml.YAMLError``."""
     text = read_text(path)
-    if text.startswith("﻿"):
+    if text.startswith(BOM):
         text = text[1:]
     return list(yaml.load_all(text, Loader=RepoYamlLoader))
 

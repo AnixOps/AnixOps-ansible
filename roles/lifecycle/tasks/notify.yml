@@ -1,0 +1,51 @@
+---
+# =============================================================================
+# Shared notification routine | 共用通知流程
+# =============================================================================
+# Input: lifecycle_notify_event (deploy|rollback|cleanup), lifecycle_notify_status,
+#        lifecycle_notify_details (dict, optional)
+# Notifications never fail the play and never log their payload/URL.
+
+- name: Build notification payload | 构建通知内容
+  ansible.builtin.set_fact:
+    lifecycle_notify_payload:
+      role: "{{ lifecycle_target_role }}"
+      host: "{{ inventory_hostname }}"
+      event: "{{ lifecycle_notify_event }}"
+      status: "{{ lifecycle_notify_status }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      details: "{{ lifecycle_notify_details | default({}) }}"
+
+- name: Send webhook notification | 发送 Webhook 通知
+  ansible.builtin.uri:
+    url: "{{ lifecycle_notification_webhook_url }}"
+    method: POST
+    body_format: json
+    body: "{{ lifecycle_notify_payload }}"
+    status_code: [200, 201, 202, 204]
+    timeout: "{{ lifecycle_notification_timeout }}"
+  register: lifecycle_notify_webhook_result
+  failed_when: false
+  no_log: true
+  when:
+    - lifecycle_hooks_notify_enabled | bool
+    - lifecycle_notification_webhook_url | length > 0
+
+- name: Send Slack notification | 发送 Slack 通知
+  ansible.builtin.uri:
+    url: "{{ lifecycle_notification_slack_url }}"
+    method: POST
+    body_format: json
+    body:
+      text: >-
+        [AnixOps] {{ lifecycle_notify_event }} {{ lifecycle_notify_status | upper }}:
+        {{ lifecycle_target_role }} on {{ inventory_hostname }}
+        ({{ lifecycle_notify_details | default({}) | to_json }})
+    status_code: [200, 201, 202, 204]
+    timeout: "{{ lifecycle_notification_timeout }}"
+  register: lifecycle_notify_slack_result
+  failed_when: false
+  no_log: true
+  when:
+    - lifecycle_hooks_notify_enabled | bool
+    - lifecycle_notification_slack_url | length > 0

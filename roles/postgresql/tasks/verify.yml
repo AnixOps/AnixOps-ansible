@@ -1,34 +1,85 @@
 ---
 # =============================================================================
-# PostgreSQL Verification Tasks | PostgreSQL 验证任务
+# PostgreSQL verification | PostgreSQL 验证
 # =============================================================================
 
-- name: Verify PostgreSQL service status | 验证 PostgreSQL 服务状态
+- name: Check the PostgreSQL instance service state | 检查实例服务状态
   ansible.builtin.systemd:
-    name: "postgresql"
-  register: pg_service_status
-  failed_when: pg_service_status.status.ActiveState != 'active'
+    name: "{{ postgresql_instance_service }}"
+  register: postgresql_service_status
+  failed_when: postgresql_service_status.status.ActiveState != 'active'
 
-- name: Verify database connectivity | 验证数据库连接
-  ansible.builtin.shell: |
-    PGPASSWORD='{{ postgresql_password }}' psql -h 127.0.0.1 -U {{ postgresql_user }} -d {{ postgresql_database }} -c "SELECT 1" -t
-  args:
-    executable: /bin/bash
-  register: pg_connect_test
+- name: Confirm PostgreSQL accepts connections | 确认 PostgreSQL 可接受连接
+  ansible.builtin.command:
+    argv:
+      - pg_isready
+      - -q
+      - -h
+      - "{{ postgresql_socket_dir }}"
+      - -p
+      - "{{ postgresql_port }}"
+  become: true
+  become_user: postgres
+  register: postgresql_verify_ready
   changed_when: false
-  failed_when: pg_connect_test.rc != 0
+  retries: "{{ postgresql_ready_retries }}"
+  delay: "{{ postgresql_ready_delay }}"
+  until: postgresql_verify_ready.rc == 0
 
-- name: Display PostgreSQL deployment summary | 显示 PostgreSQL 部署摘要
+- name: Confirm the application role can log in (Unix socket) | 确认应用账号可通过 socket 登录
+  ansible.builtin.command:
+    argv:
+      - psql
+      - -X
+      - -h
+      - "{{ postgresql_socket_dir }}"
+      - -p
+      - "{{ postgresql_port }}"
+      - -U
+      - "{{ postgresql_user }}"
+      - -d
+      - "{{ postgresql_database }}"
+      - -tAc
+      - "SELECT 1"
+  environment:
+    PGPASSWORD: "{{ postgresql_password }}"
+    PGCONNECT_TIMEOUT: "5"
+  register: postgresql_verify_socket_login
+  changed_when: false
+  failed_when: postgresql_verify_socket_login.rc != 0 or postgresql_verify_socket_login.stdout | trim != '1'
+  no_log: true
+
+- name: Confirm the application role can log in over TCP | 确认应用账号可通过 TCP 登录
+  ansible.builtin.command:
+    argv:
+      - psql
+      - -X
+      - -h
+      - 127.0.0.1
+      - -p
+      - "{{ postgresql_port }}"
+      - -U
+      - "{{ postgresql_user }}"
+      - -d
+      - "{{ postgresql_database }}"
+      - -tAc
+      - "SELECT 1"
+  environment:
+    PGPASSWORD: "{{ postgresql_password }}"
+    PGCONNECT_TIMEOUT: "5"
+  register: postgresql_verify_tcp_login
+  changed_when: false
+  failed_when: postgresql_verify_tcp_login.rc != 0 or postgresql_verify_tcp_login.stdout | trim != '1'
+  no_log: true
+  when:
+    - postgresql_verify_tcp | bool
+    - "'127.0.0.1/32' in postgresql_allowed_cidrs"
+
+- name: Show deployment summary | 显示部署摘要
   ansible.builtin.debug:
-    msg: |
-      ═══════════════════════════════════════════════════════════
-      ✓ PostgreSQL 部署成功 | PostgreSQL Deployed
-      ═══════════════════════════════════════════════════════════
-      主机 | Host: {{ inventory_hostname }}
-      端口 | Port: {{ postgresql_port }}
-      监听 | Listen: {{ postgresql_listen_addresses }}
-      数据库 | Database: {{ postgresql_database }}
-      用户 | User: {{ postgresql_user }}
-      版本 | Version: {{ postgresql_version }}
-      状态 | Status: {{ pg_service_status.status.ActiveState }}
-      ═══════════════════════════════════════════════════════════
+    msg: >-
+      PostgreSQL {{ postgresql_version }}/{{ postgresql_cluster_name }} on {{ inventory_hostname }}:
+      service={{ postgresql_service_status.status.ActiveState }} listen={{ postgresql_listen_addresses }}
+      port={{ postgresql_port }} database={{ postgresql_database }} role={{ postgresql_user }}
+      allowed={{ postgresql_allowed_cidrs | join(',') }} tls={{ postgresql_ssl_active | default(false) }}
+      shared_buffers={{ postgresql_shared_buffers }} backups={{ postgresql_backup_enabled | bool }}

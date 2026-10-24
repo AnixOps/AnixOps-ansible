@@ -129,8 +129,12 @@
 - name: Show the effective firewall plan | 显示防火墙生效计划
   ansible.builtin.debug:
     msg:
-      - "Backend: {{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }}, default incoming: {{ firewall_default_incoming_policy }}"
+      - >-
+        Backend: {{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }},
+        default incoming policy: {{ firewall_default_incoming_policy }}
       - "SSH ports (always allowed): {{ firewall_ssh_ports | join(', ') }}"
       - "Public ports: {{ firewall_effective_public_ports | join(', ') }}"
       - "Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }}"
-      - "Whitelist entries: {{ firewall_effective_whitelist | length }} ({{ firewall_effective_whitelist | join(', ') | default('none', true) }})"
+      - >-
+        Whitelist entries: {{ firewall_effective_whitelist | length }}
+        ({{ firewall_effective_whitelist | join(', ') | default('none', true) }})

@@ -1,88 +1,158 @@
-# Monitoring Firewall Role
+# firewall role | 防火墙角色
 
-## 功能说明
+Lockout-proof host firewall for every AnixOps server. On Debian/Ubuntu it drives
+**UFW**, on RedHat-family hosts **firewalld**, with the same semantics:
 
-此角色负责管理监控服务的防火墙规则，实现以下功能：
+| Port class | Source | Example |
+|---|---|---|
+| SSH port(s) | anywhere, **always allowed first** | `ansible_port` / `ssh_port`, default 22 |
+| Public ports | anywhere | `firewall_public_ports` + `proxy_additional_ports` |
+| Restricted ports | `monitoring_whitelist` only, denied for everyone else | 9100, 9080, 9090, 3100, 3000 (+5432 in production) |
 
-1. **公开端口管理**：配置无需白名单即可访问的端口（SSH, HTTP, HTTPS）
-2. **受限端口管理**：配置需要白名单才能访问的监控端口
-3. **IP 白名单**：统一管理所有服务器的监控访问权限
-4. **防火墙支持**：同时支持 UFW (Debian/Ubuntu) 和 firewalld (RedHat/CentOS)
+## Lockout protection | 防锁死保护
 
-## 配置说明
+1. **Preflight refuses dangerous input** before anything is touched: unsupported OS,
+   malformed ports, a whitelist entry that is not an IPv4/IPv6 address or CIDR, and any
+   port that is both public (or the SSH port) and restricted.
+2. The SSH port is computed from the live connection
+   (`firewall_ssh_port = ansible_port | default(ssh_port | default(22))`). When `ssh_port`
+   differs from the port Ansible is connected on (for example while the `common` role is
+   moving sshd), **both** ports are allowed.
+3. The SSH allow rule is the first rule written, before public ports, before deny rules,
+   before the default policy is set and before the firewall is enabled.
+4. After enabling, the role reads `ufw status verbose` / `firewall-cmd --state` and
+   **asserts** that the firewall is active and the SSH allow rule is present. A host that
+   fails this check fails the play (and `max_fail_percentage` stops the rollout).
+5. `firewall_enabled: false` leaves the host untouched; the role never disables a firewall.
 
-### 公开端口（无白名单）
+## Variables | 变量
 
-以下端口对所有 IP 开放：
-- `22` - SSH
-- `80` - HTTP
-- `443` - HTTPS
+Operator knobs are the global keys in `inventories/production/group_vars/all/main.yml`;
+the role consumes them through prefixed defaults with fallbacks.
 
-### 受限端口（需要白名单）
+| Variable | Default | Description |
+|---|---|---|
+| `firewall_enabled` | `true` | Master switch (global key). |
+| `firewall_public_ports` | `["22", "80", "443"]` | TCP ports open to anyone (global key). |
+| `firewall_restricted_ports` | `["9100", "9080", "9090", "3100", "3000"]` | TCP ports open to the whitelist only (global key). |
+| `firewall_proxy_additional_ports` | `proxy_additional_ports \| default([])` | Extra public ports (group/host vars). |
+| `firewall_whitelist` | `monitoring_whitelist \| default([])` | Whitelisted sources; trimmed, comma-split, de-duplicated, validated. |
+| `firewall_ssh_port` | `ansible_port \| default(ssh_port \| default(22))` | SSH port that must stay reachable. |
+| `firewall_default_incoming_policy` | `allow` | `allow` keeps the historical behaviour, `deny`/`reject` = allow-list mode. |
+| `firewall_default_outgoing_policy` | `allow` | |
+| `firewall_fail_on_empty_whitelist` | `false` | Fail (true) or warn and skip whitelist rules (false) when restricted ports exist but the whitelist is empty. |
+| `firewall_prune_stale_whitelist_rules` | `true` | Delete whitelist rules created by this role for addresses that left the whitelist (UFW). |
+| `firewall_ufw_logging` | `low` | `on`, `off`, `low`, `medium`, `high`, `full`. |
+| `firewall_ipv6_enabled` | `true` | Keeps `IPV6=yes` in `/etc/default/ufw` (backup taken). |
+| `firewall_docker_user_chain` | `false` | Append the ufw-docker `DOCKER-USER` rules to `/etc/ufw/after.rules` (see Docker). |
+| `firewall_firewalld_zone` | `public` | firewalld zone. |
+| `firewall_firewalld_manage_target` | `false` | Map the incoming policy onto the zone target (`ACCEPT`/`DROP`/`%%REJECT%%`). |
 
-以下端口仅对白名单 IP 开放：
-- `9100` - Prometheus Node Exporter
-- `9080` - Promtail (Loki agent)
-- `9090` - Prometheus Server
-- `3100` - Loki Server
-- `3000` - Grafana
+Lifecycle contract (`roles/lifecycle`): `firewall_port: 0`, `firewall_health_url: ""`,
+`firewall_service_name` (`ufw` / `firewalld`), `firewall_packages`, `firewall_backup_files`
+(`/etc/default/ufw`, `/etc/ufw/ufw.conf`, `/etc/ufw/user.rules`, `/etc/ufw/user6.rules`,
+`/etc/ufw/after.rules`), `firewall_config_dirs` (`/etc/ufw`).
 
-### 白名单配置
+Facts computed by `tasks/preflight.yml` (usable by playbooks after
+`include_role: name=firewall tasks_from=preflight`): `firewall_ssh_ports`,
+`firewall_effective_public_ports`, `firewall_effective_restricted_ports`,
+`firewall_effective_whitelist`, `firewall_whitelist_rules`, `firewall_whitelist_rules_enabled`.
 
-在 `inventories/production/group_vars/all/main.yml` 中配置：
+## Behaviour | 行为
+
+### UFW (Debian/Ubuntu)
+
+1. Install `ufw` (with retries), set `IPV6=` in `/etc/default/ufw`, optionally append the
+   Docker block to `/etc/ufw/after.rules` (both with `backup: true`).
+2. Read `ufw show added` once; every deletion below is guarded by that output so a second
+   run reports `changed=0`.
+3. Allow SSH port(s) (`comment "SSH (managed by Ansible)"`), then the public ports.
+4. Delete a plain `allow <port>/tcp` rule for each restricted port if one exists (it would
+   bypass the whitelist).
+5. Add `allow from <ip> to any port <port> proto tcp` for every whitelist x restricted
+   pair. New rules are **inserted at the top** (IPv4: position 1, IPv6: before the first
+   IPv6 rule) so they always precede the deny rules, even on later runs.
+6. Ordering repair: if an existing deny rule still precedes a whitelist allow rule
+   (for instance after rules were edited by hand), that deny rule is deleted and re-added
+   at the end.
+7. Add `deny <port>/tcp` for each restricted port; prune whitelist rules created by this
+   role whose address is no longer whitelisted.
+8. Set default policies (`incoming` from `firewall_default_incoming_policy`, `outgoing allow`),
+   logging level, `ufw enable`, flush handlers (`Reload ufw`), verify and summarise.
+
+### firewalld (RedHat family)
+
+Install and start `firewalld`; allow the SSH port(s) (and the `ssh` service while SSH is
+on 22); open public ports; remove plain openings of restricted ports; add rich rules
+`priority="-100" ... accept` per whitelist address and `priority="-50" ... reject` per
+restricted port (IPv4 and IPv6); optionally set the zone target; verify
+`firewall-cmd --state` is `running` and the SSH port is listed in the zone.
+
+### Empty whitelist
+
+When restricted ports are configured but the whitelist is empty the role prints a warning,
+keeps the deny rules and leaves existing whitelist rules untouched
+(`firewall_fail_on_empty_whitelist: false`). `playbooks/maintenance/firewall-setup.yml`
+is stricter: it asserts a non-empty whitelist unless run with
+`-e firewall_require_whitelist=false`.
+
+## Docker caveat | Docker 注意事项
+
+Docker publishes ports with its own `nat`/`FORWARD` rules, which **UFW's INPUT rules do
+not see**: a container published with `-p 3000:3000` is reachable from the Internet even
+if UFW denies 3000/tcp. Options:
+
+* Bind containers to loopback (`-p 127.0.0.1:3000:3000`) and front them with Nginx.
+* Set `firewall_docker_user_chain: true`. The role then appends the standard
+  [ufw-docker](https://github.com/chaifeng/ufw-docker) block to `/etc/ufw/after.rules`
+  (marker `# BEGIN/END UFW AND DOCKER`, backup taken, `ufw reload`). Afterwards published
+  ports are reachable only from private networks; expose one explicitly with
+  `ufw route allow proto tcp from any to any port <container-port>`. Enabling it is a
+  behaviour change for every container on the host, so roll it out group by group.
+  Setting the flag back to `false` does not remove the block; delete it by hand and
+  `ufw reload`.
+
+## Verification | 验证
+
+```bash
+sudo ufw status verbose          # Status: active, SSH ALLOW IN, restricted DENY IN
+sudo ufw show added              # the exact rules the role manages (with comments)
+sudo firewall-cmd --list-all     # RedHat: ports, rich rules
+# from a whitelisted host
+curl -s http://<server>:9100/metrics | head -1
+# from any other host the restricted port must time out / be refused
+```
+
+The maintenance playbook prints the effective plan in `pre_tasks` and the live status in
+`post_tasks`; run it with `--check --diff` first on a new group.
+
+## Rollback | 回滚
+
+```bash
+sudo ufw disable                                   # stop filtering immediately (rules are kept)
+sudo ufw delete deny 9100/tcp                      # drop a single rule
+sudo cp /etc/default/ufw.<timestamp>~ /etc/default/ufw   # restore a backup written by the role
+sudo cp /etc/ufw/after.rules.<timestamp>~ /etc/ufw/after.rules
+sudo ufw reload
+sudo ufw reset                                     # last resort: back to package defaults
+# RedHat
+sudo systemctl stop firewalld
+```
+
+`roles/lifecycle` backs up `firewall_backup_files` before changes and can restore them;
+`playbooks/maintenance/rollback.yml` uses the same list.
+
+## Usage | 使用
 
 ```yaml
-monitoring_allowed_ips:
-  - "{{ lookup('env', 'DE_1_V4_SSH') | default('') }}"
-  - "{{ lookup('env', 'PL_1_V4_SSH') | default('') }}"
+- hosts: all
+  become: true
+  roles:
+    - role: firewall
 ```
-
-## 使用方法
-
-### 方式一：独立运行
 
 ```bash
-ansible-playbook playbooks/firewall-setup.yml
-```
-
-### 方式二：集成到其他 playbook
-
-```yaml
-roles:
-  - firewall
-```
-
-## 变量说明
-
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `firewall_enabled` | `true` | 是否启用防火墙 |
-| `firewall_public_ports` | `[22, 80, 443]` | 公开访问端口列表 |
-| `firewall_restricted_ports` | `[9100, 9080, 9090, 3100, 3000]` | 受限访问端口列表 |
-| `monitoring_allowed_ips` | 见配置文件 | 监控服务白名单 IP 列表 |
-| `monitoring_whitelist` | 自动生成 | 过滤后的白名单（移除空值） |
-
-## 安全建议
-
-1. **最小权限原则**：仅将必要的服务器 IP 添加到白名单
-2. **定期审计**：定期检查防火墙规则和白名单
-3. **监控日志**：启用 UFW/firewalld 日志记录
-4. **测试连接**：添加新 IP 后测试监控服务可访问性
-
-## 故障排查
-
-### 查看 UFW 状态
-```bash
-sudo ufw status verbose
-```
-
-### 查看 firewalld 规则
-```bash
-sudo firewall-cmd --list-all
-```
-
-### 测试端口连通性
-```bash
-# 从白名单服务器测试
-curl http://TARGET_SERVER:9100/metrics
+ansible-playbook playbooks/maintenance/firewall-setup.yml --limit web_servers --check --diff
+ansible-playbook playbooks/maintenance/firewall-setup.yml
+ansible-playbook playbooks/provision/site.yml --tags firewall
 ```

@@ -1,0 +1,33 @@
+---
+# =============================================================================
+# Shared config validation | 共用配置校验
+# =============================================================================
+# Runs the validators registered for the target role in lifecycle_validators.
+# A validator whose binary is absent is skipped; a failing validator fails the
+# task (callers wrap this in block/rescue to revert the restore).
+
+- name: Locate validator binaries | 查找校验工具
+  ansible.builtin.command:
+    argv:
+      - which
+      - "{{ item.bin }}"
+  environment:
+    PATH: "{{ lifecycle_validator_path }}"
+  loop: "{{ lifecycle_validators[lifecycle_target_role] | default([]) }}"
+  loop_control:
+    label: "{{ item.bin }}"
+  register: lifecycle_validator_which
+  changed_when: false
+  failed_when: false
+
+- name: Run configuration validators | 运行配置校验
+  ansible.builtin.command:
+    argv: "{{ item.item.argv }}"
+  environment:
+    PATH: "{{ lifecycle_validator_path }}"
+  loop: "{{ lifecycle_validator_which.results }}"
+  loop_control:
+    label: "{{ item.item.argv | join(' ') }}"
+  when: item.rc | default(1) == 0
+  register: lifecycle_validator_results
+  changed_when: false

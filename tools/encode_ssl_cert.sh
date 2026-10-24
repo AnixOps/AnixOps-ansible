@@ -1,102 +1,119 @@
-#!/bin/bash
-# SSL Certificate Encoder
-# 将 PEM 格式的 SSL 证书编码为 base64，用于存储在 .env 文件中
+#!/usr/bin/env bash
+# =============================================================================
+# SSL certificate encoder | SSL 证书编码工具
+# =============================================================================
+# Encodes a PEM certificate chain and its private key as single-line base64 so
+# they can be stored in .env (SSL_CERTIFICATE_PEM / SSL_CERTIFICATE_KEY_PEM)
+# and in GitHub Actions secrets.
+#
+#   Usage: tools/encode_ssl_cert.sh <fullchain.pem> <privkey.pem> [--write]
+#
+#   --write   also update (or append) both variables in the project's .env;
+#             a timestamped backup of .env is kept next to it.
+#
+# The decoded values are never printed to the terminal by the deploy tooling;
+# keep the output of this script out of shell history and chat logs.
+# =============================================================================
 
-set -e
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-echo "=================================================="
-echo "  SSL Certificate Encoder for AnixOps"
-echo "=================================================="
-echo ""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_FILE="${PROJECT_ROOT}/.env"
 
-# 颜色定义
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'; RED=$'\033[0;31m'; NC=$'\033[0m'
+else
+  GREEN=""; YELLOW=""; RED=""; NC=""
+fi
 
-# 检查参数
-if [ $# -lt 2 ]; then
-    echo -e "${YELLOW}Usage:${NC}"
-    echo "  $0 <cert.pem> <key.pem>"
-    echo ""
-    echo -e "${YELLOW}Example:${NC}"
-    echo "  $0 /path/to/fullchain.pem /path/to/privkey.pem"
-    echo ""
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <cert.pem> <key.pem> [--write]
+
+Encodes the certificate chain and private key as base64 for .env / CI secrets.
+  --write    update SSL_CERTIFICATE_PEM / SSL_CERTIFICATE_KEY_PEM in ${ENV_FILE}
+Example:
+  $(basename "$0") /etc/letsencrypt/live/example.com/fullchain.pem \\
+                   /etc/letsencrypt/live/example.com/privkey.pem --write
+EOF
+}
+
+die() {
+  printf '%sError:%s %s\n' "$RED" "$NC" "$1" >&2
+  exit 1
+}
+
+encode_file() {
+  # Portable single-line base64 (GNU `base64 -w 0` is not available on macOS).
+  base64 < "$1" | tr -d '\n'
+}
+
+upsert_env_var() {
+  # upsert_env_var <KEY> <value> <file>: replace the existing line or append one.
+  local key=$1 value=$2 file=$3 tmp
+  tmp="$(mktemp "${file}.XXXXXX")"
+  if grep -q "^${key}=" "$file"; then
+    # awk avoids sed delimiter problems with arbitrary base64 payloads.
+    awk -v key="$key" -v value="$value" \
+      'index($0, key "=") == 1 { print key "=" value; next } { print }' "$file" > "$tmp"
+    printf '%s[OK]%s updated %s\n' "$GREEN" "$NC" "$key"
+  else
+    cat "$file" > "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+    printf '%s[OK]%s added %s\n' "$GREEN" "$NC" "$key"
+  fi
+  mv "$tmp" "$file"
+}
+
+main() {
+  local cert_file="" key_file="" write=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help) usage; exit 0 ;;
+      --write) write=1 ;;
+      -*) die "unknown option: ${arg}" ;;
+      *)
+        if [[ -z "$cert_file" ]]; then
+          cert_file=$arg
+        elif [[ -z "$key_file" ]]; then
+          key_file=$arg
+        else
+          die "too many arguments"
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -z "$cert_file" || -z "$key_file" ]]; then
+    usage >&2
     exit 1
-fi
+  fi
+  [[ -f "$cert_file" ]] || die "certificate file not found: ${cert_file}"
+  [[ -f "$key_file" ]] || die "key file not found: ${key_file}"
+  grep -q "BEGIN CERTIFICATE" "$cert_file" || die "${cert_file} does not look like a PEM certificate"
+  grep -q "PRIVATE KEY" "$key_file" || die "${key_file} does not look like a PEM private key"
 
-CERT_FILE="$1"
-KEY_FILE="$2"
+  local cert_b64 key_b64
+  cert_b64="$(encode_file "$cert_file")"
+  key_b64="$(encode_file "$key_file")"
 
-# 检查文件是否存在
-if [ ! -f "$CERT_FILE" ]; then
-    echo -e "${RED}Error: Certificate file not found: $CERT_FILE${NC}"
-    exit 1
-fi
+  printf '%s# Add these lines to .env (or store them as CI secrets):%s\n' "$YELLOW" "$NC"
+  printf 'SSL_CERTIFICATE_PEM=%s\n' "$cert_b64"
+  printf 'SSL_CERTIFICATE_KEY_PEM=%s\n' "$key_b64"
+  printf '\n%sKeep these values secret. Never commit .env.%s\n' "$YELLOW" "$NC" >&2
 
-if [ ! -f "$KEY_FILE" ]; then
-    echo -e "${RED}Error: Key file not found: $KEY_FILE${NC}"
-    exit 1
-fi
+  if (( write )); then
+    [[ -f "$ENV_FILE" ]] || die ".env not found at ${ENV_FILE} (cp .env.example .env first)"
+    local backup
+    backup="${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$ENV_FILE" "$backup"
+    printf '%s[OK]%s backed up .env to %s\n' "$GREEN" "$NC" "$backup" >&2
+    upsert_env_var SSL_CERTIFICATE_PEM "$cert_b64" "$ENV_FILE"
+    upsert_env_var SSL_CERTIFICATE_KEY_PEM "$key_b64" "$ENV_FILE"
+    printf '%s[OK]%s .env updated\n' "$GREEN" "$NC" >&2
+  fi
+}
 
-echo -e "${GREEN}Encoding certificate...${NC}"
-CERT_BASE64=$(cat "$CERT_FILE" | base64 -w 0)
-
-echo -e "${GREEN}Encoding private key...${NC}"
-KEY_BASE64=$(cat "$KEY_FILE" | base64 -w 0)
-
-echo ""
-echo "=================================================="
-echo -e "${GREEN}✓ Encoding complete!${NC}"
-echo "=================================================="
-echo ""
-echo "Add the following lines to your .env file:"
-echo ""
-echo -e "${YELLOW}SSL_CERTIFICATE_PEM=${NC}${CERT_BASE64}"
-echo ""
-echo -e "${YELLOW}SSL_CERTIFICATE_KEY_PEM=${NC}${KEY_BASE64}"
-echo ""
-echo "=================================================="
-echo ""
-echo -e "${YELLOW}Note:${NC} Keep these values secure. Do not commit .env to version control."
-echo ""
-
-# 可选：直接写入 .env 文件
-read -p "Do you want to append these to .env file? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    ENV_FILE="$(dirname "$0")/../.env"
-    
-    if [ ! -f "$ENV_FILE" ]; then
-        echo -e "${RED}Error: .env file not found at $ENV_FILE${NC}"
-        exit 1
-    fi
-    
-    # 备份 .env
-    cp "$ENV_FILE" "$ENV_FILE.backup.$(date +%Y%m%d_%H%M%S)"
-    echo -e "${GREEN}✓ Backed up .env file${NC}"
-    
-    # 更新或添加证书配置
-    if grep -q "^SSL_CERTIFICATE_PEM=" "$ENV_FILE"; then
-        sed -i "s|^SSL_CERTIFICATE_PEM=.*|SSL_CERTIFICATE_PEM=${CERT_BASE64}|" "$ENV_FILE"
-        echo -e "${GREEN}✓ Updated SSL_CERTIFICATE_PEM in .env${NC}"
-    else
-        echo "SSL_CERTIFICATE_PEM=${CERT_BASE64}" >> "$ENV_FILE"
-        echo -e "${GREEN}✓ Added SSL_CERTIFICATE_PEM to .env${NC}"
-    fi
-    
-    if grep -q "^SSL_CERTIFICATE_KEY_PEM=" "$ENV_FILE"; then
-        sed -i "s|^SSL_CERTIFICATE_KEY_PEM=.*|SSL_CERTIFICATE_KEY_PEM=${KEY_BASE64}|" "$ENV_FILE"
-        echo -e "${GREEN}✓ Updated SSL_CERTIFICATE_KEY_PEM in .env${NC}"
-    else
-        echo "SSL_CERTIFICATE_KEY_PEM=${KEY_BASE64}" >> "$ENV_FILE"
-        echo -e "${GREEN}✓ Added SSL_CERTIFICATE_KEY_PEM to .env${NC}"
-    fi
-    
-    echo ""
-    echo -e "${GREEN}✓ .env file updated successfully!${NC}"
-fi
-
-echo ""
-echo -e "${GREEN}Done!${NC}"
+main "$@"

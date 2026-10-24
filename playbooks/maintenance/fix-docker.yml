@@ -58,7 +58,8 @@
           {{ ansible_facts['os_family'] == 'Debian'
              and ((fix_docker_force | default(false) | bool) or 'Conflicting' in fix_docker_probe_output) }}
       vars:
-        fix_docker_probe_output: "{{ (fix_docker_probe.stdout | default('')) ~ (fix_docker_probe.stderr | default('')) }}"
+        fix_docker_probe_output: >-
+          {{ (fix_docker_probe.stdout | default('')) ~ (fix_docker_probe.stderr | default('')) }}
 
     - name: Repair the Docker apt repository | 修复 Docker apt 源
       when: fix_docker_needed | bool

@@ -43,6 +43,10 @@ jobs:
       - name: Install test tooling
         run: |
           set -euo pipefail
+          if [[ -f requirements-dev.txt ]]; then
+            python -m pip install --quiet --requirement requirements-dev.txt
+          fi
+          # Idempotent fallback so the job works even before requirements-dev.txt lists them.
           python -m pip install --quiet pytest shellcheck-py
 
       - name: Run pytest

@@ -1,25 +1,28 @@
 ---
 galaxy_info:
   author: AnixOps
-  description: Deploy Cloudflare Mesh node for private network connectivity
+  description: Enroll a host as a Cloudflare Mesh node with the headless Cloudflare One client (warp-cli)
   company: AnixOps
   license: MIT
-  min_ansible_version: "2.14"
+  min_ansible_version: "2.15"
   platforms:
-    - name: Ubuntu
-      versions:
-        - all
     - name: Debian
       versions:
-        - all
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
     - name: EL
       versions:
-        - 8
-        - 9
+        - "8"
+        - "9"
   galaxy_tags:
     - cloudflare
     - mesh
     - networking
     - vpn
     - zerotrust
+
 dependencies: []

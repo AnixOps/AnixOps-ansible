@@ -1,62 +1,95 @@
 ---
-# Prometheus Alert Rules - Nginx Monitoring
-# Nginx 服务监控告警规则
-
+# =============================================================================
+# Prometheus alert rules - Nginx | Nginx 服务监控告警规则
+# =============================================================================
+# Metrics come from nginx-prometheus-exporter (stub_status): nginx_up,
+# nginx_connections_*, nginx_http_requests_total (no status label).
+# The optional `nginx_requests` group needs an exporter that exposes
+# per-status counters and latency histograms (e.g. nginxlog_exporter /
+# nginx-vts-exporter); with the plain stub_status exporter it stays inert.
+# =============================================================================
 groups:
-  - name: nginx_alerts
-    interval: 30s
+  - name: nginx_availability
     rules:
-      # Nginx 服务宕机
       - alert: NginxDown
         expr: nginx_up == 0
-        for: 1m
+        for: 2m
         labels:
           severity: critical
           category: availability
         annotations:
           summary: "Nginx is down on {{ $labels.instance }}"
-          description: "Nginx service has been down for more than 1 minute"
+          description: "nginx-prometheus-exporter reports nginx_up == 0 on {{ $labels.instance }} for 2 minutes."
 
-      # HTTP 5xx 错误率过高
-      - alert: HighHTTP5xxRate
-        expr: rate(nginx_http_requests_total{status=~"5.."}[5m]) > 10
-        for: 5m
+      - alert: NginxExporterDown
+        expr: up{job=~"nginx.*"} == 0
+        for: 3m
         labels:
           severity: warning
-          category: application
+          category: availability
         annotations:
-          summary: "High 5xx error rate on {{ $labels.instance }}"
-          description: "HTTP 5xx error rate is {{ $value }} requests/second"
+          summary: "Nginx exporter unreachable on {{ $labels.instance }}"
+          description: "Scrape job {{ $labels.job }} has failed on {{ $labels.instance }} for 3 minutes."
 
-      # HTTP 4xx 错误率过高
-      - alert: HighHTTP4xxRate
-        expr: rate(nginx_http_requests_total{status=~"4.."}[5m]) > 50
-        for: 5m
-        labels:
-          severity: warning
-          category: application
-        annotations:
-          summary: "High 4xx error rate on {{ $labels.instance }}"
-          description: "HTTP 4xx error rate is {{ $value }} requests/second"
-
-      # 请求延迟过高
-      - alert: HighLatency
-        expr: histogram_quantile(0.95, rate(nginx_http_request_duration_seconds_bucket[5m])) > 1
-        for: 5m
-        labels:
-          severity: warning
-          category: performance
-        annotations:
-          summary: "High request latency on {{ $labels.instance }}"
-          description: "95th percentile latency is {{ $value }}s"
-
-      # 连接数过高
-      - alert: HighConnectionCount
+  - name: nginx_connections
+    rules:
+      - alert: NginxHighConnectionCount
         expr: nginx_connections_active > 1000
-        for: 5m
+        for: 10m
         labels:
           severity: warning
           category: performance
         annotations:
           summary: "High active connections on {{ $labels.instance }}"
-          description: "Active connections: {{ $value }}"
+          description: "{{ $value | printf \"%.0f\" }} active connections for 10 minutes."
+
+      - alert: NginxDroppedConnections
+        expr: >-
+          rate(nginx_connections_accepted[5m]) - rate(nginx_connections_handled[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Nginx dropping connections on {{ $labels.instance }}"
+          description: >-
+            Accepted connections exceed handled connections by {{ $value | printf "%.2f" }}/s;
+            worker_connections or file descriptor limits are probably exhausted.
+
+  # Requires per-status request counters / latency histograms (see header).
+  - name: nginx_requests
+    rules:
+      - alert: NginxHigh5xxRate
+        expr: >-
+          sum by (instance) (rate(nginx_http_requests_total{status=~"5.."}[5m]))
+            / sum by (instance) (rate(nginx_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High 5xx ratio on {{ $labels.instance }}"
+          description: "{{ $value | humanizePercentage }} of requests returned 5xx over the last 5 minutes."
+
+      - alert: NginxHigh4xxRate
+        expr: >-
+          sum by (instance) (rate(nginx_http_requests_total{status=~"4.."}[5m]))
+            / sum by (instance) (rate(nginx_http_requests_total[5m])) > 0.30
+        for: 10m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High 4xx ratio on {{ $labels.instance }}"
+          description: "{{ $value | humanizePercentage }} of requests returned 4xx over the last 5 minutes."
+
+      - alert: NginxHighLatency
+        expr: >-
+          histogram_quantile(0.95, sum by (instance, le) (rate(nginx_http_request_duration_seconds_bucket[5m]))) > 1
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High request latency on {{ $labels.instance }}"
+          description: "95th percentile latency is {{ $value | humanizeDuration }} (threshold 1s)."

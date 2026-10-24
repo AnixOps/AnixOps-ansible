@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import copy
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -545,8 +546,8 @@ def test_cli_check_reports_drift_with_unified_diff(tmp_path, capsys):
     assert main(["local", "--config", str(config_path), "--output", str(output), "--check"]) == 1
     captured = capsys.readouterr()
     assert "--- " in captured.out and "+++ " in captured.out
-    assert "-    location: Nippon" in captured.out
-    assert "+    location: Japan" in captured.out
+    assert re.search(r"^-\s+location: Nippon$", captured.out, re.MULTILINE)
+    assert re.search(r"^\+\s+location: Japan$", captured.out, re.MULTILINE)
     assert "out of date" in captured.err
     # --check never writes.
     assert output.read_text(encoding="utf-8") == stale

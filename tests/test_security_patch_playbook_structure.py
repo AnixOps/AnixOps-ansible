@@ -181,6 +181,9 @@ def test_security_patch_tasks_follow_repo_conventions():
         assert not name.startswith("{{"), f"task name must not start with Jinja: {name!r}"
         assert "ignore_errors" not in task, f"ignore_errors is forbidden: {name!r}"
 
+        if "block" in task:
+            continue  # a block carries no module of its own
+
         module = _module_of(task)
         assert "." in module, f"module must use its FQCN: {module} in {name!r}"
 

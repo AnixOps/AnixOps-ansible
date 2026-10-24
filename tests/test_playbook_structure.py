@@ -6,8 +6,9 @@ Enforced for each play:
   * hosts is a known inventory group, localhost, or a host pattern/expression
   * no ignore_errors anywhere in the file
 File hygiene: strict UTF-8 without BOM, LF endings, trailing newline, no tabs,
-no mojibake (GBK-decoded UTF-8 such as "鈺愨晲") and no "?" replacement
-characters in front of non-ASCII text.
+no mojibake (UTF-8 text that was decoded as GBK; the characters are listed as
+escapes in MOJIBAKE_RE) and no "?" replacement characters in front of
+non-ASCII text.
 site.yml additionally must expose exactly the play tags agreed in the brief.
 """
 
@@ -71,7 +72,11 @@ CONTROL_TAGS = {"always", "never"}
 
 IMPORT_KEYS = ("ansible.builtin.import_playbook", "import_playbook")
 
-MOJIBAKE_RE = re.compile(r"[鈺鏈閮鐨锛銆鍏鎴浠璁鍙�]|\?[^\x09\x0a\x0d\x20-\x7e]")
+# Common GBK-decoded UTF-8 artefacts, U+FFFD, and a "?" replacement before non-ASCII text.
+MOJIBAKE_RE = re.compile(
+    "[鈺鏈閮鐨锛銆鍏鎴浠璁鍙�]"
+    r"|\?[^\x09\x0a\x0d\x20-\x7e]"
+)
 
 
 class _PermissiveLoader(yaml.SafeLoader):

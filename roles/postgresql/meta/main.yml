@@ -1,16 +1,23 @@
 ---
 galaxy_info:
   author: AnixOps
-  description: PostgreSQL database deployment for v2board control panel
+  description: PostgreSQL server with hardened authentication, tuning, rollback-safe config and optional logical backups
+  company: AnixOps
   license: MIT
   min_ansible_version: "2.15"
   platforms:
     - name: Debian
       versions:
+        - bullseye
         - bookworm
     - name: Ubuntu
       versions:
-        - noble
         - jammy
+        - noble
+  galaxy_tags:
+    - postgresql
+    - database
+    - v2board
+    - backup
 
 dependencies: []

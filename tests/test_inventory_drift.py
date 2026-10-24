@@ -55,7 +55,8 @@ EXPECTED_GROUPS = [
     "prod",
 ]
 IMPLICIT_PATTERNS = {"all", "ungrouped", "localhost"}
-MOJIBAKE_RE = re.compile(r"[鈺鏈閮鐨锛銆鍏鎴浠璁鍙]|\?[^ -~]")
+# GBK-decoded UTF-8 artefacts (e.g. U+923A "\u923a") plus "?" followed by a non-ASCII char.
+MOJIBAKE_RE = re.compile("[\u923a\u93c8\u95ae\u9428\u951b\u9286\u934f\u93b4\u6d60\u7481\u9359]|\\?[^ -~]")
 
 
 # ---------------------------------------------------------------------------

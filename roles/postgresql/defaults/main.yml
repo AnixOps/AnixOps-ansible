@@ -1,29 +1,101 @@
 ---
 # =============================================================================
-# PostgreSQL Configuration | PostgreSQL 配置
+# PostgreSQL role defaults | PostgreSQL 角色默认变量
+# =============================================================================
+# Installs the distribution package postgresql-<version>, manages
+# postgresql.conf / pg_hba.conf with automatic rollback, creates the
+# application role + database for v2board and (optionally) a daily pg_dump.
 # =============================================================================
 
-# Version
+# --- Packages | 软件包 --------------------------------------------------------
 postgresql_version: "15"
+# The distro repositories of Debian 12 / Ubuntu 24.04 ship 15 / 16. Flip this
+# to true when the wanted version is not packaged by the distribution: the
+# official PGDG repository is then added (signed deb822 source).
+postgresql_use_pgdg: false
+postgresql_pgdg_key_url: "https://www.postgresql.org/media/keys/ACCC4CF8.asc"
+postgresql_pgdg_key_path: "/etc/apt/keyrings/postgresql.asc"
+postgresql_pgdg_repo_url: "https://apt.postgresql.org/pub/repos/apt"
+postgresql_packages:
+  - "postgresql-{{ postgresql_version }}"
+  - "postgresql-client-{{ postgresql_version }}"
 
-# Connection
+# --- Cluster layout (Debian conventions) | 集群布局 ---------------------------
+postgresql_cluster_name: "main"
+postgresql_conf_dir: "/etc/postgresql/{{ postgresql_version }}/{{ postgresql_cluster_name }}"
+postgresql_data_dir: "/var/lib/postgresql/{{ postgresql_version }}/{{ postgresql_cluster_name }}"
+postgresql_data_checksums: true
+postgresql_service_name: "postgresql"
+postgresql_instance_service: "postgresql@{{ postgresql_version }}-{{ postgresql_cluster_name }}"
+postgresql_socket_dir: "/var/run/postgresql"
+
+# --- Connections | 连接 -------------------------------------------------------
 postgresql_port: 5432
-postgresql_listen_addresses: "127.0.0.1"
+# "localhost" unless an operator exposes the instance (e.g. a mesh IP).
+postgresql_listen_addresses: "localhost"
+# Networks allowed to reach the application role (scram-sha-256).
+postgresql_allowed_cidrs:
+  - "127.0.0.1/32"
+  - "::1/128"
+# Additional raw pg_hba.conf lines appended before the final reject rules.
+postgresql_extra_hba_rules: []
+postgresql_password_encryption: "scram-sha-256"
+# TLS with the Debian snakeoil certificate when it exists (as pg_createcluster does).
+postgresql_ssl_enabled: true
+postgresql_ssl_cert_file: "/etc/ssl/certs/ssl-cert-snakeoil.pem"
+postgresql_ssl_key_file: "/etc/ssl/private/ssl-cert-snakeoil.key"
 
-# Database and user
+# --- Application role and database | 应用账号与数据库 -------------------------
 postgresql_user: "{{ lookup('env', 'V2BOARD_PG_USER') or 'v2board' }}"
 postgresql_database: "{{ lookup('env', 'V2BOARD_PG_DATABASE') or 'v2board' }}"
 postgresql_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') or '' }}"
 
-# Performance tuning
+# --- Tuning | 性能参数 --------------------------------------------------------
+postgresql_total_memory_mb: "{{ ansible_memtotal_mb | default(1024) }}"
 postgresql_max_connections: 100
-postgresql_shared_buffers: "128MB"
+# 25 % of RAM for shared_buffers, 75 % for effective_cache_size (with floors).
+postgresql_shared_buffers: "{{ [(postgresql_total_memory_mb | int * 0.25) | int, 128] | max }}MB"
+postgresql_effective_cache_size: "{{ [(postgresql_total_memory_mb | int * 0.75) | int, 384] | max }}MB"
+postgresql_work_mem: "4MB"
+postgresql_maintenance_work_mem: "64MB"
+postgresql_wal_level: "replica"
+postgresql_min_wal_size: "80MB"
+postgresql_max_wal_size: "1GB"
+postgresql_checkpoint_timeout: "5min"
+postgresql_checkpoint_completion_target: "0.9"
+postgresql_autovacuum_max_workers: 3
+# Extra "key = value" settings appended to postgresql.conf.
+postgresql_extra_settings: {}
 
-# Lifecycle
+# --- Logging and locale | 日志与本地化 ----------------------------------------
+postgresql_timezone: "{{ timezone | default('Asia/Shanghai') }}"
+postgresql_locale: "{{ locale | default('en_US.UTF-8') }}"
+postgresql_log_min_duration_statement: -1
+postgresql_log_line_prefix: "%m [%p] %q%u@%d "
+postgresql_log_rotation_age: "1d"
+postgresql_log_rotation_size: "10MB"
+
+# --- Logical backups (pg_dump) | 逻辑备份 -------------------------------------
+postgresql_backup_enabled: false
+postgresql_backup_dir: "/var/backups/postgresql"
+postgresql_backup_script: "/usr/local/bin/postgresql-backup.sh"
+postgresql_backup_hour: "3"
+postgresql_backup_minute: "17"
+postgresql_backup_retention_days: 7
+
+# --- Verification | 验证 ------------------------------------------------------
+postgresql_ready_retries: 10
+postgresql_ready_delay: 3
+# Also test a TCP login over 127.0.0.1 (requires 127.0.0.1/32 in allowed cidrs).
+postgresql_verify_tcp: true
+
+# =============================================================================
+# Lifecycle contract (consumed by roles/lifecycle) | 生命周期契约
+# =============================================================================
+postgresql_health_url: ""
 postgresql_backup_files:
-  - "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
-  - "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+  - "{{ postgresql_conf_dir }}/postgresql.conf"
+  - "{{ postgresql_conf_dir }}/pg_hba.conf"
 postgresql_config_dirs:
   - "/etc/postgresql"
-postgresql_service_name: "postgresql"
 postgresql_port_for_firewall: "{{ postgresql_port }}"

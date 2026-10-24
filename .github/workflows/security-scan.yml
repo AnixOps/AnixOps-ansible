@@ -57,7 +57,11 @@ jobs:
           set -euo pipefail
           python -m pip install --quiet --upgrade pip
           python -m pip install --quiet pip-audit
-          pip-audit --requirement requirements.txt --progress-spinner off
+          args=(--requirement requirements.txt --progress-spinner off)
+          if [[ -f requirements-dev.txt ]]; then
+            args+=(--requirement requirements-dev.txt)
+          fi
+          pip-audit "${args[@]}"
 
   repo-hygiene:
     name: Repository Hygiene
@@ -88,7 +92,7 @@ jobs:
           fi
 
           rc=0
-          pem_blocks="$(git grep -nI -E -- '-----BEGIN (RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----' -- . ':(exclude)*.md' ':(exclude).github/workflows/security-scan.yml')" || rc=$?
+          pem_blocks="$(git grep -nI -E -e '-----BEGIN (RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----' -- . ':(exclude)*.md' ':(exclude).github/workflows/security-scan.yml')" || rc=$?
           if (( rc == 0 )); then
             echo "::error::Inline private key blocks found in tracked files:"
             echo "${pem_blocks}"

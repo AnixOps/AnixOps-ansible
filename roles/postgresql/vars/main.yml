@@ -1,0 +1,11 @@
+---
+# =============================================================================
+# Internal helpers (not meant to be overridden) | 内部变量
+# =============================================================================
+# SQL identifiers are double-quoted and literals single-quoted with proper
+# escaping so names / passwords containing quotes cannot break the statements.
+postgresql_sql_user_ident: '"{{ postgresql_user | replace(''"'', ''""'') }}"'
+postgresql_sql_db_ident: '"{{ postgresql_database | replace(''"'', ''""'') }}"'
+postgresql_sql_user_literal: "'{{ postgresql_user | replace(\"'\", \"''\") }}'"
+postgresql_sql_db_literal: "'{{ postgresql_database | replace(\"'\", \"''\") }}'"
+postgresql_sql_password_literal: "'{{ postgresql_password | replace(\"'\", \"''\") }}'"

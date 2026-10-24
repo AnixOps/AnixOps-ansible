@@ -1,43 +1,81 @@
 ---
 # =============================================================================
-# Lifecycle Role - Main Entry Point
+# Lifecycle role - entry point | 生命周期角色入口
 # =============================================================================
-# 统一的生命周期 hook 执行入口 | Unified lifecycle hook execution entry point
+# Resolves the requested hook, loads the target role's lifecycle contract and
+# dispatches to tasks/hooks/<hook>.yml. See README.md for the hook sequences.
 
-- name: Validate lifecycle parameters | 验证生命周期参数
-  ansible.builtin.fail:
-    msg: "必须指定 lifecycle_target_role 和 lifecycle_hook_type"
-  when:
-    - lifecycle_target_role is not defined
-    - lifecycle_hook_type is not defined
-
-- name: Initialize lifecycle context | 初始化生命周期上下文
+- name: Resolve requested hook | 解析请求的 hook
   ansible.builtin.set_fact:
+    lifecycle_hook_effective: "{{ lifecycle_hook | default(lifecycle_hook_type | default(''), true) }}"
+
+- name: Validate lifecycle parameters | 校验参数
+  ansible.builtin.fail:
+    msg: >-
+      lifecycle_target_role (service role name) and lifecycle_hook (one of
+      {{ lifecycle_valid_hooks | join(', ') }}) are required. Got
+      lifecycle_target_role={{ lifecycle_target_role | default('<undefined>') }}
+      lifecycle_hook={{ lifecycle_hook_effective | default('<undefined>', true) }}.
+  when: >-
+    lifecycle_target_role is not defined
+    or lifecycle_target_role | length == 0
+    or lifecycle_hook_effective not in lifecycle_valid_hooks
+
+- name: Gather minimal facts when the play did not | 补采集基础 facts
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - min
+  when: ansible_date_time is not defined
+
+# The target role is included with every task disabled: only its defaults and
+# vars become visible to the play (public: true). No task, handler or include
+# of the target role runs here.
+- name: Load target role defaults without running it | 载入目标角色默认变量（不执行任务）
+  ansible.builtin.include_role:
+    name: "{{ lifecycle_target_role }}"
+    public: true
+    apply:
+      when: false
+  when: lifecycle_load_target_defaults | bool
+
+- name: Resolve lifecycle contract of the target role | 解析目标角色的生命周期约定
+  ansible.builtin.set_fact:
+    lifecycle_service_name: "{{ lookup('vars', lifecycle_target_role ~ '_service_name', default=lifecycle_target_role) }}"
+    lifecycle_port: "{{ lookup('vars', lifecycle_target_role ~ '_port', default=0) }}"
+    lifecycle_health_url: "{{ lookup('vars', lifecycle_target_role ~ '_health_url', default='') }}"
+    lifecycle_backup_files: "{{ lookup('vars', lifecycle_target_role ~ '_backup_files', default=[]) }}"
+    lifecycle_config_dirs: "{{ lookup('vars', lifecycle_target_role ~ '_config_dirs', default=['/etc/' ~ lifecycle_target_role]) }}"
+    lifecycle_packages: "{{ lookup('vars', lifecycle_target_role ~ '_packages', default=[]) }}"
+    lifecycle_backup_root: "{{ lifecycle_hooks_backup_base_dir }}/{{ lifecycle_target_role }}"
+
+- name: Normalise health URL and deployment context | 规范化健康检查地址与上下文
+  ansible.builtin.set_fact:
+    lifecycle_health_url_effective: >-
+      {{ lifecycle_health_url
+         if (lifecycle_health_url | length == 0 or lifecycle_health_url is match('^https?://'))
+         else 'http://localhost:' ~ lifecycle_port ~ lifecycle_health_url }}
     lifecycle_context:
       role: "{{ lifecycle_target_role }}"
-      hook: "{{ lifecycle_hook_type }}"
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      hook: "{{ lifecycle_hook_effective }}"
       host: "{{ inventory_hostname }}"
-    deploy_start_time_epoch: "{{ ansible_date_time.epoch }}"
+      service: "{{ lifecycle_service_name }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
 
 - name: Ensure state directory exists | 确保状态目录存在
   ansible.builtin.file:
-    path: "{{ state_dir }}"
+    path: "{{ lifecycle_state_dir }}"
     state: directory
-    mode: '0755'
     owner: root
     group: root
+    mode: "0755"
 
-- name: Execute hook based on type | 根据类型执行 hook
-  ansible.builtin.include_tasks: "hooks/{{ lifecycle_hook_type }}.yml"
-  when: hooks_enabled | default(true)
+- name: Run lifecycle hook | 执行 hook
+  ansible.builtin.include_tasks: "hooks/{{ lifecycle_hook_effective }}.yml"
+  when: lifecycle_hooks_enabled | bool
 
-- name: Display lifecycle execution summary | 显示执行摘要
+- name: Show lifecycle hook result | 显示 hook 结果
   ansible.builtin.debug:
-    msg: |
-      ═══════════════════════════════════════════════════════════
-      Lifecycle Hook: {{ lifecycle_hook_type }}
-      Role: {{ lifecycle_target_role }}
-      Host: {{ inventory_hostname }}
-      Status: {{ lifecycle_result | default('completed') }}
-      ═══════════════════════════════════════════════════════════
+    msg: >-
+      lifecycle {{ lifecycle_hook_effective }} | role={{ lifecycle_target_role }}
+      host={{ inventory_hostname }} result={{ lifecycle_result | default('completed') }}

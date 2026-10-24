@@ -43,7 +43,9 @@
     - name: Show the effective firewall plan | 显示防火墙生效计划
       ansible.builtin.debug:
         msg:
-          - "Host: {{ inventory_hostname }} ({{ ansible_os_family }}), default incoming policy: {{ firewall_default_incoming_policy | default('allow') }}"
+          - >-
+            Host: {{ inventory_hostname }} ({{ ansible_os_family }}),
+            default incoming policy: {{ firewall_default_incoming_policy | default('allow') }}
           - "SSH ports kept open: {{ firewall_ssh_ports | join(', ') }}"
           - "Public ports: {{ firewall_effective_public_ports | join(', ') }}"
           - "Restricted ports: {{ firewall_effective_restricted_ports | join(', ') | default('none', true) }}"
@@ -91,13 +93,21 @@
 
     - name: Show the active firewall configuration | 显示当前防火墙配置
       ansible.builtin.debug:
-        msg: "{{ (firewall_setup_ufw_status if ansible_os_family == 'Debian' else firewall_setup_firewalld_status).stdout_lines | default([]) }}"
+        msg: >-
+          {{ (firewall_setup_ufw_status if ansible_os_family == 'Debian' else firewall_setup_firewalld_status).stdout_lines
+             | default([]) }}
       when: firewall_enabled | default(true) | bool
 
     - name: Firewall setup summary | 防火墙设置摘要
       ansible.builtin.debug:
         msg:
-          - "{{ inventory_hostname }}: firewall {{ 'configured' if firewall_enabled | default(true) | bool else 'skipped (firewall_enabled=false)' }}"
+          - >-
+            {{ inventory_hostname }}: firewall
+            {{ 'configured' if firewall_enabled | default(true) | bool else 'skipped (firewall_enabled=false)' }}
           - "Public: {{ firewall_effective_public_ports | default([]) | join(', ') | default('n/a', true) }}"
-          - "Restricted: {{ firewall_effective_restricted_ports | default([]) | join(', ') | default('none', true) }} -> {{ firewall_effective_whitelist | default([]) | length }} whitelisted address(es)"
-          - "Verify from a whitelisted host: curl -s http://{{ ansible_host | default(inventory_hostname) }}:9100/metrics | head -1"
+          - >-
+            Restricted: {{ firewall_effective_restricted_ports | default([]) | join(', ') | default('none', true) }}
+            -> {{ firewall_effective_whitelist | default([]) | length }} whitelisted address(es)
+          - >-
+            Verify from a whitelisted host:
+            curl -s http://{{ ansible_host | default(inventory_hostname) }}:9100/metrics | head -1

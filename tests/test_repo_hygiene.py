@@ -59,13 +59,21 @@ INVISIBLE_FILES = tuple(p for p in TEXT_FILES if p.suffix.lower() in INVISIBLE_S
 # CJK character directly followed by "?" (a lost trailing byte), "?" followed by
 # any non-ASCII character, and the U+FFFD replacement character.  Written as
 # escapes so this file never trips its own check.
+# Code points are spelled out with chr() so this source file stays pure ASCII
+# and can never trip its own checks.
+GBK_MOJIBAKE_CHARS = "".join(chr(cp) for cp in (
+    0x923A, 0x93C8, 0x95AE, 0x9428, 0x951B, 0x9286, 0x934F, 0x93B4, 0x6D60,
+    0x7481, 0x9359, 0x9422, 0x95B0, 0x93C2, 0x935A, 0x9352, 0x9365,
+))
+CJK_RANGE = chr(0x4E00) + "-" + chr(0x9FFF)
+REPLACEMENT_CHAR = chr(0xFFFD)
 MOJIBAKE_RE = re.compile(
-    "[鈺鏈閮鐨锛銆鍏鎴浠璁鍙鐢閰鏂鍚鍒鍥]"
-    "|[一-鿿]\\?"
-    "|\\?[^\\x00-\\x7f]"
-    "|�"
+    "[" + GBK_MOJIBAKE_CHARS + "]"          # GBK-decoded UTF-8 Chinese
+    + "|[" + CJK_RANGE + "]\\?"              # CJK char immediately followed by "?" (lost byte)
+    + "|\\?[^\\x00-\\x7f]"                 # "?" immediately followed by any non-ASCII char
+    + "|" + REPLACEMENT_CHAR                 # U+FFFD
 )
-INVISIBLE_RE = re.compile("[ ​‌‍⁠﻿]")
+INVISIBLE_RE = re.compile("[" + "".join(chr(cp) for cp in (0x00A0, 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF)) + "]")
 CONFLICT_RE = re.compile(r"^(?:<{7} |>{7} |\|{7} )")
 
 _PEM_HEADER = "-----BEGIN " + r"(?:RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY" + "-----"
