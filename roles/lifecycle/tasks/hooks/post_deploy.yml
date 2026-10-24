@@ -25,11 +25,11 @@
     - lifecycle_backup_files | length > 0
 
 - name: Probe service state after deployment | 部署后探测服务状态
-  ansible.builtin.systemd_service:
-    name: "{{ lifecycle_service_name }}"
-  register: lifecycle_post_deploy_service
-  failed_when: false
-  when: lifecycle_service_name | length > 0
+  ansible.builtin.include_tasks: probe_service.yml
+
+- name: Keep the post-deploy service state | 保存部署后服务状态
+  ansible.builtin.set_fact:
+    lifecycle_post_deploy_service: "{{ lifecycle_service_probe }}"
 
 - name: Verify service health | 验证服务健康
   when: lifecycle_hooks_verify_enabled | bool
@@ -64,7 +64,7 @@
     lifecycle_post_deploy_healthy: >-
       {{ lifecycle_post_deploy_health_ok | bool
          and (lifecycle_service_name | length == 0
-              or (lifecycle_post_deploy_service.status.ActiveState | default('unknown')) == 'active') }}
+              or lifecycle_post_deploy_service.active_state == 'active') }}
 
 - name: Check history file | 检查历史文件
   ansible.builtin.stat:
@@ -92,7 +92,7 @@
         {{ 'unverified' if not lifecycle_hooks_verify_enabled | bool
            else ('success' if lifecycle_post_deploy_healthy | bool else 'failed') }}
       service: "{{ lifecycle_service_name }}"
-      service_state: "{{ lifecycle_post_deploy_service.status.ActiveState | default('unknown') }}"
+      service_state: "{{ lifecycle_post_deploy_service.active_state }}"
       health_url: "{{ lifecycle_health_url_effective }}"
       health_status: "{{ lifecycle_post_deploy_health.status | default(0) }}"
       duration_seconds: "{{ ansible_date_time.epoch | int - lifecycle_deploy_start_epoch | int }}"

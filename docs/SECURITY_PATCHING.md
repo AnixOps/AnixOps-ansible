@@ -72,7 +72,7 @@ are not defined that way.
 | `security_patch_trivy_update_db` | `true` | refresh the DB once in setup (3 retries) and scan with `--skip-db-update` |
 | `security_patch_trivy_db_repository` | `""` | optional `--db-repository` (mirror) |
 | `security_patch_trivy_timeout` | `"15m"` | Trivy `--timeout` for DB refresh and scans |
-| `security_patch_trivy_skip_dirs` | docker/containerd/snap/cache | `--skip-dirs` list (container layers are not host packages) |
+| `security_patch_trivy_skip_dirs` | `/var/lib/docker`, `/var/lib/containerd`, `/snap` | `--skip-dirs` list (container layers are not host packages); the cache dir is always added |
 | `security_patch_target_group` | `all` | inventory group the report covers (hosts without a summary become placeholders) |
 | `security_patch_report_path` | `<repo>/security-patch-report.json` | JSON report path (report play) |
 | `security_patch_report_markdown_path` | `<report>.md` | Markdown twin of the report |
@@ -218,11 +218,14 @@ ansible-playbook playbooks/maintenance/security-patch.yml \
   -e security_patch_allow_reboot=true \
   -e security_patch_report_path=/tmp/security-patch-report.json
 
-# Only rebuild the report from the facts of the previous run in the same process is not
-# possible; use --tags report together with the full run to filter output.
+# Report play only (every host becomes a placeholder; handy to test report wiring)
+ansible-playbook playbooks/maintenance/security-patch.yml \
+  -i inventories/production/hosts.yml --limit "web_servers,localhost" --tags report \
+  -e security_patch_target_group=web_servers
 ```
 
-Always keep `localhost` in `--limit`, otherwise the report play does not run.
+Always keep `localhost` in `--limit`, otherwise the report play does not run. Plays are
+tagged `security_patch` (host play) and `security_patch,report` (report play).
 
 ## Validation
 

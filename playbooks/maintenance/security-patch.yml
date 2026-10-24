@@ -116,10 +116,14 @@
   pre_tasks:
     - name: Resolve effective security patch settings
       ansible.builtin.set_fact:
-        security_patch_apply_updates: "{{ security_patch_apply_updates | default(security_patch_defaults.apply_updates) | bool }}"
-        security_patch_allow_reboot: "{{ security_patch_allow_reboot | default(security_patch_defaults.allow_reboot) | bool }}"
-        security_patch_reboot_timeout: "{{ security_patch_reboot_timeout | default(security_patch_defaults.reboot_timeout) | int }}"
-        security_patch_severity: "{{ security_patch_severity | default(security_patch_defaults.severity) }}"
+        security_patch_apply_updates: >-
+          {{ security_patch_apply_updates | default(security_patch_defaults.apply_updates) | bool }}
+        security_patch_allow_reboot: >-
+          {{ security_patch_allow_reboot | default(security_patch_defaults.allow_reboot) | bool }}
+        security_patch_reboot_timeout: >-
+          {{ security_patch_reboot_timeout | default(security_patch_defaults.reboot_timeout) | int }}
+        security_patch_severity: >-
+          {{ security_patch_severity | default(security_patch_defaults.severity) }}
         security_patch_max_findings_in_report: >-
           {{ security_patch_max_findings_in_report | default(security_patch_defaults.max_findings_in_report) | int }}
         security_patch_apt_lock_timeout: >-
@@ -128,20 +132,26 @@
           {{ security_patch_dnf_security_only | default(security_patch_defaults.dnf_security_only) | bool }}
         security_patch_install_dnf_utils: >-
           {{ security_patch_install_dnf_utils | default(security_patch_defaults.install_dnf_utils) | bool }}
-        security_patch_trivy_version: "{{ security_patch_trivy_version | default(security_patch_defaults.trivy_version) | string }}"
+        security_patch_trivy_version: >-
+          {{ security_patch_trivy_version | default(security_patch_defaults.trivy_version) | string }}
         security_patch_trivy_install_script: >-
           {{ security_patch_trivy_install_script | default(security_patch_defaults.trivy_install_script) }}
         security_patch_trivy_installer_checksum: >-
           {{ security_patch_trivy_installer_checksum | default(security_patch_defaults.trivy_installer_checksum) }}
         security_patch_trivy_installer_path: >-
           {{ security_patch_trivy_installer_path | default(security_patch_defaults.trivy_installer_path) }}
-        security_patch_trivy_bin: "{{ security_patch_trivy_bin | default(security_patch_defaults.trivy_bin) }}"
-        security_patch_trivy_cache_dir: "{{ security_patch_trivy_cache_dir | default(security_patch_defaults.trivy_cache_dir) }}"
-        security_patch_trivy_update_db: "{{ security_patch_trivy_update_db | default(security_patch_defaults.trivy_update_db) | bool }}"
+        security_patch_trivy_bin: >-
+          {{ security_patch_trivy_bin | default(security_patch_defaults.trivy_bin) }}
+        security_patch_trivy_cache_dir: >-
+          {{ security_patch_trivy_cache_dir | default(security_patch_defaults.trivy_cache_dir) }}
+        security_patch_trivy_update_db: >-
+          {{ security_patch_trivy_update_db | default(security_patch_defaults.trivy_update_db) | bool }}
         security_patch_trivy_db_repository: >-
           {{ security_patch_trivy_db_repository | default(security_patch_defaults.trivy_db_repository) }}
-        security_patch_trivy_timeout: "{{ security_patch_trivy_timeout | default(security_patch_defaults.trivy_timeout) }}"
-        security_patch_trivy_skip_dirs: "{{ security_patch_trivy_skip_dirs | default(security_patch_defaults.trivy_skip_dirs) }}"
+        security_patch_trivy_timeout: >-
+          {{ security_patch_trivy_timeout | default(security_patch_defaults.trivy_timeout) }}
+        security_patch_trivy_skip_dirs: >-
+          {{ security_patch_trivy_skip_dirs | default(security_patch_defaults.trivy_skip_dirs) }}
 
     - name: Initialize security patch facts
       ansible.builtin.set_fact:

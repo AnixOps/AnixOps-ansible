@@ -194,6 +194,13 @@
       {{ ((lifecycle_rollback_manifest_raw.content | b64decode | from_json).files | map(attribute='original') | list)
          if lifecycle_rollback_manifest_stat.stat.exists else lifecycle_backup_files }}
     lifecycle_pre_rollback_snapshot_dir: "{{ lifecycle_backup_root }}/{{ lifecycle_rollback_timestamp }}-pre-rollback"
+    lifecycle_rollback_restored_version: >-
+      {{ (lifecycle_rollback_target.version if lifecycle_rollback_phase == 'post' else 'initial')
+         if lifecycle_rollback_explicit_dir | length == 0
+         else (((lifecycle_rollback_manifest_raw.content | b64decode | from_json).version | default('', true))
+               if lifecycle_rollback_manifest_stat.stat.exists else '')
+              | default('dir:' ~ lifecycle_rollback_explicit_dir, true) }}
+    lifecycle_snapshot_entries: []
 
 - name: Show rollback plan | 显示回滚计划
   ansible.builtin.debug:
@@ -264,11 +271,11 @@
     - lifecycle_restore_changed | bool or lifecycle_pre_rollback_state.service_state | default('unknown') != 'active'
 
 - name: Probe service state after rollback | 回滚后探测服务状态
-  ansible.builtin.systemd_service:
-    name: "{{ lifecycle_service_name }}"
-  register: lifecycle_post_rollback_service
-  failed_when: false
-  when: lifecycle_service_name | length > 0
+  ansible.builtin.include_tasks: probe_service.yml
+
+- name: Keep the post-rollback service state | 保存回滚后服务状态
+  ansible.builtin.set_fact:
+    lifecycle_post_rollback_service: "{{ lifecycle_service_probe }}"
 
 - name: Verify service health after rollback | 验证回滚后服务健康
   when: lifecycle_hooks_verify_enabled | bool
@@ -303,7 +310,7 @@
     lifecycle_post_rollback_healthy: >-
       {{ lifecycle_post_rollback_health_ok | bool
          and (lifecycle_service_name | length == 0
-              or (lifecycle_post_rollback_service.status.ActiveState | default('unknown')) == 'active') }}
+              or lifecycle_post_rollback_service.active_state == 'active') }}
 
 - name: Revert the rollback because the service is unhealthy | 服务不健康，撤销回滚
   when:
@@ -328,9 +335,7 @@
 - name: Build rollback record | 生成回滚记录
   ansible.builtin.set_fact:
     lifecycle_rollback_record:
-      version: >-
-        {{ lifecycle_rollback_target.version | default('initial')
-           if lifecycle_rollback_phase | default('pre') == 'post' else 'initial' }}
+      version: "{{ lifecycle_rollback_restored_version }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
       status: >-
         {{ 'rolled_back' if (lifecycle_post_rollback_healthy | bool or not lifecycle_hooks_verify_enabled | bool)
@@ -340,7 +345,7 @@
       pre_rollback_snapshot: >-
         {{ lifecycle_pre_rollback_snapshot_dir if lifecycle_pre_rollback_snapshot_taken | bool else '' }}
       service: "{{ lifecycle_service_name }}"
-      service_state: "{{ lifecycle_post_rollback_service.status.ActiveState | default('unknown') }}"
+      service_state: "{{ lifecycle_post_rollback_service.active_state }}"
       health_status: "{{ lifecycle_post_rollback_health.status | default(0) }}"
       triggered_by: >-
         {{ lookup('env', 'GITHUB_ACTOR') | default(lookup('env', 'USER'), true) | default('unknown', true) }}

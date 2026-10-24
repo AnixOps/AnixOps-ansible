@@ -206,9 +206,11 @@
           {{ (([rollback_contract_service] if rollback_contract_service | length > 0
                else rollback_services_default[rollback_role] | default([]))
               + (rollback_services_extra[rollback_role] | default([]))) | unique }}
-        rollback_port: "{{ lookup('vars', rollback_role ~ '_port', default=rollback_ports_default[rollback_role] | default(0)) }}"
+        rollback_port: >-
+          {{ lookup('vars', rollback_role ~ '_port', default=rollback_ports_default[rollback_role] | default(0)) }}
         rollback_health_url_raw: >-
-          {{ lookup('vars', rollback_role ~ '_health_url', default=rollback_health_urls_default[rollback_role] | default('')) }}
+          {{ lookup('vars', rollback_role ~ '_health_url',
+                    default=rollback_health_urls_default[rollback_role] | default('')) }}
       vars:
         rollback_contract_service: "{{ lookup('vars', rollback_role ~ '_service_name', default='') }}"
 
@@ -233,7 +235,7 @@
       ansible.builtin.find:
         paths: "{{ item | dirname }}"
         patterns:
-          - "{{ item | basename }}.*~"
+          - "{{ item | basename }}.*.*~"
           - "{{ item | basename }}.backup.*"
         file_type: file
         recurse: false
@@ -471,20 +473,29 @@
         - rollback_port | int > 0
 
     - name: Probe restarted services | 探测已重启的服务
-      ansible.builtin.systemd_service:
-        name: "{{ item }}"
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ item }}"
+          - --property=ActiveState
+          - --no-pager
       loop: "{{ rollback_restart_services | default([]) | unique }}"
       register: rollback_service_probe
+      changed_when: false
+      failed_when: false
 
     - name: Assert restarted services are active | 断言已重启的服务处于 active
       ansible.builtin.assert:
         that:
-          - rollback_service_probe.results | default([]) | map(attribute='status.ActiveState') | reject('eq', 'active') | list | length == 0
+          - >-
+            rollback_service_probe.results | default([]) | map(attribute='stdout')
+            | reject('eq', 'ActiveState=active') | list | length == 0
         fail_msg: >-
           Not all services are active after the rollback on {{ inventory_hostname }}:
           {{ rollback_service_probe.results | default([]) | map(attribute='item') | zip(
-             rollback_service_probe.results | default([]) | map(attribute='status.ActiveState'))
-             | map('join', '=') | join(', ') }}
+             rollback_service_probe.results | default([]) | map(attribute='stdout'))
+             | map('join', ' ') | join(', ') }}
         quiet: true
       when: rollback_restart_services | default([]) | length > 0
 
@@ -496,6 +507,7 @@
           ({{ rollback_restored_files | join(', ') | default('none', true) }}),
           {{ rollback_restore_entries | length - rollback_restored_files | length }} already identical,
           {{ rollback_plan | selectattr('action', 'eq', 'skip') | list | length }} skipped;
-          services restarted: {{ rollback_restart_services | default([]) | unique | join(', ') | default('none', true) }};
+          services restarted:
+          {{ rollback_restart_services | default([]) | unique | join(', ') | default('none', true) }};
           health: {{ rollback_health.status | default('n/a') }};
           pre-rollback snapshots: <file>.pre-rollback.{{ rollback_epoch }}

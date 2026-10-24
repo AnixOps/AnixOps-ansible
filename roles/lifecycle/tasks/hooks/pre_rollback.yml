@@ -27,11 +27,7 @@
       {{ (lifecycle_state_raw.content | b64decode | from_json) if lifecycle_state_stat.stat.exists else {} }}
 
 - name: Probe service state before rollback | 回滚前探测服务状态
-  ansible.builtin.systemd_service:
-    name: "{{ lifecycle_service_name }}"
-  register: lifecycle_pre_rollback_service
-  failed_when: false
-  when: lifecycle_service_name | length > 0
+  ansible.builtin.include_tasks: probe_service.yml
 
 - name: Record pre-rollback state | 记录回滚前状态
   ansible.builtin.set_fact:
@@ -40,7 +36,7 @@
       host: "{{ inventory_hostname }}"
       version: "{{ lifecycle_current_state.current_version | default('unknown') }}"
       service: "{{ lifecycle_service_name }}"
-      service_state: "{{ lifecycle_pre_rollback_service.status.ActiveState | default('unknown') }}"
+      service_state: "{{ lifecycle_service_probe.active_state }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
 
 - name: Write pre-rollback state file | 写入回滚前状态文件

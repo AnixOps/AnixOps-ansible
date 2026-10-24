@@ -228,7 +228,8 @@ def test_security_patch_yaml_uses_true_false_booleans():
 def test_security_patch_summary_schemas_agree():
     """pre_tasks init, summary.yml, failure.yml and the report placeholder share one key set."""
     playbook = _load(PLAYBOOK)
-    init_keys = set(playbook[0]["pre_tasks"][0]["ansible.builtin.set_fact"]["security_patch_summary"])
+    init_task = next(task for task in playbook[0]["pre_tasks"] if task["name"] == "Initialize security patch facts")
+    init_keys = set(init_task["ansible.builtin.set_fact"]["security_patch_summary"])
 
     key_pattern = re.compile(r"^\s*'([a-z_]+)':", re.MULTILINE)
     summary_keys = set(key_pattern.findall((TASK_DIR / "summary.yml").read_text(encoding="utf-8")))

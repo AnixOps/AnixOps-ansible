@@ -37,11 +37,7 @@
       {{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}
 
 - name: Probe service state | 探测服务状态
-  ansible.builtin.systemd_service:
-    name: "{{ lifecycle_service_name }}"
-  register: lifecycle_status_service
-  failed_when: false
-  when: lifecycle_service_name | length > 0
+  ansible.builtin.include_tasks: probe_service.yml
 
 - name: Check backup root | 检查备份根目录
   ansible.builtin.stat:
@@ -63,7 +59,8 @@
       - >-
         Lifecycle status | role={{ lifecycle_target_role }} host={{ inventory_hostname }}
         service={{ lifecycle_service_name | default('none', true) }}
-        ({{ lifecycle_status_service.status.ActiveState | default('unknown') }})
+        ({{ lifecycle_service_probe.active_state }}/{{ lifecycle_service_probe.sub_state }},
+        unit {{ 'present' if lifecycle_service_probe.present | bool else 'not found' }})
       - >-
         Current version: {{ lifecycle_current_state.current_version | default('none recorded') }}
         status={{ lifecycle_current_state.status | default('n/a') }}

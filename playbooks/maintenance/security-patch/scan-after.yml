@@ -29,7 +29,9 @@
     argv:
       - python3
       - "{{ security_patch_trivy_summarizer }}"
-    stdin: "{{ hostvars[inventory_hostname].security_patch_scan_after.stdout }}"
+    # "| string" keeps the JSON a string: a value that looks like a dict literal would
+    # otherwise be converted and re-serialised with single quotes (invalid JSON).
+    stdin: "{{ hostvars[inventory_hostname].security_patch_scan_after.stdout | string }}"
   register: security_patch_findings_after_raw
   changed_when: false
   failed_when: false

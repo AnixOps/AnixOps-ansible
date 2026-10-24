@@ -40,11 +40,11 @@
   when: lifecycle_backup_files | length == 0
 
 - name: Probe service state before deployment | 部署前探测服务状态
-  ansible.builtin.systemd_service:
-    name: "{{ lifecycle_service_name }}"
-  register: lifecycle_pre_deploy_service
-  failed_when: false
-  when: lifecycle_service_name | length > 0
+  ansible.builtin.include_tasks: probe_service.yml
+
+- name: Keep the pre-deploy service state | 保存部署前服务状态
+  ansible.builtin.set_fact:
+    lifecycle_pre_deploy_service: "{{ lifecycle_service_probe }}"
 
 - name: List all snapshot versions | 列出全部快照版本
   ansible.builtin.find:
@@ -95,7 +95,7 @@
       version: "{{ lifecycle_deploy_version }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
       service: "{{ lifecycle_service_name }}"
-      service_state: "{{ lifecycle_pre_deploy_service.status.ActiveState | default('unknown') }}"
+      service_state: "{{ lifecycle_pre_deploy_service.active_state }}"
       backup_location: "{{ lifecycle_backup_dir }}"
       files_backed_up: "{{ lifecycle_snapshot_entries | default([]) | length }}"
 

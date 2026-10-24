@@ -57,11 +57,7 @@
   when: lifecycle_dry_run | bool
 
 - name: Probe service unit | 探测服务 unit
-  ansible.builtin.systemd_service:
-    name: "{{ lifecycle_service_name }}"
-  register: lifecycle_cleanup_service
-  failed_when: false
-  when: lifecycle_service_name | length > 0
+  ansible.builtin.include_tasks: probe_service.yml
 
 - name: Stop and disable service | 停止并禁用服务
   ansible.builtin.systemd_service:
@@ -70,7 +66,7 @@
     enabled: false
   when:
     - lifecycle_service_name | length > 0
-    - lifecycle_cleanup_service.status.LoadState | default('not-found') == 'loaded'
+    - lifecycle_service_probe.present | bool
 
 - name: Remove packages | 删除软件包
   ansible.builtin.package:
@@ -196,9 +192,7 @@
   ansible.builtin.debug:
     msg:
       - "Cleanup completed: {{ lifecycle_target_role }} on {{ inventory_hostname }}"
-      - >-
-        Service: {{ 'stopped and disabled'
-        if lifecycle_cleanup_service.status.LoadState | default('not-found') == 'loaded' else 'not installed' }}
+      - "Service: {{ 'stopped and disabled' if lifecycle_service_probe.present | bool else 'not installed' }}"
       - "Archive: {{ lifecycle_cleanup_archive.dest | default('none') }}"
       - "Config dirs removed: {{ not lifecycle_cleanup_keep_data_effective | bool }}"
       - >-
