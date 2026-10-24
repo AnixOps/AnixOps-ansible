@@ -1,247 +1,132 @@
-# AnixOps 快速部署指南 | AnixOps Quick Deployment Guide
+# Quick Start | 快速上手
 
-## 🎯 5 分钟快速上手 | 5-Minute Quick Start
+From a fresh clone to a verified deployment. Day-2 operations (rollback, incidents) are in
+[RUNBOOK.md](RUNBOOK.md); the rules for changing the code are in [CONVENTIONS.md](CONVENTIONS.md).
 
-### 步骤 1: 配置服务器 IP | Step 1: Configure Server IPs
+## 1. Prerequisites | 前置条件
 
-复制环境变量模板并填入你的服务器 IP：
+- A Linux control node (or WSL) with Python 3, `git` and bash 4 or newer.
+- SSH access to the target servers with a key (the fleet is managed as `root` by default).
+- Targets: Debian/Ubuntu is the reference platform (Grafana and the node platform are
+  apt-only, and so is V2board). The preflight play of `quick-setup.yml` and `site.yml` accepts the Debian and RedHat
+  families and asserts Python 3 and at least 1024 MB free on `/` (`preflight_min_free_mb`).
 
-Copy the environment variable template and fill in your server IPs:
-
-```bash
-cd AnixOps-ansible
-cp .env.example .env
-vim .env  # 填入真实 IP | Fill in real IPs
-```
-
-**.env 配置示例 | .env Configuration Example:**
+## 2. Install | 安装
 
 ```bash
-# 点对点连接 (/31 或 /127 段) - 直接连接
-# Point-to-point connection (/31 or /127 segment) - Direct connection
-US_W_1_V4=203.0.113.10/31
-US_W_1_V6=2001:db8::1/127
-
-# 内网段 - 需要指定SSH连接IP
-# Private network - Requires SSH connection IP
-JP_1_V4=10.10.0.50/27
-JP_1_V6=2001:19f0:5001::1/120
-JP_1_SSH_IP=45.76.123.45  # 公网IP用于SSH连接 | Public IP for SSH connection
-
-# SSH 配置 | SSH Configuration
-ANSIBLE_USER=root
-SSH_KEY_PATH=~/.ssh/id_rsa
-```
-
-**说明 | Explanation:**
-- **`/31` (IPv4) 或 `/127` (IPv6) 段 | `/31` (IPv4) or `/127` (IPv6) segment**：点对点连接，直接使用该IP | Point-to-point connection, use IP directly
-  - 示例 | Example：`203.0.113.10/31` → 直接 SSH 到 | Direct SSH to `203.0.113.10`
-- **其他网段 | Other segments**：必须设置 `_SSH_IP` 变量指定SSH连接地址 | Must set `_SSH_IP` variable for SSH connection
-  - 示例 | Example：`JP_1_V4=10.10.0.50/27` + `JP_1_SSH_IP=45.76.123.45`
-  - SSH 连接到 | SSH to `45.76.123.45`，内网IP用于配置管理 | Private IP for configuration
-
-**网段判断规则 | Subnet Detection Rules:**
-- IPv4: `/31` = 点对点 | Point-to-point，其他 | others = 需要 SSH_IP | Requires SSH_IP
-- IPv6: `/127` = 点对点 | Point-to-point，其他 | others = 需要 SSH_IP | Requires SSH_IP
-
-### 步骤 2: 准备 SSH 密钥 | Step 2: Prepare SSH Keys
-
-在你的本地机器上生成 SSH 密钥对（如果还没有）：
-
-Generate SSH key pair on your local machine (if you don't have one):
-
-```bash
-ssh-keygen -t rsa -b 4096 -C "ansible@anixops.com" -f ~/.ssh/id_rsa
-```
-
-将公钥复制到**所有**目标服务器（根据 .env 中配置的 IP）：
-
-Copy the public key to **all** target servers (based on IPs in .env):
-
-```bash
-# 示例：复制到美西服务器 | Example: Copy to US West server
-ssh-copy-id -i ~/.ssh/id_rsa.pub root@203.0.113.10
-
-# 示例：复制到日本服务器 | Example: Copy to Japan server
-ssh-copy-id -i ~/.ssh/id_rsa.pub root@45.76.123.45
-```
-
-### 步骤 3: 克隆项目并安装依赖（Linux-only）| Step 3: Clone Project and Install Dependencies (Linux-only)
-
-```bash
-# 克隆仓库 | Clone repository
 git clone https://github.com/AnixOps/AnixOps-ansible.git
 cd AnixOps-ansible
-
-# 使用启动脚本创建虚拟环境并安装依赖
-# Use setup script to create virtual environment and install dependencies
-./scripts/anixops.sh setup-venv
+scripts/anixops.sh setup --dev     # creates ./venv, installs requirements and Galaxy collections
+. venv/bin/activate
 ```
 
-### 步骤 4: 上传 SSH 密钥到 GitHub Secrets（可选，用于 CI/CD）| Step 4: Upload SSH Key to GitHub Secrets (Optional, for CI/CD)
+`make install-dev` does the same inside an already active virtualenv and also installs the
+pre-commit hooks.
 
-如果需要使用 GitHub Actions 自动部署：
-
-If you need to use GitHub Actions for automated deployment:
+## 3. Configure `.env` | 配置环境变量
 
 ```bash
-python tools/ssh_key_manager.py
+cp .env.example .env
 ```
 
-按照提示输入：
-- SSH 私钥路径：`~/.ssh/id_rsa`
-- GitHub 仓库：`YourUsername/AnixOps-ansible`
-- GitHub Token：在 https://github.com/settings/tokens/new 创建（需要 `repo` 权限）
-- Secret 名称：`SSH_PRIVATE_KEY`
+`.env` is git-ignored. `scripts/anixops.sh` (and therefore every `make` target) loads it
+automatically; for plain `ansible-playbook` runs export it first with
+`set -a; . ./.env; set +a`.
 
-**另外需要在 GitHub Secrets 中添加服务器 IP 变量**（参考 .env.example）
+Fill in at least:
 
-### 步骤 5: 测试连接
+| Variable | Meaning |
+|---|---|
+| `<HOST>_V4_SSH` | SSH address of each host you deploy to, plain IPv4 or hostname without a CIDR suffix: `JP_1_V4_SSH`, `UK_1_V4_SSH`, `US_W_1_V4_SSH`, `SG_1_V4_SSH`, `HK_1_V4_SSH`, `UK_2_V4_SSH`, `FR_1_V4_SSH`, `PL_1_V4_SSH` |
+| `ANSIBLE_USER`, `ANSIBLE_PORT` | SSH user (default `root`) and port (default `22`) |
+| `SSH_KEY_PATH` | private key used by Ansible (default `~/.ssh/id_rsa`) |
+| `GRAFANA_ADMIN_PASSWORD` | required before deploying Grafana; must not be empty or `admin` |
+| `V2BOARD_*` values | required before deploying the panel and its database: `V2BOARD_PG_PASSWORD`, `V2BOARD_JWT_SECRET`, `V2BOARD_API_TOKEN`, `V2BOARD_ADMIN_EMAIL`, `V2BOARD_ADMIN_PASSWORD` |
+
+Everything else has a working default or is only needed by optional features; see
+[GITHUB_SECRETS_REFERENCE.md](GITHUB_SECRETS_REFERENCE.md) for the full list.
+
+## 4. SSH keys | SSH 密钥
 
 ```bash
-./scripts/anixops.sh ping
+ssh-keygen -t ed25519 -f ~/.ssh/anixops_ed25519 -C "anixops-ansible"
+ssh-copy-id -i ~/.ssh/anixops_ed25519.pub root@<host-address>     # repeat per host
+# then in .env: SSH_KEY_PATH=~/.ssh/anixops_ed25519
 ```
 
-预期输出：
-```
-us-w-1 | SUCCESS => {
-    "changed": false,
-    "ping": "pong"
-}
-jp-1 | SUCCESS => {
-    "changed": false,
-    "ping": "pong"
-}
-```
+`tools/ssh_key_deployer.py` pushes a public key to many hosts at once (interactive, or
+`--key-file ... --host ...`). Password authentication is disabled fleet-wide by the `common` role
+(`ssh_password_authentication: false` in `group_vars/all/main.yml`), so install the key before the
+first deployment.
 
-### 步骤 6: 执行部署
+## 5. Check the setup | 环境自检
 
 ```bash
-# 快速初始化（安装基础配置 + 监控）
-./scripts/anixops.sh quick-setup
-
-# 或完整部署（包括 Nginx）
-./scripts/anixops.sh deploy
+make doctor        # tools, .env, inventory parses, no drift, collections
+make list-hosts    # inventory graph
+make ping          # all hosts; narrow with ANIXOPS_FLAGS="--limit jp-1"
 ```
 
-### 步骤 7: 验证部署
-
-访问你的服务器查看结果（替换为 .env 中配置的真实 IP）：
+## 6. Deploy | 部署
 
 ```bash
-# 查看 Nginx 欢迎页
-curl http://YOUR_SERVER_IP
-
-# 查看 Node Exporter 指标
-curl http://YOUR_SERVER_IP:9100/metrics
-
-# 查看 Promtail 状态
-curl http://YOUR_SERVER_IP:9080/ready
+make quick-setup ANSIBLE_ARGS="--limit <new-host>"   # base stack on a new server
+make deploy-dry-run                                  # full site.yml in check mode with diff
+make deploy                                          # full deployment, asks for confirmation
+make deploy ANSIBLE_ARGS="--tags nginx --limit web_servers"   # one service, one group
 ```
 
----
-
-## 🔧 配置 GitHub Actions 自动部署
-
-### 1. 配置必需的 Secrets
-
-在 GitHub 仓库设置中添加以下 Secrets（Settings → Secrets and variables → Actions）：
-
-- `SSH_PRIVATE_KEY` - 已通过 ssh_key_manager.py 上传
-- `ANSIBLE_USER` - 设置为 `root`
-- `WEB_01_IP` - 你的服务器 IP 地址
-- `PROMETHEUS_URL` - Prometheus 服务器地址（如有）
-- `LOKI_URL` - Loki 服务器地址（如有）
-- `GRAFANA_URL` - Grafana 服务器地址（如有）
-
-### 2. 启用 GitHub Actions
-
-1. 进入仓库的 "Actions" 标签页
-2. 启用 workflows
-3. 推送代码到 `main` 分支将自动触发部署
-
-### 3. 手动触发部署
-
-在 Actions 标签页，选择 "Deploy to Production" workflow，点击 "Run workflow"。
-
----
-
-## 📋 常用命令
-
-### Ansible 命令
+The `site.yml` tags are `common`, `node_exporter`, `promtail`, `firewall`, `nginx`,
+`prometheus`, `loki`, `grafana`, `postgresql`, `v2board`, `v2bx`, `speedtest` and `health`.
+The same commands without `make`:
 
 ```bash
-# 查看所有主机
-ansible all --list-hosts
-
-# 执行临时命令
-ansible all -m shell -a "uptime"
-
-# 检查 playbook 语法
-ansible-playbook --syntax-check playbooks/site.yml
-
-# 仅执行特定 role
-ansible-playbook playbooks/site.yml --tags nginx
-
-# 限制执行范围
-ansible-playbook playbooks/site.yml --limit web_servers
-
-# 检查模式（不实际执行）
-ansible-playbook playbooks/site.yml --check
+scripts/anixops.sh deploy --dry-run --tags nginx --limit web_servers
+ansible-playbook playbooks/provision/site.yml --tags nginx --limit web_servers --check --diff
 ```
 
-### 健康检查
+## 7. Verify | 验证
 
 ```bash
-# 运行健康检查 playbook
-./scripts/anixops.sh health-check
-
-# 快速 ping 测试
-ansible all -m ping
-
-# 查看系统信息
-ansible all -m setup -a "filter=ansible_distribution*"
+make health-check                               # read-only, every host
+make health-check ANSIBLE_ARGS="--limit jp-1"
 ```
 
----
-
-## 🐛 故障排查
-
-### SSH 连接失败
+On a host you can also probe the local endpoints directly:
 
 ```bash
-# 测试 SSH 连接
-ssh -i ~/.ssh/anixops_rsa root@YOUR_SERVER_IP
-
-# 查看详细日志
-ansible all -m ping -vvv
+curl -fsS http://127.0.0.1:9100/metrics | head   # node_exporter
+curl -fsS http://127.0.0.1:9080/ready            # promtail
+curl -fsS http://127.0.0.1/health                # nginx default site (web_servers)
 ```
 
-### Playbook 执行失败
+The restricted ports (9100, 9080, 9090, 3100, 3000, 5432) are only reachable from the monitoring
+whitelist (pl-1 plus `GLOBAL_WHITELIST_IPS`), so test them from the host itself or from a
+whitelisted address.
 
-```bash
-# 使用详细模式
-ansible-playbook playbooks/site.yml -vvv
+## 8. Add a server | 添加服务器
 
-# 逐步执行
-ansible-playbook playbooks/site.yml --step
-```
+1. Add the host to `inventories/production/servers-config.yml` with a new `env_var`
+   (`<HOST>_V4_SSH`) and its `groups`.
+2. `make gen-inventory` (shows the diff, asks before writing `hosts.yml`).
+3. Put the address in `.env` and, for CI, create a repository secret with the same name.
+4. Commit `servers-config.yml` and `hosts.yml` together; `make check` must stay green
+   (inventory drift gate).
+5. `make quick-setup ANSIBLE_ARGS="--limit <host>"`, then `make deploy ANSIBLE_ARGS="--limit <host>"`.
 
-### 权限问题
+## 9. GitHub Actions | 自动化部署
 
-确保：
-1. SSH 私钥权限：`chmod 600 ~/.ssh/anixops_rsa`
-2. 用户有 sudo 权限
-3. 防火墙允许 SSH 端口
+Add `SSH_PRIVATE_KEY`, `ANSIBLE_USER`, `ANSIBLE_PORT` and the `<HOST>_V4_SSH` addresses as
+secrets (repository or the `NodeX` environment), then run the **Deploy** workflow manually or push
+a `v*` tag. Details: [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md).
 
----
+## 10. Troubleshooting | 排错
 
-## 📞 获取帮助
-
-- 查看完整文档：项目根目录的运维手册
-- 提交 Issue：https://github.com/AnixOps/AnixOps-ansible/issues
-- 联系维护者：@kalijerry
-
----
-
-**祝你部署顺利！🚀**
+| Problem | Check |
+|---|---|
+| `make ping` fails for one host | the `<HOST>_V4_SSH` value in `.env`, `ssh -i <SSH_KEY_PATH> -p <ANSIBLE_PORT> <ANSIBLE_USER>@<address>` |
+| `Permission denied (publickey)` | the public key is not in `authorized_keys` on the host, or `SSH_KEY_PATH` points at the wrong key (`chmod 600` the private key) |
+| Grafana play fails at the start | `GRAFANA_ADMIN_PASSWORD` is empty or `admin` |
+| Inventory drift reported by `make doctor` / `make check` | run `make gen-inventory` and commit `hosts.yml` |
+| Old facts used in a run | facts are cached for an hour in `.ansible/facts_cache`; `make clean` clears them |
+| More output needed | `ANIXOPS_FLAGS=-vvv`, and the full log under `.ansible/logs/` |

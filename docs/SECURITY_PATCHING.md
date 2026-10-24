@@ -118,6 +118,20 @@ issue body say "Mode: scan-only".
   and keep them disabled for `postgres_servers` / `observability`, rebooting those in
   a planned window.
 
+### GitHub Actions inputs
+
+The scheduled run (Mondays 04:00 UTC) patches `all`, applies updates and leaves the reboot
+decision to the inventory. A manual run of **Weekly Security Patch** takes:
+
+| Input | Default | Effect |
+| --- | --- | --- |
+| `target_group` | `all` | `--limit "<group>,localhost"` and `-e security_patch_target_group=<group>` |
+| `apply_updates` | `true` | `-e security_patch_apply_updates=<value>`; `false` = scan-only |
+| `allow_reboot` | `inventory` | `inventory` passes nothing, so each host's or group's `security_patch_allow_reboot` applies; `true` / `false` pass `-e security_patch_allow_reboot=<value>` and override the inventory for this run |
+
+From a workstation the same knobs are `make security-patch` (or `make security-scan-only`) plus
+`ANSIBLE_ARGS="-e security_patch_allow_reboot=true"`; keep `localhost` in any `--limit` you pass.
+
 ## Report schema (`schema_version: 1`)
 
 ```json

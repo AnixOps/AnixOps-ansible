@@ -1,353 +1,164 @@
-# GitHub Secrets 配置参考
+# GitHub Secrets Reference | GitHub Secrets 参考
 
-> 完整的 GitHub Secrets 配置指南 - v0.0.2
+Every secret and environment variable the playbooks, roles and workflows read. Locally the same
+names live in `.env` (copy `.env.example`); in GitHub Actions they are secrets of the same name.
+How the workflows use them is described in [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md).
 
-本文档列出了 AnixOps-ansible 项目中所有支持的 GitHub Secrets 配置项。
+## How secrets reach Ansible | 机密如何传递给 Ansible
 
-## 📋 目录
+- `SSH_PRIVATE_KEY` is handed to the `setup-ansible` composite action, which writes it to
+  `$RUNNER_TEMP/ssh/id_ansible` (mode 0600), exports `SSH_KEY_PATH` and
+  `ANSIBLE_PRIVATE_KEY_FILE`, and every job shreds the directory in an `if: always()` step.
+- Everything else goes through the `export-secrets` composite action: it receives
+  `toJSON(secrets)` and exports only the names that match its allow-list into `GITHUB_ENV`
+  (values are never printed, only the exported names). The default allow-list is:
 
-- [必需配置](#必需配置)
-- [服务器 IP 配置](#服务器-ip-配置)
-- [可观测性配置](#可观测性配置)
-- [SSL/TLS 配置](#ssltls-配置)
-- [Cloudflare 配置](#cloudflare-配置)
-- [Grafana 认证配置](#grafana-认证配置)
-- [防火墙配置](#防火墙配置)
-- [配置步骤](#配置步骤)
+  ```text
+  ^[A-Z0-9_]+_V4_SSH$  ^ANSIBLE_(USER|PORT)$  ^V2BX_  ^V2BOARD_  ^PROMETHEUS_URL$  ^LOKI_URL$
+  ^GRAFANA_  ^OBSERVABILITY_  ^SSL_CERTIFICATE_  ^ACME_  ^CLOUDFLARE_  ^FIREWALL_
+  ^GLOBAL_WHITELIST_IPS$  ^NOTIFICATION_WEBHOOK_URL$  ^SLACK_WEBHOOK_URL$  ^ANIXOPS_NODE_PLATFORM_
+  ^SMTP_  ^VULTR_API_KEY$
+  ```
 
----
+  A secret whose name does not match is not visible to Ansible in CI.
+- Secrets can be defined at repository level or in the GitHub Environment the job uses:
+  `NodeX` for `deploy.yml`, `lifecycle.yml` and `weekly-security-patch.yml`, `node-platform`
+  for `node-platform-deploy.yml`.
 
-## 必需配置
+## Connection | 连接
 
-这些是运行 Ansible playbook 所必需的基础配置。
+| Name | Required | Default | Used by |
+|---|---|---|---|
+| `SSH_PRIVATE_KEY` | yes (CI) | - | private key for the fleet; the matching public key must be in `authorized_keys` on every host |
+| `ANSIBLE_USER` | recommended | `root` | `ansible_user` in the generated inventory |
+| `ANSIBLE_PORT` | recommended | `22` | `ansible_port` in the generated inventory |
+| `SSH_KEY_PATH` | local only | `~/.ssh/id_rsa` | `ansible_ssh_private_key_file`; CI sets it itself |
 
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `SSH_PRIVATE_KEY` | SSH 私钥内容 | `-----BEGIN RSA PRIVATE KEY-----\n...` | ✅ |
-| `ANSIBLE_USER` | SSH 登录用户名 | `root` 或 `ubuntu` | ✅ |
-| `ANSIBLE_PORT` | SSH 端口 | `22` | ✅ |
+## Host addresses | 主机地址
 
-### 配置方法
+One variable per host, named by `env_var` in `inventories/production/servers-config.yml`. The value
+is a plain IPv4 address or a resolvable hostname, without a CIDR suffix. The generated inventory sets
+`ansible_host: "{{ lookup('env', '<NAME>') }}"`, so a host whose variable is empty cannot be reached.
 
-#### SSH_PRIVATE_KEY
+| Name | Host | Groups |
+|---|---|---|
+| `JP_1_V4_SSH` | `jp-1` | `web_servers` |
+| `UK_1_V4_SSH` | `uk-1` | `web_servers`, `v2bx_servers` |
+| `US_W_1_V4_SSH` | `us-w-1` | `web_servers`, `v2board_servers` |
+| `SG_1_V4_SSH` | `sg-1` | `proxy_servers` |
+| `HK_1_V4_SSH` | `hk-1` | `proxy_servers` |
+| `UK_2_V4_SSH` | `uk-2` | `proxy_servers`, `v2bx_servers` |
+| `FR_1_V4_SSH` | `fr-1` | `dev_servers`, `dev` |
+| `PL_1_V4_SSH` | `pl-1` | `observability`, `v2board_servers`, `postgres_servers`, `k8s_control_plane`, `k8s_test`; also always on the monitoring whitelist |
+| `ANIXOPS_NODE_PLATFORM_1_V4_SSH` | node platform host | `anixops_node_platform_servers` (`inventories/production/node-platform.actions.yml`, `node-platform` environment) |
 
-使用 `ssh_key_manager.py` 工具安全上传：
+Adding a host means adding its `env_var` to `servers-config.yml`, running `make gen-inventory`
+and creating the secret; any `<NAME>_V4_SSH` is exported automatically.
+
+## Firewall | 防火墙
+
+| Name | Required | Default | Used by |
+|---|---|---|---|
+| `GLOBAL_WHITELIST_IPS` | no | empty | comma-separated IPs/CIDRs added to `monitoring_whitelist` (`group_vars/all/main.yml`); only these addresses and pl-1 reach the restricted ports 9100, 9080, 9090, 3100, 3000 and 5432 |
+
+## Observability | 可观测性
+
+| Name | Required | Default | Used by |
+|---|---|---|---|
+| `GRAFANA_ADMIN_PASSWORD` | yes, for the `grafana` play | - | `roles/grafana`; the preflight fails when it is empty or `admin` |
+| `GRAFANA_ADMIN_USER` | no | `admin` | `roles/grafana` |
+| `GRAFANA_DOMAIN` | no | `localhost` | `roles/grafana` (`root_url`), `tools/cloudflare_manager.py` |
+| `OBSERVABILITY_SSL_ENABLED` | no | `false` | `roles/grafana`: `true` makes `root_url` `https://<GRAFANA_DOMAIN>/` (TLS terminated by a reverse proxy) |
+| `LOKI_URL` | yes, for hosts other than the Loki host | `http://localhost:3100` | `roles/promtail` push target (`/loki/api/v1/push` is appended) |
+| `PROMETHEUS_URL` | no | `http://localhost:9090` | exposed as `prometheus.server_url` in `group_vars/all/main.yml` |
+| `GRAFANA_URL` | no | `http://localhost:3000` | exposed as `grafana.url` in `group_vars/all/main.yml` |
+| `PROMETHEUS_DOMAIN`, `LOKI_DOMAIN` | no | empty | `tools/cloudflare_manager.py from-env` |
+
+## TLS and Cloudflare | TLS 与 Cloudflare
+
+| Name | Required | Used by |
+|---|---|---|
+| `SSL_CERTIFICATE_PEM`, `SSL_CERTIFICATE_KEY_PEM` | no | base64-encoded PEM (`tools/encode_ssl_cert.sh cert.pem key.pem [--write]`); `node-platform-deploy.yml` maps them to `ANIXOPS_NODE_PLATFORM_SSL_CERTIFICATE_PEM` / `_KEY_PEM` |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | no | `tools/cloudflare_manager.py` (preferred: scoped token with Zone DNS Edit) |
+| `CLOUDFLARE_EMAIL`, `CLOUDFLARE_API_KEY` | no | `tools/cloudflare_manager.py` (Global API key alternative) |
+| `CLOUDFLARE_BASE_DOMAIN` | no | `tools/cloudflare_manager.py` |
+| `CLOUDFLARE_MESH_TOKEN` | no | `roles/cloudflare_mesh` (not part of any playbook since the mesh was removed from the deployment paths) |
+
+The `acme_ssl` role takes its account e-mail and Cloudflare credentials from inventory variables
+(`acme_email` / `acme_ssl_email`, `cloudflare_api_token`, `cloudflare_zone_id`), not from the
+environment.
+
+## V2board and V2bX | V2board 与 V2bX
+
+| Name | Required | Default | Used by |
+|---|---|---|---|
+| `V2BOARD_PG_PASSWORD` | yes | - | `roles/postgresql` (application role password), `roles/v2board` |
+| `V2BOARD_JWT_SECRET` | yes | - | `roles/v2board` |
+| `V2BOARD_API_TOKEN` | yes | - | `roles/v2board`; `roles/v2bx` uses it to generate node AuthKeys |
+| `V2BOARD_ADMIN_EMAIL`, `V2BOARD_ADMIN_PASSWORD` | yes | - | `roles/v2board` |
+| `V2BOARD_PG_USER`, `V2BOARD_PG_DATABASE` | no | `v2board` | `roles/postgresql`, `roles/v2board` |
+| `V2BOARD_PG_HOST`, `V2BOARD_REDIS_HOST` | no | `localhost` | `roles/v2board` |
+| `V2BOARD_REDIS_PASSWORD` | no | empty | `roles/v2board` |
+| `V2BOARD_DEPLOY_METHOD` | no | `docker` | `roles/v2board` (`docker` or `binary`) |
+| `V2BOARD_DOCKER_TAG` | no | `latest` | `roles/v2board` (docker method) |
+| `V2BOARD_BINARY_URL`, `V2BOARD_BINARY_VERSION` | no | - | `roles/v2board` (binary method) |
+| `V2BOARD_ENV` | no | `development` | `roles/v2board` (use `development` for the first run, then `production`) |
+| `V2BOARD_FRONTEND_PORT`, `V2BOARD_API_PORT`, `V2BOARD_GRPC_PORT`, `V2BOARD_NODEX_PORT` | no | `3001`, `8080`, `50051`, `18081` | `roles/v2board` |
+| `V2BOARD_DB_TYPE` | no | `postgres` | `roles/v2board` |
+| `V2BX_API_HOST` | yes, for V2bX nodes | - | `roles/v2bx`: panel URL reachable from the node |
+| `V2BX_CORE` | no | `sing` | `roles/v2bx` (`sing`, `xray` or `hysteria2`) |
+| `V2BX_AUTO_GENERATE_AUTHKEY`, `V2BX_AUTH_KEY`, `V2BX_AUTHKEY_EXPIRE_DAYS` | no | `true`, empty, `1` | `roles/v2bx` |
+| `V2BX_BINARY_URL`, `V2BX_NODE_NAME`, `V2BX_PROTOCOLS`, `V2BX_CERT_MODE`, `V2BX_CERT_DOMAIN`, `V2BX_LOG_LEVEL` | no | see `.env.example` | `roles/v2bx` |
+
+## Notifications | 通知
+
+| Name | Required | Used by |
+|---|---|---|
+| `NOTIFICATION_WEBHOOK_URL` | no | `roles/lifecycle`: generic webhook after deploys and rollbacks |
+| `SLACK_WEBHOOK_URL` | no | `roles/lifecycle`: Slack incoming webhook |
+
+The weekly security patch workflow files its backlog issue with the automatic `GITHUB_TOKEN`
+(`issues: write`); no extra secret is needed.
+
+## Node platform | 节点平台
+
+The `node-platform` environment needs `SSH_PRIVATE_KEY`, `ANSIBLE_USER`, `ANSIBLE_PORT`,
+`ANIXOPS_NODE_PLATFORM_1_V4_SSH` and the `ANIXOPS_NODE_PLATFORM_*` application secrets; the
+workflow also maps `VULTR_API_KEY`, `SMTP_*` and `SSL_CERTIFICATE_*`. The full list is in
+[ANIXOPS_NODE_PLATFORM.md](ANIXOPS_NODE_PLATFORM.md).
+
+## Local-only and unused names | 仅本地或未使用的变量
+
+- `K3S_TOKEN` (optional) is read by `roles/k8s_provision` when joining k3s agents; it is not on the
+  CI allow-list, so runs that need it are local.
+- `.env.example` also lists `ACME_EMAIL`, `OBSERVABILITY_SSL_METHOD`, `CLOUDFLARE_MESH_ADVERTISE_SUBNETS`,
+  `K8S_CONTROL_SSL_ENABLED`, `K8S_CONTROL_SSL_METHOD`, `K8S_DASHBOARD_DOMAIN`, `K8S_API_DOMAIN`,
+  `K8S_METRICS_DOMAIN` and `SPEEDTEST_INSTALL_METHOD`; no role, playbook or workflow reads them at
+  the moment.
+- Older documentation described per-interface `*_V4`, `*_V6` and `*_SSH_IP` secrets with CIDR
+  suffixes, hosts that are no longer in the fleet, and `FIREWALL_WHITELIST_IPS`. No playbook, role or
+  workflow reads those names any more; the whitelist variable is `GLOBAL_WHITELIST_IPS` and each
+  host has exactly one `<HOST>_V4_SSH` address. Delete the old secrets.
+
+## Setting secrets | 设置方法
 
 ```bash
-python tools/ssh_key_manager.py \
-  --key-file ~/.ssh/id_rsa \
-  --repo AnixOps/AnixOps-ansible \
-  --token ghp_your_token_here \
-  --secret-name SSH_PRIVATE_KEY
-```
-
-或通过 GitHub 网页界面：
-1. 读取私钥内容：`cat ~/.ssh/id_rsa`
-2. 复制完整内容（包括 BEGIN 和 END 行）
-3. 在 GitHub 仓库 Settings → Secrets → Actions → New repository secret
-4. Name: `SSH_PRIVATE_KEY`，Value: 粘贴私钥内容
-
----
-
-## 服务器 IP 配置
-
-根据你的服务器配置，设置对应的 IP 地址变量。
-
-### 格式说明
-
-- **点对点连接**（`/31` 或 `/127` 段）：只需配置 IP/掩码
-- **其他网段**：需要同时配置 IP/掩码 和 SSH_IP
-
-### 配置示例
-
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `US_W_1_V4` | 美西服务器1 IPv4 | `203.0.113.10/31` | 根据实际 |
-| `US_W_1_V6` | 美西服务器1 IPv6 | `2001:db8::1/127` | 根据实际 |
-| `US_W_2_V4` | 美西服务器2 IPv4 | `10.0.1.100/24` | 根据实际 |
-| `US_W_2_V6` | 美西服务器2 IPv6 | `2001:db8:100::1/64` | 根据实际 |
-| `US_W_2_SSH_IP` | 美西服务器2 SSH连接IP | `203.0.113.20` | ⚠️ 非/31段必需 |
-| `US_E_1_V4` | 美东服务器 IPv4 | `203.0.113.30/31` | 根据实际 |
-| `US_E_1_V6` | 美东服务器 IPv6 | `2001:db8::3/127` | 根据实际 |
-| `JP_1_V4` | 日本服务器 IPv4 | `10.10.0.50/27` | 根据实际 |
-| `JP_1_V6` | 日本服务器 IPv6 | `2001:db8:200::1/120` | 根据实际 |
-| `JP_1_SSH_IP` | 日本服务器 SSH连接IP | `45.76.123.45` | ⚠️ 非/31段必需 |
-| `EU_1_V4` | 欧洲服务器 IPv4 | `203.0.113.50/31` | 根据实际 |
-| `EU_1_V6` | 欧洲服务器 IPv6 | `2001:db8::5/127` | 根据实际 |
-| `DE_1_V4_SSH` | 德国测试服务器1 | `192.0.2.10` | 根据实际 |
-| `PL_1_V4_SSH` | 波兰测试服务器1 | `192.0.2.20` | 根据实际 |
-
-### 判断是否需要 SSH_IP
-
-```bash
-# 点对点连接 (/31 或 /127) - 不需要 SSH_IP
-US_W_1_V4=203.0.113.10/31        # 直接 SSH 到这个 IP
-US_W_1_V6=2001:db8::1/127
-
-# 内网段 - 需要 SSH_IP
-JP_1_V4=10.10.0.50/27            # 内网 IP，用于配置管理
-JP_1_SSH_IP=45.76.123.45         # SSH 连接到这个公网 IP
-```
-
----
-
-## 可观测性配置
-
-配置 Prometheus、Loki、Grafana 的访问地址。
-
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `PROMETHEUS_URL` | Prometheus 访问地址 | `http://prometheus.example.com:9090` | ⚠️ 部署监控时必需 |
-| `LOKI_URL` | Loki 访问地址 | `http://loki.example.com:3100` | ⚠️ 部署日志时必需 |
-| `GRAFANA_URL` | Grafana 访问地址 | `http://grafana.example.com:3000` | ⚠️ 部署 Grafana 时必需 |
-
----
-
-## SSL/TLS 配置
-
-为可观测性服务启用 HTTPS。
-
-### 基础 SSL 配置
-
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `OBSERVABILITY_SSL_ENABLED` | 是否启用 SSL | `true` 或 `false` | 启用 SSL 时必需 |
-| `OBSERVABILITY_SSL_METHOD` | SSL 证书方式 | `custom` 或 `acme` | 启用 SSL 时必需 |
-
-### 域名配置（启用 SSL 时必需）
-
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `GRAFANA_DOMAIN` | Grafana 域名 | `grafana.example.com` | ✅ 启用 SSL 时 |
-| `PROMETHEUS_DOMAIN` | Prometheus 域名 | `prometheus.example.com` | ✅ 启用 SSL 时 |
-| `LOKI_DOMAIN` | Loki 域名 | `loki.example.com` | ✅ 启用 SSL 时 |
-
-### 自定义 SSL 证书（SSL_METHOD=custom）
-
-| Secret 名称 | 说明 | 必需 |
-|------------|------|------|
-| `SSL_CERTIFICATE_PEM` | SSL 证书（base64 编码） | ✅ custom 模式时 |
-| `SSL_CERTIFICATE_KEY_PEM` | SSL 私钥（base64 编码） | ✅ custom 模式时 |
-
-#### 生成 base64 编码的证书
-
-```bash
-# 编码证书
-cat cert.pem | base64 -w 0 > cert_encoded.txt
-
-# 编码私钥
-cat key.pem | base64 -w 0 > key_encoded.txt
-
-# 复制编码后的内容到 GitHub Secrets
-```
-
-或使用提供的工具：
-
-```bash
-./tools/encode_ssl_cert.sh cert.pem key.pem
-```
-
-### ACME.sh 配置（SSL_METHOD=acme）
-
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `ACME_EMAIL` | Let's Encrypt 通知邮箱 | `admin@example.com` | ✅ acme 模式时 |
-| `ACME_CA_SERVER` | ACME CA 服务器 | `letsencrypt` 或 `letsencrypt_test` | ✅ acme 模式时 |
-
----
-
-## Cloudflare 配置
-
-用于 SSL 证书自动获取和 DNS 管理。
-
-### 认证方式 1：API Token（推荐）
-
-| Secret 名称 | 说明 | 必需 |
-|------------|------|------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token | ✅ 使用 Cloudflare 时 |
-| `CLOUDFLARE_ZONE_ID` | Zone ID | ✅ 使用 Cloudflare 时 |
-
-#### 获取 API Token
-
-1. 登录 Cloudflare Dashboard
-2. 进入 "My Profile" → "API Tokens"
-3. 创建 Token，权限：
-   - Zone - DNS - Edit
-   - Zone - Zone - Read
-4. 复制 Token 到 `CLOUDFLARE_API_TOKEN`
-
-#### 获取 Zone ID
-
-1. 在 Cloudflare Dashboard 选择域名
-2. 右侧 "API" 部分找到 "Zone ID"
-3. 复制到 `CLOUDFLARE_ZONE_ID`
-
-### 认证方式 2：Global API Key（备选）
-
-| Secret 名称 | 说明 | 必需 |
-|------------|------|------|
-| `CLOUDFLARE_EMAIL` | Cloudflare 账户邮箱 | ✅ 使用 Global Key 时 |
-| `CLOUDFLARE_API_KEY` | Global API Key | ✅ 使用 Global Key 时 |
-
-### DNS 配置
-
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `CLOUDFLARE_BASE_DOMAIN` | 基础域名 | `example.com` | ✅ 使用 Cloudflare 时 |
-
----
-
-## Grafana 认证配置
-
-配置 Grafana 管理员账户。
-
-| Secret 名称 | 说明 | 默认值 | 必需 |
-|------------|------|--------|------|
-| `GRAFANA_ADMIN_USER` | 管理员用户名 | `admin` | ❌ |
-| `GRAFANA_ADMIN_PASSWORD` | 管理员密码 | `admin` | ❌ |
-
-⚠️ **安全建议**：强烈建议设置强密码，不要使用默认值！
-
----
-
-## 防火墙配置
-
-配置可观测性服务端口的访问白名单。
-
-| Secret 名称 | 说明 | 示例 | 必需 |
-|------------|------|------|------|
-| `FIREWALL_WHITELIST_IPS` | 白名单 IP 列表 | `1.2.3.4,5.6.7.8` | ❌ |
-
-### 说明
-
-- 多个 IP 用逗号分隔
-- 留空则只允许本地（127.0.0.1）访问
-- 控制以下端口的访问：
-  - 9090（Prometheus）
-  - 3100（Loki）
-  - 3000（Grafana）
-  - 9100（Node Exporter）
-
----
-
-## 配置步骤
-
-### 1. 通过 GitHub 网页界面
-
-1. 进入仓库 Settings
-2. 左侧菜单选择 "Secrets and variables" → "Actions"
-3. 点击 "New repository secret"
-4. 输入 Name 和 Value
-5. 点击 "Add secret"
-
-### 2. 使用 GitHub CLI
-
-```bash
-# 安装 GitHub CLI
-# https://cli.github.com/
-
-# 登录
-gh auth login
-
-# 添加 Secret
-gh secret set SSH_PRIVATE_KEY < ~/.ssh/id_rsa
-gh secret set ANSIBLE_USER -b "root"
-gh secret set ANSIBLE_PORT -b "22"
-
-# 批量添加
-gh secret set US_W_1_V4 -b "203.0.113.10/31"
-gh secret set PROMETHEUS_URL -b "http://prometheus.example.com:9090"
-```
-
-### 3. 使用脚本批量导入
-
-创建一个 `.secrets` 文件（不要提交到 Git）：
-
-```bash
-SSH_PRIVATE_KEY=<从 ~/.ssh/id_rsa 读取>
-ANSIBLE_USER=root
-ANSIBLE_PORT=22
-US_W_1_V4=203.0.113.10/31
-PROMETHEUS_URL=http://prometheus.example.com:9090
-```
-
-批量导入：
-
-```bash
-while IFS='=' read -r key value; do
-  [[ -z "$key" || "$key" =~ ^# ]] && continue
-  gh secret set "$key" -b "$value"
-done < .secrets
-```
-
----
-
-## 验证配置
-
-### 检查已配置的 Secrets
-
-```bash
+gh secret set SSH_PRIVATE_KEY < ~/.ssh/anixops_ed25519
+gh secret set ANSIBLE_USER --body root
+gh secret set JP_1_V4_SSH --body 203.0.113.10
+gh secret set GRAFANA_ADMIN_PASSWORD --env NodeX     # prompts for the value
 gh secret list
 ```
 
-### 测试工作流
+`tools/ssh_key_manager.py` uploads the private key (interactive without arguments, or
+`--key-file <key> --repo owner/repo --token <token> [--secret-name SSH_PRIVATE_KEY]`), and
+`tools/secrets_uploader.py` bulk-uploads a `.env` file (`--env .env --repo owner/repo --token-env`,
+which reads `GITHUB_TOKEN`; try `--dry-run` first). Both need a GitHub token with `repo` scope and
+create repository secrets, not environment secrets.
 
-触发一个测试运行：
+## Security practice | 安全建议
 
-```bash
-# 触发 lint 工作流
-git commit --allow-empty -m "test: trigger workflow"
-git push
-
-# 手动触发 deploy 工作流
-gh workflow run deploy.yml
-```
-
----
-
-## 安全最佳实践
-
-1. ✅ **永远不要将 Secrets 提交到 Git**
-2. ✅ **定期轮换 SSH 密钥和 API Token**
-3. ✅ **使用最小权限原则**（只授予必需的权限）
-4. ✅ **启用 GitHub 仓库的 2FA**
-5. ✅ **审计 Actions 日志**，确保没有泄露敏感信息
-6. ⚠️ **不要在工作流日志中打印 Secret 值**
-7. ⚠️ **限制对仓库 Secrets 的访问权限**
-
----
-
-## 故障排除
-
-### Secret 未生效
-
-1. 检查 Secret 名称是否拼写正确（区分大小写）
-2. 重新触发工作流（有时需要重新运行）
-3. 检查工作流文件中的引用是否正确：`${{ secrets.SECRET_NAME }}`
-
-### SSH 连接失败
-
-1. 验证 `SSH_PRIVATE_KEY` 格式正确
-2. 确认 `ANSIBLE_USER` 和 `ANSIBLE_PORT` 设置正确
-3. 检查服务器 IP 地址是否可达
-4. 验证公钥已添加到服务器 `~/.ssh/authorized_keys`
-
-### SSL 证书问题
-
-1. 检查 base64 编码是否正确（无换行符）
-2. 验证证书和私钥是否匹配
-3. 确认域名 DNS 记录正确
-
----
-
-## 相关文档
-
-- 📖 [GitHub Actions 配置指南](GITHUB_ACTIONS_SETUP.md)
-- 🔐 [SSH 密钥管理方案](SSH_KEY_MANAGEMENT.md)
-- 📊 [可观测性部署指南](OBSERVABILITY_SETUP.md)
-- 🔒 [自定义 SSL 设置](CUSTOM_SSL_SETUP.md)
-
----
-
-**最后更新：** 2025-10-23  
-**版本：** v0.0.2
+- Never commit `.env`, keys or certificates; `.gitignore` covers `.env`, `*.pem` and
+  `.vault_password.txt`, and the repository tests and `security-scan.yml` fail on tracked keys.
+- Rotate `SSH_PRIVATE_KEY` and API tokens regularly and after anyone with access leaves.
+- Roles handle secrets with `no_log: true`; never print them with `debug`.

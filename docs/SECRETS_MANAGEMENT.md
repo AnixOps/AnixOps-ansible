@@ -1,316 +1,90 @@
-# 🔐 AnixOps 秘密管理指南
+# Secrets Management | 机密管理
 
-[![Security: No Secrets Committed](https://img.shields.io/badge/Security-No_Secrets_Committed-success)](https://github.com/AnixOps/AnixOps-ansible)
+Secrets never live in git. Playbooks, roles and the generated inventory read them from environment
+variables with `lookup('env', ...)`: locally from `.env`, in GitHub Actions from repository or
+environment secrets of the same name. The full list of names is in
+[GITHUB_SECRETS_REFERENCE.md](GITHUB_SECRETS_REFERENCE.md).
 
----
+## 1. Rules | 原则
 
-## 📋 目录
+- Never commit `.env`, private keys, certificates or vault password files. `.gitignore` covers
+  `.env`, `*.pem` and `.vault_password.txt`; `tests/test_repo_hygiene.py` and `security-scan.yml`
+  (TruffleHog, tracked-key check) fail when such material is committed.
+- Never hard-code a secret in a role, playbook or `group_vars`; read it from the environment:
 
-- [核心原则](#核心原则)
-- [架构概览](#架构概览)
-- [本地开发](#本地开发)
-- [CI/CD (GitHub Actions)](#cicd-github-actions)
-- [秘密类型](#秘密类型)
-- [最佳实践](#最佳实践)
-- [常见问题](#常见问题)
-- [安全审计清单](#安全审计清单)
+  ```yaml
+  grafana_admin_password: "{{ lookup('ansible.builtin.env', 'GRAFANA_ADMIN_PASSWORD') | default('', true) }}"
+  ```
 
----
+- Tasks that handle secrets use `no_log: true`; never print them with `debug`.
+- Roles that need a secret assert it is set (and, for Grafana, that it is not `admin`) before they
+  change anything.
 
-## 🎯 核心原则
+## 2. Flow | 数据流
 
-### ❌ 绝对禁止 (NEVER DO)
-
-```bash
-# ❌ 永远不要这样做！
-git add vault_password.txt
-git commit -m "Add secrets"
-git push
-
-# ❌ 永远不要在代码中硬编码秘密
-vars:
-  api_token: "sk-1234567890abcdef"  # ❌ 错误！
+```text
+.env (local, git-ignored)          GitHub secrets (repository / NodeX / node-platform)
+          |                                         |
+scripts/anixops.sh loads it              export-secrets action (allow-list) -> GITHUB_ENV
+          |                                         |
+          +------------- environment variables -----+
+                                |
+            lookup('env', ...) in hosts.yml, group_vars and role defaults
+                                |
+                   templates written with no_log / mode 0600
 ```
 
-### ✅ 正确的做法 (ALWAYS DO)
-
-```yaml
-# ✅ 从环境变量读取
-vars:
-  api_token: "{{ lookup('env', 'API_TOKEN') }}"
-
-# ✅ 或使用 Ansible Vault (用于非敏感但需加密的配置)
-vars:
-  database_password: "{{ vault_database_password }}"
-```
-
----
-
-## 🏗️ 架构概览
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AnixOps Secrets Management                    │
-└─────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────┐          ┌──────────────────────┐
-│   本地开发环境        │          │   CI/CD 环境          │
-│   Local Development  │          │   GitHub Actions     │
-└──────────────────────┘          └──────────────────────┘
-         │                                   │
-         │                                   │
-    .env 文件                          GitHub Secrets
-  (已在 .gitignore)                 (Settings -> Secrets)
-         │                                   │
-         │                                   │
-         ├───────────────┬───────────────────┤
-         │               │                   │
-         ▼               ▼                   ▼
-   ┌─────────────────────────────────────────────┐
-   │         环境变量 (Environment Variables)     │
-   │   CLOUDFLARE_MESH_TOKEN, SSH_KEY_PATH, etc. │
-   └─────────────────────────────────────────────┘
-                         │
-                         ▼
-   ┌─────────────────────────────────────────────┐
-   │          Ansible Playbook                    │
-   │   lookup('env', 'CLOUDFLARE_MESH_TOKEN')    │
-   └─────────────────────────────────────────────┘
-                         │
-                         ▼
-   ┌─────────────────────────────────────────────┐
-   │          Ansible Role                        │
-   │   roles/cloudflare_mesh/tasks/main.yml     │
-   └─────────────────────────────────────────────┘
-                         │
-                         ▼
-   ┌─────────────────────────────────────────────┐
-   │          目标服务器 (Target Server)          │
-   │   warp-svc Service (内存中，不写入磁盘)      │
-   └─────────────────────────────────────────────┘
-```
-
----
-
-## 💻 本地开发
-
-### 步骤 1: 复制环境变量模板
+## 3. Local use | 本地使用
 
 ```bash
 cp .env.example .env
+$EDITOR .env
+make deploy-dry-run                       # scripts/anixops.sh loads .env automatically
+set -a; . ./.env; set +a                  # only needed for plain ansible-playbook runs
 ```
 
-### 步骤 2: 编辑 `.env` 文件
+`scripts/anixops.sh` parses `.env` line by line (`KEY=value`, optional quotes and `export`), never
+evaluates it, and keeps variables that are already set in the environment. `--env-file PATH` loads a
+different file and `--no-env` skips it.
+
+## 4. GitHub Actions | CI 使用
+
+- `SSH_PRIVATE_KEY` goes to the `setup-ansible` action, which writes it to `$RUNNER_TEMP/ssh` and
+  shreds it at the end of the job.
+- All other secrets reach Ansible through the `export-secrets` action, which exports only names that
+  match its allow-list (`<HOST>_V4_SSH`, `ANSIBLE_USER`/`ANSIBLE_PORT`, `V2BOARD_*`, `V2BX_*`,
+  `GRAFANA_*`, `OBSERVABILITY_*`, `CLOUDFLARE_*`, `GLOBAL_WHITELIST_IPS`, the webhook URLs, ...). A
+  secret with another name is not visible to the playbooks.
+- `node-platform-deploy.yml` maps its secrets explicitly in the job environment.
+
+Set secrets with `gh secret set NAME` (add `--env NodeX` for an environment secret), or upload a whole
+`.env` file with `tools/secrets_uploader.py --env .env --repo owner/repo --token-env --dry-run`.
+
+## 5. Ansible Vault (optional) | Ansible Vault（可选）
+
+Values that must be versioned can be stored encrypted:
 
 ```bash
-vim .env
+ansible-vault create inventories/production/group_vars/all/vault.yml
+scripts/anixops.sh deploy --ask-vault-pass
+scripts/anixops.sh deploy --vault-password-file ~/.config/anixops/vault-pass   # outside the repository
 ```
 
-填入真实值：
+Keep the vault password outside the repository. No workflow passes a vault password at the moment,
+so vaulted variables are only usable for local runs unless a workflow is extended for it.
 
-```bash
-# Cloudflare Mesh Token
-CLOUDFLARE_MESH_TOKEN=eyJhIjoiY2FmZS0xMjM0...
+## 6. Rotation | 轮换
 
-# 其他秘密
-ANSIBLE_VAULT_PASSWORD=my-secure-vault-password
-```
+1. Create the new value (key pair, token, password).
+2. Update `.env` on every operator machine and the GitHub secret.
+3. Redeploy the consuming role (for example `make deploy ANSIBLE_ARGS="--tags grafana"`; for the
+   Grafana admin password add `-e grafana_reset_admin_password=true` once).
+4. Revoke the old value. For SSH keys follow [SSH_KEY_MANAGEMENT.md](SSH_KEY_MANAGEMENT.md).
 
-### 步骤 3: 加载环境变量
+## 7. Checklist | 检查清单
 
-```bash
-source .env
-```
-
-### 步骤 4: 运行 Playbook
-
-```bash
-ansible-playbook playbooks/provision/site.yml --tags cloudflare_mesh
-```
-
----
-
-## 🤖 CI/CD (GitHub Actions)
-
-### 步骤 1: 添加 GitHub Secrets
-
-1. 进入仓库的 **Settings** 页面
-2. 点击 **Secrets and variables** → **Actions**
-3. 点击 **New repository secret**
-4. 添加以下 Secrets:
-
-| Secret 名称                | 说明                              | 示例值                        |
-|--------------------------|-----------------------------------|------------------------------|
-| `CLOUDFLARE_MESH_TOKEN`  | Cloudflare Mesh enrollment token  | `eyJhIjoiY2FmZS0xMjM0...`     |
-| `SSH_PRIVATE_KEY`        | SSH 私钥（用于连接目标服务器）      | `-----BEGIN OPENSSH...`      |
-| `ANSIBLE_VAULT_PASSWORD` | Ansible Vault 密码 (可选)         | `my-vault-password`          |
-
-### 步骤 2: 在 Workflow 中引用 Secrets
-
-```yaml
-# .github/workflows/deploy.yml
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Deploy Cloudflare Mesh
-        env:
-          CLOUDFLARE_MESH_TOKEN: ${{ secrets.CLOUDFLARE_MESH_TOKEN }}
-        run: |
-          ansible-playbook playbooks/provision/site.yml --tags cloudflare_mesh
-```
-
----
-
-## 🔑 秘密类型
-
-### 1. Cloudflare Mesh Token
-
-**使用场景**: 部署 Cloudflare Mesh 节点 (`cloudflare_mesh` Role)
-
-**获取方式**:
-1. 登录 [Cloudflare Zero Trust Dashboard](https://one.dash.cloudflare.com/)
-2. 进入 **Networking** → **Mesh**
-3. 点击 **Add node**
-4. 复制 enrollment token
-
-**使用方式**:
-```yaml
-# Playbook 中
-vars:
-  cloudflare_mesh_token: "{{ lookup('env', 'CLOUDFLARE_MESH_TOKEN') }}"
-```
-
-**本地开发**:
-```bash
-export CLOUDFLARE_MESH_TOKEN="eyJhIjoiY2FmZS0xMjM0..."
-```
-
-**CI/CD**:
-- 添加到 GitHub Secrets: `CLOUDFLARE_MESH_TOKEN`
-
----
-
-### 2. SSH 私钥
-
-**使用场景**: GitHub Actions 需要 SSH 连接到目标服务器
-
-**获取方式**:
-```bash
-# 生成新的 SSH 密钥对 (如果没有)
-ssh-keygen -t ed25519 -C "github-actions@anixops.com" -f ~/.ssh/anixops_deploy
-
-# 查看私钥
-cat ~/.ssh/anixops_deploy
-
-# 部署公钥到目标服务器
-ssh-copy-id -i ~/.ssh/anixops_deploy.pub root@your-server.com
-```
-
-**使用方式**:
-```yaml
-# Workflow 中
-- name: Configure SSH key
-  run: |
-    mkdir -p ~/.ssh
-    echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-    chmod 600 ~/.ssh/id_rsa
-```
-
----
-
-### 3. Ansible Vault 密码 (可选)
-
-**使用场景**: 用于加密/解密 Ansible Vault 文件
-
-**使用方式**:
-```bash
-# 加密文件
-ansible-vault encrypt group_vars/all/vault.yml
-
-# 解密文件 (使用环境变量中的密码)
-export ANSIBLE_VAULT_PASSWORD="my-password"
-ansible-playbook site.yml --vault-password-file <(echo $ANSIBLE_VAULT_PASSWORD)
-```
-
----
-
-### 4. Cloudflare DNS API Token
-
-**使用场景**: ACME SSL 证书获取 (DNS 验证)
-
-**获取方式**:
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens)
-2. Create Token → Edit Zone DNS
-3. 复制生成的 API Token
-
-**变量**: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`
-
----
-
-## 📚 最佳实践
-
-### ✅ DO (推荐做法)
-
-1. **使用环境变量**
-2. **使用 `.env` 文件 (本地开发，已加入 .gitignore)**
-3. **使用 GitHub Secrets (CI/CD)**
-4. **使用 Ansible Vault (非敏感但需加密的配置)**
-5. **定期轮换秘密**
-6. **最小权限原则**
-
-### ❌ DON'T (避免的做法)
-
-1. 不要硬编码秘密
-2. 不要提交 `.env` 文件
-3. 不要在日志中打印秘密
-4. 不要使用弱密码
-
----
-
-## 🔍 常见问题
-
-### Q1: Playbook 运行失败，提示 token is not set？
-
-**原因**: 环境变量未设置或未加载
-
-**解决方案**:
-```bash
-source .env
-ansible-playbook playbooks/provision/site.yml --tags cloudflare_mesh
-```
-
----
-
-### Q2: 如何检查环境变量是否已设置？
-
-```bash
-echo $CLOUDFLARE_MESH_TOKEN
-```
-
----
-
-## 🛡️ 安全审计清单
-
-- [ ] `.gitignore` 中包含 `.env`
-- [ ] `.gitignore` 中包含 `*.pem`
-- [ ] `.gitignore` 中包含 `.vault_password.txt`
-- [ ] 所有敏感变量都通过环境变量传递
-- [ ] GitHub Secrets 已正确配置
-- [ ] 没有在代码中硬编码任何秘密
-
----
-
-## 🔗 相关文档
-
-- [Cloudflare Mesh 官方文档](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-mesh/)
-- [GitHub Actions Secrets 文档](https://docs.github.com/en/actions/security-guides/encrypted-secrets)
-- [Ansible Vault 文档](https://docs.ansible.com/ansible/latest/user_guide/vault.html)
-- [AnixOps Quick Start Guide](./QUICKSTART.md)
-
----
-
-**AnixOps Team**
-Last Updated: 2026-04-27
+- [ ] `.env` exists only locally and is git-ignored.
+- [ ] Every required secret for the roles you deploy is set (`make doctor` checks the inventory;
+      roles assert their own secrets).
+- [ ] No secret appears in a workflow log (only exported names are printed).
+- [ ] Old values are revoked after rotation.

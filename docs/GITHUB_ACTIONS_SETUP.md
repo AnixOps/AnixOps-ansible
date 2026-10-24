@@ -1,215 +1,133 @@
-# GitHub Actions 配置指南
+# GitHub Actions Setup | GitHub Actions 配置
 
-## 必需的 Repository Secrets
+How the workflows in `.github/workflows/` reach the fleet and what they need. The list of secret
+names is in [GITHUB_SECRETS_REFERENCE.md](GITHUB_SECRETS_REFERENCE.md); operating procedures are in
+[RUNBOOK.md](RUNBOOK.md).
 
-要在 GitHub Actions 中自动部署，需要在仓库设置中配置以下 Secrets：
+## 1. Workflows | 工作流
 
-### 1. SSH 密钥
-- `SSH_PRIVATE_KEY` - SSH 私钥内容（使用 `tools/ssh_key_manager.py` 上传）
+| File | Name | Trigger | Environment | What it does |
+|---|---|---|---|---|
+| `ansible-ci.yml` | Ansible CI | pull request and push to `main`, manual | - | lint gate, pytest, `py_compile`, `bash -n` + shellcheck, inventory drift, `--syntax-check` of every playbook, localhost integration converge, verify and idempotency |
+| `security-scan.yml` | Security Scan | pull request (`main`, `staging`), push to `main`, Monday 06:00 UTC, manual | - | TruffleHog (verified results), pip-audit, tracked keys / `.env` check, `ignore_errors` policy gate |
+| `reusable-lint.yml` | Reusable Lint (job: Code Quality Check) | `workflow_call` | - | yamllint, ansible-lint (production profile, offline), backup coverage, encoding guard |
+| `deploy.yml` | Deploy | manual, tag push `v*` | `NodeX` | run one playbook against a group, or the release deploy |
+| `lifecycle.yml` | Lifecycle Management | manual | `NodeX` | `status`, `deploy`, `rollback`, `cleanup` of one role |
+| `weekly-security-patch.yml` | Weekly Security Patch | Monday 04:00 UTC, manual | `NodeX` | Trivy scan, OS updates, backlog issue |
+| `node-platform-deploy.yml` | Deploy AnixOps Node Platform | manual | `node-platform` | node platform stack on its own inventory |
 
-### 2. 服务器连接
-- `ANSIBLE_USER` - SSH 用户名（默认：`root`）
+The CI workflows (`ansible-ci.yml`, `security-scan.yml`, `reusable-lint.yml`) never read fleet
+secrets and never touch production hosts.
 
-### 3. 服务器 IP 地址
+## 2. One-time setup | 一次性配置
 
-根据你在 `.env.example` 中定义的服务器，设置对应的 secrets。
+1. **Environments.** Create the GitHub Environments `NodeX` and `node-platform`
+   (Settings, Environments). Add required reviewers to `NodeX` if production runs need an approval.
+2. **Secrets.** Add at least `SSH_PRIVATE_KEY`, `ANSIBLE_USER`, `ANSIBLE_PORT` and one
+   `<HOST>_V4_SSH` per host (`JP_1_V4_SSH`, `UK_1_V4_SSH`, `US_W_1_V4_SSH`, `SG_1_V4_SSH`,
+   `HK_1_V4_SSH`, `UK_2_V4_SSH`, `FR_1_V4_SSH`, `PL_1_V4_SSH`), plus the service secrets for what you
+   deploy (`GRAFANA_ADMIN_PASSWORD`, `V2BOARD_*`, ...). Repository secrets are visible to every job;
+   environment secrets only to jobs of that environment.
+3. **Key on the hosts.** The public half of `SSH_PRIVATE_KEY` must be in `authorized_keys` of
+   `ANSIBLE_USER` on every host.
+4. **Issues.** The weekly patch job needs permission to create issues (`issues: write` is
+   declared in the workflow).
 
-**重要：连接逻辑**
-- **`/31` (IPv4) 或 `/127` (IPv6) 段**：点对点连接，直接使用该 IP 连接
-- **其他网段**：必须额外设置 `_SSH_IP` 变量，用于 SSH 连接（如公网 IP 或网关）
+## 3. How a deploy job reaches the fleet | 部署任务如何连接主机
 
-#### 点对点连接示例 (/31 或 /127)
-- `US_W_1_V4` = `203.0.113.10/31` → 直接连接到 `203.0.113.10`
-- `US_W_1_V6` = `2001:db8::1/127` → 直接连接到 `2001:db8::1`
+Every job that runs Ansible uses the same composite actions:
 
-#### 其他网段示例 (需要 SSH_IP)
-- `US_W_2_V4` = `10.0.1.100/24` （内网 IP）
-- `US_W_2_SSH_IP` = `203.0.113.20` （SSH 连接用的公网 IP）
-- `JP_1_V4` = `10.10.0.50/27` （内网 IP）
-- `JP_1_SSH_IP` = `45.76.123.45` （SSH 连接用的公网 IP）
+1. `./.github/actions/export-secrets` exports the allow-listed secrets (`toJSON(secrets)` filtered
+   by name) into `GITHUB_ENV`; only names are logged.
+2. `./.github/actions/setup-ansible` installs Python 3.11, `requirements.txt` and the Galaxy
+   collections (retried), writes `SSH_PRIVATE_KEY` to `$RUNNER_TEMP/ssh/id_ansible`, exports
+   `SSH_KEY_PATH` / `ANSIBLE_PRIVATE_KEY_FILE`, and renders the inventory with
+   `python3 tools/generate_inventory.py github-actions --output $RUNNER_TEMP/ansible-inventory.yml`
+   (exported as `ANSIBLE_INVENTORY`; the weekly patch job renders it in its own step). The
+   committed `hosts.yml` is never overwritten.
+3. The inventory reads each host address with `lookup('env', '<HOST>_V4_SSH')`, so a missing secret
+   shows up as an unreachable host.
+4. A final `if: always()` step shreds `$RUNNER_TEMP/ssh`, and `./.github/actions/job-summary` writes
+   the step summary.
 
-#### 完整示例配置
+`node-platform-deploy.yml` is the exception: it maps its secrets explicitly in the job `env` (some
+are renamed from shared names such as `SSL_CERTIFICATE_PEM`, `VULTR_API_KEY`, `SMTP_*`) and uses
+`inventories/production/node-platform.actions.yml`.
 
-#### 完整示例配置
+## 4. Deploy workflow | 部署工作流
 
-```plaintext
-# 点对点连接 (直接连接)
-US_W_1_V4=203.0.113.10/31
-US_W_1_V6=2001:db8::1/127
-US_E_1_V4=203.0.113.30/31
+Manual run inputs:
 
-# 内网段 (需要SSH_IP)
-US_W_2_V4=10.0.1.100/24
-US_W_2_V6=2001:db8:100::1/64
-US_W_2_SSH_IP=203.0.113.20
+| Input | Type | Meaning |
+|---|---|---|
+| `playbook` | choice | `provision/site.yml` (default), `provision/quick-setup.yml`, `provision/web-servers.yml`, `maintenance/health-check.yml`, `maintenance/firewall-setup.yml`, `maintenance/lifecycle.yml`, `maintenance/emergency-cleanup.yml` |
+| `target_group` | choice | `all` (default), `web_servers`, `proxy_servers`, `observability`, `dev_servers`, `v2bx_servers`, `v2board_servers`, `postgres_servers` |
+| `limit_hosts` | string | optional comma-separated host names (`jp-1,uk-1`); every host must be a member of `target_group` or the job fails |
+| `tags` | string | optional comma-separated play tags (`nginx,firewall`) |
+| `dry_run` | boolean | `--check --diff` |
+| `verbosity` | choice | `v` (default), `vv`, `vvv` |
+| `confirm` | string | must be `deploy` for a real deploy to `target_group=all` |
 
-JP_1_V4=10.10.0.50/27
-JP_1_SSH_IP=45.76.123.45
-```
+Steps: validate inputs, resolve the limit inside `target_group`, syntax-check the playbook, ping the
+limit, run the playbook, then run `maintenance/health-check.yml` on the same limit (not for dry runs
+or when the selected playbook is the health check).
 
-#### 美国西部
-- `US_W_1_V4` - 美西服务器1 IPv4（例如：`203.0.113.10/31`）
-- `US_W_1_V6` - 美西服务器1 IPv6（例如：`2001:db8::1/127`）
-- `US_W_2_V4` - 美西服务器2 IPv4（例如：`10.0.1.100/24`）
-- `US_W_2_V6` - 美西服务器2 IPv6
-- `US_W_2_SSH_IP` - 美西服务器2 SSH连接IP（**必需**，例如：`203.0.113.20`）
+**Tag-push release deploy.** `git tag v0.3.0 && git push origin v0.3.0` runs:
 
-#### 美国东部
-- `US_E_1_V4` - 美东服务器1 IPv4（例如：`203.0.113.30/31`）
-- `US_E_1_V6` - 美东服务器1 IPv6
+1. `lint` (the reusable lint workflow);
+2. `deploy-tag`, a matrix over the `site.yml` play tags in dependency order: `common`,
+   `node_exporter`, `promtail`, `firewall`, `nginx`, `prometheus`, `loki`, `grafana`, `postgresql`,
+   `v2board`, `v2bx`, `speedtest`, with `max-parallel: 1` and `fail-fast: false`;
+3. `health-check-tag`, a fleet-wide `maintenance/health-check.yml` run (unless the workflow was
+   cancelled), with the deploy result in its summary.
 
-#### 日本
-- `JP_1_V4` - 日本服务器1 IPv4（例如：`10.10.0.50/27`）
-- `JP_1_V6` - 日本服务器1 IPv6
-- `JP_1_SSH_IP` - 日本服务器1 SSH连接IP（**必需**，例如：`45.76.123.45`）
+## 5. Lifecycle Management workflow | 生命周期工作流
 
-#### 欧洲
-- `EU_1_V4` - 欧洲服务器1 IPv4（例如：`203.0.113.50/31`）
-- `EU_1_V6` - 欧洲服务器1 IPv6
+| Input | Meaning |
+|---|---|
+| `action` | `status` (default), `deploy`, `rollback`, `cleanup` |
+| `role` | `common`, `nginx`, `node_exporter`, `promtail`, `prometheus`, `loki`, `grafana`, `postgresql`, `v2board`, `v2bx`, `speedtest`, `firewall`, `acme_ssl` |
+| `version` | rollback target: `prev` (default), `initial` or `vYYYYMMDDTHHMMSS` |
+| `target_group` | a group or a single host (`jp-1`, `uk-1`, `us-w-1`, `sg-1`, `hk-1`, `uk-2`, `pl-1`, `fr-1`) |
+| `force` | confirms a group-wide rollback or cleanup: required for `target_group=all`, needed for any multi-host target, and passed to the playbook as `-e lifecycle_confirm_all=true` (cleanup also gets `cleanup_force=yes`) |
+| `keep_backups` | snapshot versions kept by cleanup (default 5) |
 
-### 4. 可观测性配置（可选）
-- `PROMETHEUS_URL` - Prometheus 服务器地址
-- `LOKI_URL` - Loki 服务器地址
-- `GRAFANA_URL` - Grafana 服务器地址
+`deploy` of `postgresql`, `v2bx` and `speedtest` runs the matching `site.yml` tag, and `v2board` runs
+`postgresql,v2board`; every other action goes through `playbooks/maintenance/lifecycle.yml`. A health
+check follows `deploy` and `rollback`.
 
-## 如何设置 Secrets
+## 6. Weekly Security Patch workflow | 每周安全补丁
 
-1. 进入 GitHub 仓库页面
-2. 点击 **Settings** → **Secrets and variables** → **Actions**
-3. 点击 **New repository secret**
-4. 输入 Secret 名称和值
-5. 点击 **Add secret**
+Scheduled runs patch `all` with updates applied and the inventory's reboot policy. Manual inputs:
 
-## 本地开发 vs GitHub Actions
+| Input | Meaning |
+|---|---|
+| `target_group` | group to patch (`localhost` is added to the limit for the report play) |
+| `apply_updates` | `false` = scan and report only |
+| `allow_reboot` | `inventory` (default) keeps each host's or group's `security_patch_allow_reboot`; `true` / `false` override it with `-e security_patch_allow_reboot=...` |
 
-### 本地开发
-- 使用 `.env` 文件存储服务器 IP 和配置
-- 复制 `.env.example` 到 `.env` 并填入真实值
-- 运行 `./scripts/anixops.sh` 命令
+Details, report schema and the backlog-issue runbook: [SECURITY_PATCHING.md](SECURITY_PATCHING.md).
 
-### GitHub Actions
-- 使用 Repository Secrets 存储敏感信息
-- Workflow 会自动从 secrets 生成 inventory
-- 推送到 `deploy` 分支或手动触发工作流
+## 7. Node platform workflow | 节点平台工作流
 
-## 示例：上传 SSH 密钥
+Inputs: `domain` (public hostname, mapped to `ANIXOPS_NODE_PLATFORM_DOMAIN` and
+`ANIXOPS_NODE_PLATFORM_SERVER_NAME`), `dry_run`, and `force_https` (`ANIXOPS_NODE_PLATFORM_FORCE_HTTPS`:
+answer port 80 with a redirect to HTTPS; needs SSL enabled, keep it off during HTTP-01 ACME). See
+[ANIXOPS_NODE_PLATFORM.md](ANIXOPS_NODE_PLATFORM.md).
 
-```bash
-# 使用密钥管理工具
-python tools/ssh_key_manager.py
+## 8. Concurrency | 并发控制
 
-# 或使用命令行
-python tools/ssh_key_manager.py \
-  --key-file ~/.ssh/id_rsa \
-  --repo YourUsername/AnixOps-ansible \
-  --token ghp_your_github_token \
-  --secret-name SSH_PRIVATE_KEY
-```
+| Group | Workflows | Policy |
+|---|---|---|
+| `deploy-NodeX-<target_group>` | `deploy.yml`, `lifecycle.yml`, `weekly-security-patch.yml` | queue; a running job is never cancelled |
+| `deploy-node-platform` | `node-platform-deploy.yml` | queue; never cancelled |
+| `ci-<workflow>-<ref>`, `security-<workflow>-<ref>` | CI and security scan | a newer push cancels the running check |
 
-## 注意事项
+## 9. Local development vs. CI | 本地与 CI 的区别
 
-1. **IP 地址格式**：
-   - 在 secrets 中应**包含** CIDR 后缀（如 `/31`、`/127`、`/24`）
-   - 脚本会自动解析并决定连接方式
-
-2. **连接逻辑**：
-   - `/31` 或 `/127` 段：直接连接该 IP
-   - 其他网段：使用 `_SSH_IP` 指定的地址连接
-
-3. **密钥权限**：确保 SSH 私钥有正确的权限（`600`）
-
-4. **用户权限**：确保 `ANSIBLE_USER` 在目标服务器上有 sudo 权限
-
-5. **网络访问**：
-   - 点对点连接：确保 GitHub Actions runner 能直接访问该 IP
-   - 内网服务器：确保 `_SSH_IP` 可从外网访问，且能路由到内网 IP
-
-## GitHub Actions 工作流说明
-
-### 1. Deploy to Production (deploy.yml)
-**主部署工作流** - 包含完整的 CI/CD 流程
-
-触发条件：
-- 推送到 `deploy` 分支
-- 针对 `deploy` 或 `main` 分支的 Pull Request
-- 手动触发（workflow_dispatch）
-
-工作流程：
-1. **Lint (代码质量检查)**
-   - 运行 yamllint 检查 YAML 语法
-   - 运行 ansible-lint 检查 Ansible 最佳实践
-   - 验证 playbook 语法
-
-2. **Test (连接测试)**
-   - 使用 `ansible ping` 测试所有主机连接
-   - 仅在非 PR 时运行（需要真实 secrets）
-   
-3. **Deploy (部署)**
-   - 执行完整的 Ansible playbook 部署
-   - 仅在通过所有测试后运行
-   - 仅在非 PR 时运行
-
-### 2. Ansible Connection Test (ansible-test.yml)
-**独立的连接测试工作流**
-
-触发条件：
-- 手动触发（workflow_dispatch）
-- 定时任务（每天 00:00 UTC）
-
-测试内容：
-- Ping 所有主机
-- Ping web_servers 组
-- Ping observability 组
-- 收集系统信息（setup 模块）
-
-用途：
-- 日常健康检查
-- 验证 SSH 连接和凭证
-- 监控服务器可用性
-
-### 3. Ansible CI/CD Pipeline (ansible-ci.yml)
-**独立的 CI 工作流** - 已被整合到 deploy.yml 中
-
-> **注意**: 此工作流的功能已完全整合到 `deploy.yml` 中，建议删除此文件以避免重复运行。
-
-## 触发部署
-
-### 自动触发
-推送到 `deploy` 分支：
-```bash
-git push origin main:deploy
-```
-
-### 手动触发部署
-1. 进入 GitHub 仓库的 **Actions** 标签
-2. 选择 **Deploy to Production** workflow
-3. 点击 **Run workflow**
-4. 选择目标主机组（`all`、`web_servers`、`observability` 等）
-5. 点击运行
-
-### 手动触发连接测试
-1. 进入 GitHub 仓库的 **Actions** 标签
-2. 选择 **Ansible Connection Test** workflow
-3. 点击 **Run workflow**
-4. 点击运行
-
-## 工作流最佳实践
-
-### Pull Request 流程
-1. 创建功能分支进行开发
-2. 提交 PR 到 `main` 或 `deploy` 分支
-3. 自动运行 Lint 检查（不需要 secrets）
-4. 代码审查通过后合并
-5. 合并到 `deploy` 分支触发完整部署
-
-### 紧急部署
-```bash
-# 直接推送到 deploy 分支
-git push origin HEAD:deploy
-```
-
-### 测试连接
-```bash
-# 可以随时在 GitHub Actions 界面手动触发
-# Ansible Connection Test 工作流
-```
+| | Local | GitHub Actions |
+|---|---|---|
+| Host addresses and secrets | `.env` (loaded by `scripts/anixops.sh`) | repository / environment secrets |
+| SSH key | `SSH_KEY_PATH` (default `~/.ssh/id_rsa`) | `SSH_PRIVATE_KEY`, written to `$RUNNER_TEMP/ssh` |
+| Inventory | committed `inventories/production/hosts.yml` | rendered into `$RUNNER_TEMP` from `servers-config.yml` |
+| Entry point | `make <target>` / `scripts/anixops.sh` | the workflows above |

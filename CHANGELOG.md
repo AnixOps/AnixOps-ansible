@@ -1,4 +1,124 @@
-# AnixOps Ansible 项目更新日志
+# Changelog | AnixOps Ansible 项目更新日志
+
+## v0.3.0 - 2026-10-24 | Hardening programme | 加固计划
+
+Every role, playbook, workflow and tool was rewritten to one written standard,
+[docs/CONVENTIONS.md](docs/CONVENTIONS.md), and is now enforced by tests and CI gates. Read
+**Behaviour changes in v0.3.0** below before the first deployment of this release.
+
+### Inventory | 主机清单
+
+- `inventories/production/servers-config.yml` (schema v2) is the single source of truth for hosts,
+  groups and host metadata (`server_alias`, `location`, `server_environment`, `description`).
+- `tools/generate_inventory.py` renders `inventories/production/hosts.yml` (`make gen-inventory`);
+  `python3 tools/generate_inventory.py local --check` is the drift gate in `make check`,
+  `make doctor` and CI. The generator rejects unknown keys and groups, duplicate hosts and duplicate
+  address variables.
+- Host addresses come only from one `<HOST>_V4_SSH` variable per host (`.env` locally, a secret of the
+  same name in CI); connection defaults from `ANSIBLE_USER`, `ANSIBLE_PORT`, `SSH_KEY_PATH`.
+  `inventories/staging/hosts.yml` is an explicit empty placeholder.
+
+### Roles and playbooks | 角色与 Playbook
+
+- All roles and playbooks follow the conventions: FQCN modules, no `ignore_errors`, `changed_when`
+  on every command, retries on every network operation, optional checksums for release downloads,
+  `no_log` for secrets, role-prefixed variables, `backup: true` plus `validate:` for every file under
+  `/etc`, and a template, flush handlers, verify health, restore-on-failure roll-out.
+- systemd units written by roles are hardened (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem`,
+  `ProtectHome`, restart limits, `network-online.target`).
+- Every service role defines the lifecycle contract (`<role>_service_name`, `_port`, `_health_url`,
+  `_backup_files`, `_config_dirs`, `_packages`).
+- Every play declares `serial`, `max_fail_percentage` and `any_errors_fatal: false`: production plays
+  `serial: "30%"` / `max_fail_percentage: 25`, SSH, rollback, lifecycle and Kubernetes plays
+  `serial: 1` / `0`.
+- `playbooks/provision/site.yml` has one play and exactly one tag per service (`common`,
+  `node_exporter`, `promtail`, `firewall`, `nginx`, `prometheus`, `loki`, `grafana`, `postgresql`,
+  `v2board`, `v2bx`, `speedtest`, `health`) behind an `always`-tagged preflight (OS family, Python 3,
+  free disk). `playbooks/maintenance/health-check.yml` is the single health playbook and is imported
+  by `site.yml` and `quick-setup.yml`.
+- PLG observability roles: `prometheus` (promtool-validated configuration and alert rules from
+  `observability/prometheus/rules/`), `loki` (`-verify-config`, compactor retention 30 days by
+  default), `grafana` (mandatory admin password, provisioned datasources, dashboards provisioned from
+  `observability/grafana/dashboards/`), plus the `node_exporter` and `promtail` agents.
+- `roles/lifecycle` and `playbooks/maintenance/lifecycle.yml`: `status`, `deploy`, `rollback`,
+  `cleanup` per role, with versioned snapshots and manifests under `/var/backups/<role>/` and JSON
+  state and history under `/var/lib/anixops/state/`; rollback targets `prev`, `initial` or
+  `v<YYYYMMDDTHHMMSS>`.
+- `playbooks/maintenance/rollback.yml` restores configuration files from Ansible's native backups
+  (`<file>.<pid>.<YYYY-MM-DD@HH:MM:SS>~`) and the legacy `<file>.backup.*`, with a pre-rollback
+  snapshot, validation, revert on failure and a health probe.
+- Weekly security patching: `playbooks/maintenance/security-patch.yml` (Trivy scan, apt/dnf
+  remediation, optional reboot, rescan, JSON and Markdown report) and
+  `.github/workflows/weekly-security-patch.yml`, which files a single backlog issue through
+  `scripts/upsert_security_patch_issue.py`.
+
+### CLI, CI and tests | 命令行、CI 与测试
+
+- `scripts/anixops.sh` is the single CLI (stable exit codes, confirmations for production changes,
+  `.env` parsed and never evaluated, every run logged under `.ansible/logs/`, `doctor`); every
+  `make` target is a thin wrapper around it.
+- About 4,200 repository tests (`python3 -m pytest -q`): text hygiene, role, playbook and workflow
+  structure, inventory generator and drift, backup coverage, security patch helpers.
+- CI gates: `ansible-lint` production profile with an empty skip list, `yamllint`, backup coverage
+  (`scripts/check-backup-coverage.py`), encoding guard, unit tests, `py_compile`, shellcheck,
+  inventory drift, syntax check of every playbook, and the localhost integration suite;
+  `security-scan.yml` adds TruffleHog, pip-audit, a tracked-key check and the `ignore_errors` policy.
+  Shared composite actions `setup-ansible`, `export-secrets` and `job-summary`; deployment workflows
+  share the concurrency group `deploy-NodeX-<target>` and never cancel a running job.
+- Localhost integration suite: `tests/integration/localhost-converge.yml` converges `common`,
+  `node_exporter`, `promtail`, `nginx` and `firewall` on the runner,
+  `tests/integration/localhost-verify.yml` checks the services and their endpoints, and CI runs the
+  converge a second time and asserts `changed=0`.
+- `deploy.yml` gained the inputs `limit_hosts`, `tags`, `verbosity` and `confirm` and the target
+  group `postgres_servers`; a `v*` tag now runs the lint gate, every `site.yml` play tag in
+  dependency order (one job at a time) and a fleet-wide health check.
+- `node-platform-deploy.yml` gained the input `force_https`.
+- Documentation refreshed: README, QUICKSTART, GitHub Actions setup, secrets reference,
+  observability, SSH keys, secrets management; new `docs/RUNBOOK.md`, `docs/CONVENTIONS.md` and
+  `CONTRIBUTING.md`.
+
+### Behaviour changes in v0.3.0 | v0.3.0 行为变更
+
+- **PostgreSQL listens on localhost only.** `postgresql_listen_addresses` defaults to `localhost`,
+  and `pg_hba.conf` admits the application role only from `postgresql_allowed_cidrs` (default
+  `127.0.0.1/32` and `::1/128`) with `scram-sha-256`; everything else is rejected. To expose the
+  database, set both variables (and keep port 5432 whitelisted). The role tests the application login
+  and re-sets the password when it fails, which also migrates old md5 password hashes.
+- **`nginx_stop_conflicting_services` defaults to `false`.** The nginx role no longer stops other
+  services on ports 80/443 unless you opt in; when enabled it stops and disables only the units in
+  `nginx_conflicting_services` that exist, and it never signals processes.
+- **Speedtest scrape job is opt-in.** Prometheus renders the `speedtest` job only when
+  `prometheus_speedtest_exporter_host` (or the legacy `speedtest_exporter_host`) is set.
+- **Password logins are off.** `ssh_password_authentication: false` in
+  `inventories/production/group_vars/all/main.yml`; the next `common` run makes every host key-only.
+  Install your public key everywhere first.
+- **pl-1 k3s test cluster.** `k3s_version` is now `v1.31.5+k3s1` (was `v1.27.3+k3s1`) and the
+  kubeconfig is fetched to `~/.kube/k3s-pl-1.yaml` (was `/tmp/k3s-pl-1-kubeconfig.yaml`). The installer
+  step is guarded by the k3s binary, so an existing installation is not upgraded automatically.
+- **New workflow input `allow_reboot`** on `weekly-security-patch.yml`: `inventory` (default) keeps the
+  per-host/group `security_patch_allow_reboot`; `true` / `false` pass
+  `-e security_patch_allow_reboot=<value>`.
+- **Forced group-wide lifecycle runs pass the confirmation flags.** `rollback.yml` and `lifecycle.yml`
+  refuse to roll back or clean up more than one host without `rollback_confirm_all=true` /
+  `lifecycle_confirm_all=true`. The Lifecycle Management workflow passes `lifecycle_confirm_all=true`
+  when `force=true`; `scripts/anixops.sh rollback`, `rollback-files` and `cleanup-role` pass the
+  matching flag after their confirmation prompt. The obsolete `-e lifecycle_hook_type=post_rollback`
+  is no longer passed.
+- **Lifecycle version format.** The workflow accepts `prev`, `initial` and `vYYYYMMDDTHHMMSS` (the
+  format the lifecycle role writes); `rollback-files --timestamp` takes any substring of the native
+  backup name, e.g. `2026-10-24@14`.
+- **Grafana admin password.** It is read from `GRAFANA_ADMIN_PASSWORD` (or `grafana_admin_password`),
+  is mandatory and must not be `admin`; the role fails before installing anything otherwise. Grafana is
+  no longer pinned to 10.0.0: `grafana_version: ""` installs the current release from
+  `apt.grafana.com` and never upgrades an existing installation (set `grafana_version` to pin).
+- **Loki retention is on.** `loki_retention_enabled: true` with `loki_retention_period: 30d`; after the
+  first deployment of this release the compactor deletes log data older than 30 days. Set
+  `loki_retention_period` (or `loki_retention_enabled: false`) before deploying if you need more.
+- **Localhost integration suite in CI.** Pull requests now also converge `common`, `node_exporter`,
+  `promtail`, `nginx` and `firewall` on the runner, verify them and fail when a second converge is not
+  idempotent.
+
+---
 
 ## v0.2.0 - 2026-04-27 🚀 Cloudflare Mesh 迁移
 

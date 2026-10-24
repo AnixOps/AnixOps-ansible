@@ -113,6 +113,9 @@ Required domain input:
 - Set the workflow `domain` input to the public hostname, for example `x.anixops.com`. The workflow maps it
   to `ANIXOPS_NODE_PLATFORM_SERVER_NAME` and `ANIXOPS_NODE_PLATFORM_DOMAIN` for Ansible.
 
+Optional inputs: `dry_run` (check mode) and `force_https` (default `false`), which the workflow passes
+as `ANIXOPS_NODE_PLATFORM_FORCE_HTTPS` (see *HTTP to HTTPS redirect* below).
+
 The dedicated workflow also maps the shorter Environment secret names you already use:
 
 - `VULTR_API_KEY` becomes `ANIXOPS_NODE_PLATFORM_VULTR_API_KEY`
@@ -211,12 +214,12 @@ nginx_sites:
 ## Run | 运行
 
 ```bash
-# Local operator run (host group from your inventory, secrets from the environment)
-ansible-playbook -i inventories/production/hosts.yml playbooks/provision/node-platform.yml
-
-# Only the node platform play from a multi-play run
-ansible-playbook playbooks/provision/node-platform.yml --tags node_platform
+# Local operator run: the fleet inventory (hosts.yml) has no anixops_node_platform_servers group,
+# so pass the dedicated inventory (host from ANIXOPS_NODE_PLATFORM_1_V4_SSH, secrets from .env)
+ansible-playbook -i inventories/production/node-platform.actions.yml playbooks/provision/node-platform.yml
+scripts/anixops.sh deploy-node-platform -i inventories/production/node-platform.actions.yml
 
 # Dry run
-ansible-playbook playbooks/provision/node-platform.yml --check --diff
+ansible-playbook -i inventories/production/node-platform.actions.yml \
+  playbooks/provision/node-platform.yml --check --diff
 ```

@@ -2,8 +2,10 @@
 
 Every file in this repository must satisfy the rules below. They are enforced by
 `ansible-lint` (production profile, empty skip list), `yamllint`, the repository tests under
-`tests/` (about 4,100 parametrised checks that run in a few seconds) and the CI gates in
-`.github/workflows/`. Run `make check` before every commit.
+`tests/` (about 4,200 parametrised checks that run in a few seconds) and the CI gates in
+`.github/workflows/`. Run `make check` before every commit (plus `make encoding-check` and
+`make backup-coverage` when you touch text encodings or `/etc` templates). Operational procedures
+(deploy, verify, rollback, incidents) live in [RUNBOOK.md](RUNBOOK.md).
 
 本仓库的所有文件都必须满足以下规范。规范由 `ansible-lint`（production 档、空 skip 列表）、
 `yamllint`、`tests/` 下的仓库测试以及 CI 门禁强制执行。提交前请运行 `make check`。
@@ -111,3 +113,29 @@ unit tests, inventory drift, syntax check of every playbook and (when present) t
 integration converge/verify/idempotency run. `security-scan.yml` adds secret scanning, dependency
 audit and the `ignore_errors` policy check. Deploy-type workflows share a concurrency group per
 environment so two deployments never overlap.
+
+## 9. Known pitfalls | 已知陷阱
+
+Lessons from the hardening programme that are easy to get wrong again.
+
+- **Stale facts.** `ansible.cfg` uses `gathering = smart` with a JSON fact cache that lives for one
+  hour (`fact_caching_timeout = 3600`), so `ansible_date_time` can be up to an hour old. Anything that
+  needs a fresh timestamp (backup names, version labels) uses the controller clock, `now()`, pinned
+  once with `set_fact` (see `roles/lifecycle/tasks/main.yml` and `playbooks/maintenance/rollback.yml`).
+  Names keyed on `ansible_date_time.epoch` collide for the same reason. `make clean` drops the cache.
+- **systemd status probes.** `ansible.builtin.systemd` / `systemd_service` with only `name:` fails
+  (`required_one_of`). Read service state with `ansible.builtin.service_facts` or
+  `systemctl show` / `systemctl is-active` (`roles/lifecycle/tasks/probe_service.yml`); use the
+  systemd modules only for state changes.
+- **ansible-lint `kinds` order.** Entries in `.ansible-lint` `kinds` are matched in order, so task-file
+  globs (`playbooks/maintenance/security-patch/*.yml`, `roles/*/tasks/**/*.yml`) must come before the
+  `playbooks/**/*.yml` playbook glob, otherwise task files are linted as playbooks.
+- **Escapes in heredocs.** A `\uXXXX` sequence typed inside a Bash heredoc is written as the literal
+  character, and the repository tests then flag it as mojibake or an invisible character. Write such
+  files with an editor, or build the character in Python with `chr()` (as `tests/test_repo_hygiene.py`
+  does).
+- **Backup file names.** Ansible's native `backup: true` files are named
+  `<file>.<pid>.<YYYY-MM-DD@HH:MM:SS>~`, not `<file>.backup.*`. `playbooks/maintenance/rollback.yml`
+  understands both formats; anything else that searches for backups must as well.
+- **Empty environment lookups.** `lookup('env', 'X') | default('y')` returns `''` when `X` is unset,
+  because the lookup result is defined. Use `lookup('env', 'X') or 'y'` or `default('y', true)`.
