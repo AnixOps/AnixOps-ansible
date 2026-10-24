@@ -34,8 +34,10 @@ lifecycle_load_target_defaults: true
 # State files | 状态文件
 # -----------------------------------------------------------------------------
 lifecycle_state_dir: "{{ state_dir | default('/var/lib/anixops/state') }}"
-lifecycle_state_file: "{{ state_file | default(lifecycle_state_dir ~ '/' ~ lifecycle_target_role ~ '_state.json') }}"
-lifecycle_history_file: "{{ history_file | default(lifecycle_state_dir ~ '/' ~ lifecycle_target_role ~ '_history.json') }}"
+lifecycle_state_file: >-
+  {{ state_file | default(lifecycle_state_dir ~ '/' ~ lifecycle_target_role ~ '_state.json') }}
+lifecycle_history_file: >-
+  {{ history_file | default(lifecycle_state_dir ~ '/' ~ lifecycle_target_role ~ '_history.json') }}
 lifecycle_pre_deploy_file: "{{ lifecycle_state_dir }}/{{ lifecycle_target_role }}_pre_deploy.json"
 lifecycle_pre_rollback_file: "{{ lifecycle_state_dir }}/{{ lifecycle_target_role }}_pre_rollback.json"
 
@@ -75,7 +77,8 @@ lifecycle_hooks_verify_status_codes: [200, 204]
 # Notifications | 通知
 # -----------------------------------------------------------------------------
 lifecycle_hooks_notify_enabled: "{{ hooks_notify_enabled | default(true) }}"
-lifecycle_notification_webhook_url: "{{ notification_webhook_url | default(lookup('env', 'NOTIFICATION_WEBHOOK_URL')) }}"
+lifecycle_notification_webhook_url: >-
+  {{ notification_webhook_url | default(lookup('env', 'NOTIFICATION_WEBHOOK_URL')) }}
 lifecycle_notification_slack_url: "{{ notification_slack_url | default(lookup('env', 'SLACK_WEBHOOK_URL')) }}"
 lifecycle_notification_timeout: 10
 
@@ -120,6 +123,8 @@ lifecycle_cleanup_strategy: "{{ cleanup_strategy | default('conservative') }}"
 lifecycle_cleanup_keep_data: "{{ cleanup_keep_data | default(true) }}"
 lifecycle_cleanup_keep_package: "{{ cleanup_keep_package | default(false) }}"
 lifecycle_cleanup_keep_state: false
+# Roles that may never be cleaned up (common is always protected).
+lifecycle_cleanup_protected_roles: []
 lifecycle_cleanup_archive_enabled: true
 lifecycle_cleanup_remove_unit: true
 lifecycle_cleanup_archive_path: "{{ cleanup_archive_path | default('/var/lib/anixops/archive') }}"

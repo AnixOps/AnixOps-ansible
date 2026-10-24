@@ -41,12 +41,18 @@
 
 - name: Resolve lifecycle contract of the target role | 解析目标角色的生命周期约定
   ansible.builtin.set_fact:
-    lifecycle_service_name: "{{ lookup('vars', lifecycle_target_role ~ '_service_name', default=lifecycle_target_role) }}"
+    lifecycle_service_name: >-
+      {{ lookup('vars', lifecycle_target_role ~ '_service_name', default=lifecycle_target_role) }}
     lifecycle_port: "{{ lookup('vars', lifecycle_target_role ~ '_port', default=0) }}"
     lifecycle_health_url: "{{ lookup('vars', lifecycle_target_role ~ '_health_url', default='') }}"
     lifecycle_backup_files: "{{ lookup('vars', lifecycle_target_role ~ '_backup_files', default=[]) }}"
-    lifecycle_config_dirs: "{{ lookup('vars', lifecycle_target_role ~ '_config_dirs', default=['/etc/' ~ lifecycle_target_role]) }}"
+    lifecycle_config_dirs: >-
+      {{ lookup('vars', lifecycle_target_role ~ '_config_dirs', default=['/etc/' ~ lifecycle_target_role]) }}
     lifecycle_packages: "{{ lookup('vars', lifecycle_target_role ~ '_packages', default=[]) }}"
+    # Packages removed by cleanup: <role>_cleanup_packages, else <role>_packages.
+    lifecycle_cleanup_packages: >-
+      {{ lookup('vars', lifecycle_target_role ~ '_cleanup_packages',
+                default=lookup('vars', lifecycle_target_role ~ '_packages', default=[])) }}
     lifecycle_backup_root: "{{ lifecycle_hooks_backup_base_dir }}/{{ lifecycle_target_role }}"
 
 - name: Normalise health URL and deployment context | 规范化健康检查地址与上下文

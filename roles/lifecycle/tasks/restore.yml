@@ -29,7 +29,8 @@
 
 - name: Parse restore manifest | 解析恢复清单
   ansible.builtin.set_fact:
-    lifecycle_restore_entries: "{{ (lifecycle_restore_manifest_raw.content | b64decode | from_json).files | default([]) }}"
+    lifecycle_restore_entries: >-
+      {{ (lifecycle_restore_manifest_raw.content | b64decode | from_json).files | default([]) }}
   when: lifecycle_restore_manifest_stat.stat.exists
 
 - name: Refuse a manifest-less backup directory | 拒绝没有清单的备份目录
@@ -56,7 +57,8 @@
     lifecycle_restore_entries: >-
       {{ lifecycle_restore_entries + [{
            'stored': item.path | basename,
-           'original': '/etc/' ~ lifecycle_target_role ~ '/' ~ (item.path | basename | regex_replace('\\.backup.*$', '')),
+           'original': '/etc/' ~ lifecycle_target_role ~ '/'
+                       ~ (item.path | basename | regex_replace('\\.backup.*$', '')),
            'owner': item.pw_name | default('root'),
            'group': item.gr_name | default('root'),
            'mode': item.mode | default('0644')
@@ -109,4 +111,5 @@
   ansible.builtin.set_fact:
     lifecycle_restore_changed: "{{ lifecycle_restore_results.results | selectattr('changed') | list | length > 0 }}"
     lifecycle_restore_needs_daemon_reload: >-
-      {{ lifecycle_restore_entries | map(attribute='original') | select('match', '^/etc/systemd/') | list | length > 0 }}
+      {{ lifecycle_restore_entries | map(attribute='original')
+         | select('match', '^/etc/systemd/') | list | length > 0 }}

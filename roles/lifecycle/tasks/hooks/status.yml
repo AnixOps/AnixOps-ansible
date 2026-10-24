@@ -31,8 +31,10 @@
 
 - name: Parse state and history | 解析状态与历史
   ansible.builtin.set_fact:
-    lifecycle_current_state: "{{ (lifecycle_state_raw.content | b64decode | from_json) if lifecycle_state_stat.stat.exists else {} }}"
-    lifecycle_history_data: "{{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}"
+    lifecycle_current_state: >-
+      {{ (lifecycle_state_raw.content | b64decode | from_json) if lifecycle_state_stat.stat.exists else {} }}
+    lifecycle_history_data: >-
+      {{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}
 
 - name: Probe service state | 探测服务状态
   ansible.builtin.systemd_service:
@@ -68,15 +70,16 @@
         recorded={{ lifecycle_current_state.timestamp | default('n/a') }}
         rollback_available={{ lifecycle_current_state.rollback_available | default(false) }}
       - >-
-        History: {{ lifecycle_history_data | length }} record(s)
-        {%- for record in lifecycle_history_data[-5:] | reverse %}
-        | {{ record.version }} {{ record.status }} {{ record.timestamp }}
-        {%- endfor %}
+        History: {{ lifecycle_history_data | length }} record(s); recent (newest first):
+        {{ lifecycle_status_recent | map(attribute='version') | zip(lifecycle_status_recent | map(attribute='status'))
+           | map('join', '=') | join(', ') | default('none', true) }}
       - >-
         Snapshots: {{ lifecycle_status_versions.files | default([]) | length }} version(s) under
         {{ lifecycle_backup_root }}
       - "Contract: port={{ lifecycle_port }} health_url={{ lifecycle_health_url_effective | default('', true) }}
         backup_files={{ lifecycle_backup_files | join(', ') | default('none', true) }}"
+  vars:
+    lifecycle_status_recent: "{{ lifecycle_history_data[-5:] | reverse | list }}"
 
 - name: Set lifecycle result | 设置结果
   ansible.builtin.set_fact:

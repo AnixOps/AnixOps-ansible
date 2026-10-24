@@ -9,7 +9,8 @@
 - name: Resolve deployment version and backup directory | 解析部署版本与备份目录
   ansible.builtin.set_fact:
     lifecycle_deploy_version: "{{ lifecycle_deploy_version | default('v' ~ ansible_date_time.iso8601_basic_short) }}"
-    lifecycle_backup_dir: "{{ lifecycle_backup_dir | default(lifecycle_backup_root ~ '/' ~ ansible_date_time.iso8601_basic_short) }}"
+    lifecycle_backup_dir: >-
+      {{ lifecycle_backup_dir | default(lifecycle_backup_root ~ '/' ~ ansible_date_time.iso8601_basic_short) }}
     lifecycle_deploy_start_epoch: "{{ lifecycle_deploy_start_epoch | default(ansible_date_time.epoch) }}"
     lifecycle_post_deploy_health_ok: true
 
@@ -79,7 +80,8 @@
 
 - name: Parse history | 解析历史
   ansible.builtin.set_fact:
-    lifecycle_history_data: "{{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}"
+    lifecycle_history_data: >-
+      {{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}
 
 - name: Build deployment record | 生成部署记录
   ansible.builtin.set_fact:
@@ -96,7 +98,8 @@
       duration_seconds: "{{ ansible_date_time.epoch | int - lifecycle_deploy_start_epoch | int }}"
       backup_location: "{{ lifecycle_backup_dir }}"
       files_backed_up: "{{ lifecycle_snapshot_entries | default([]) | length }}"
-      triggered_by: "{{ lookup('env', 'GITHUB_ACTOR') | default(lookup('env', 'USER'), true) | default('unknown', true) }}"
+      triggered_by: >-
+        {{ lookup('env', 'GITHUB_ACTOR') | default(lookup('env', 'USER'), true) | default('unknown', true) }}
 
 - name: Write state file | 写入状态文件
   ansible.builtin.copy:

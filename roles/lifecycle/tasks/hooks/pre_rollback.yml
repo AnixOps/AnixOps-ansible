@@ -23,7 +23,8 @@
 
 - name: Parse current state | 解析当前状态
   ansible.builtin.set_fact:
-    lifecycle_current_state: "{{ (lifecycle_state_raw.content | b64decode | from_json) if lifecycle_state_stat.stat.exists else {} }}"
+    lifecycle_current_state: >-
+      {{ (lifecycle_state_raw.content | b64decode | from_json) if lifecycle_state_stat.stat.exists else {} }}
 
 - name: Probe service state before rollback | 回滚前探测服务状态
   ansible.builtin.systemd_service:

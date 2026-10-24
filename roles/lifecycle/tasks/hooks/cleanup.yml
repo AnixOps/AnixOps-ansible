@@ -13,10 +13,28 @@
       pass -e cleanup_confirm=yes (or -e cleanup_force=yes) to confirm.
   when: not (lifecycle_cleanup_confirm | bool or lifecycle_cleanup_force | bool)
 
+- name: Refuse to clean up protected roles | 拒绝清理受保护的角色
+  ansible.builtin.fail:
+    msg: >-
+      Cleanup of role '{{ lifecycle_target_role }}' is not allowed: it owns host-critical
+      configuration (for common: /etc/ssh host keys, chrony, fail2ban and the base package
+      set), so it can only be re-deployed, never cleaned up. Protected roles:
+      {{ (['common'] + lifecycle_cleanup_protected_roles) | unique | join(', ') }}.
+  when: lifecycle_target_role in (['common'] + lifecycle_cleanup_protected_roles)
+
+- name: Refuse to remove the configuration directories of common | 拒绝删除 common 的配置目录
+  ansible.builtin.fail:
+    msg: "cleanup_keep_data=false is not allowed for role common (/etc/ssh holds the host keys)."
+  when:
+    - lifecycle_target_role == 'common'
+    - not lifecycle_cleanup_keep_data | bool
+
 - name: Resolve effective cleanup options | 解析有效的清理选项
   ansible.builtin.set_fact:
-    lifecycle_cleanup_keep_data_effective: "{{ lifecycle_cleanup_keep_data | bool and lifecycle_cleanup_strategy != 'aggressive' }}"
-    lifecycle_cleanup_keep_package_effective: "{{ lifecycle_cleanup_keep_package | bool and lifecycle_cleanup_strategy != 'aggressive' }}"
+    lifecycle_cleanup_keep_data_effective: >-
+      {{ lifecycle_cleanup_keep_data | bool and lifecycle_cleanup_strategy != 'aggressive' }}
+    lifecycle_cleanup_keep_package_effective: >-
+      {{ lifecycle_cleanup_keep_package | bool and lifecycle_cleanup_strategy != 'aggressive' }}
     lifecycle_cleanup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
 
 - name: Show cleanup plan | 显示清理计划
@@ -24,8 +42,13 @@
     msg:
       - "Cleanup {{ lifecycle_target_role }} on {{ inventory_hostname }} (strategy={{ lifecycle_cleanup_strategy }})"
       - "Service to stop/disable: {{ lifecycle_service_name | default('none', true) }}"
-      - "Packages to remove: {{ 'none (kept)' if lifecycle_cleanup_keep_package_effective | bool else (lifecycle_packages | join(', ') | default('none', true)) }}"
-      - "Config dirs: {{ lifecycle_config_dirs | join(', ') }} -> {{ 'archived to ' ~ lifecycle_cleanup_archive_path if lifecycle_cleanup_keep_data_effective | bool else 'REMOVED' }}"
+      - >-
+        Packages to remove: {{ 'none (kept)' if lifecycle_cleanup_keep_package_effective | bool
+        else (lifecycle_cleanup_packages | join(', ') | default('none', true)) }}
+      - >-
+        Config dirs: {{ lifecycle_config_dirs | join(', ') }} ->
+        {{ 'archived to ' ~ lifecycle_cleanup_archive_path if lifecycle_cleanup_keep_data_effective | bool
+           else 'REMOVED' }}
       - "Snapshot versions kept: {{ lifecycle_cleanup_keep_backups }} newest under {{ lifecycle_backup_root }}"
       - "State files: {{ 'kept' if lifecycle_cleanup_keep_state | bool else 'removed' }}"
 
@@ -51,7 +74,7 @@
 
 - name: Remove packages | 删除软件包
   ansible.builtin.package:
-    name: "{{ lifecycle_packages }}"
+    name: "{{ lifecycle_cleanup_packages }}"
     state: absent
   register: lifecycle_cleanup_packages
   retries: 3
@@ -60,7 +83,7 @@
   failed_when: lifecycle_cleanup_packages is failed and not lifecycle_cleanup_force | bool
   when:
     - not lifecycle_cleanup_keep_package_effective | bool
-    - lifecycle_packages | length > 0
+    - lifecycle_cleanup_packages | length > 0
 
 - name: Check configuration directories | 检查配置目录
   ansible.builtin.stat:
@@ -128,19 +151,25 @@
     {{ (lifecycle_cleanup_versions.files | default([]) | sort(attribute='mtime', reverse=true)
         | map(attribute='path') | list)[lifecycle_cleanup_keep_backups | int:] }}
 
-- name: Remove systemd unit file | 删除 systemd unit 文件
-  ansible.builtin.file:
+- name: Check for a role-owned systemd unit file | 检查角色自带的 systemd unit 文件
+  ansible.builtin.stat:
     path: "/etc/systemd/system/{{ lifecycle_service_name }}.service"
-    state: absent
-  register: lifecycle_cleanup_unit
+    get_checksum: false
+  register: lifecycle_cleanup_unit_stat
   when:
     - lifecycle_cleanup_remove_unit | bool
     - lifecycle_service_name | length > 0
 
+- name: Remove systemd unit file | 删除 systemd unit 文件
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ lifecycle_service_name }}.service"
+    state: absent
+  when: lifecycle_cleanup_unit_stat.stat.exists | default(false)
+
 - name: Reload systemd after removing the unit | 删除 unit 后重载 systemd
   ansible.builtin.systemd_service:
     daemon_reload: true
-  when: lifecycle_cleanup_unit.changed | default(false)
+  when: lifecycle_cleanup_unit_stat.stat.exists | default(false)
 
 - name: Remove state files | 删除状态文件
   ansible.builtin.file:
@@ -167,10 +196,14 @@
   ansible.builtin.debug:
     msg:
       - "Cleanup completed: {{ lifecycle_target_role }} on {{ inventory_hostname }}"
-      - "Service: {{ 'stopped and disabled' if lifecycle_cleanup_service.status.LoadState | default('not-found') == 'loaded' else 'not installed' }}"
+      - >-
+        Service: {{ 'stopped and disabled'
+        if lifecycle_cleanup_service.status.LoadState | default('not-found') == 'loaded' else 'not installed' }}
       - "Archive: {{ lifecycle_cleanup_archive.dest | default('none') }}"
       - "Config dirs removed: {{ not lifecycle_cleanup_keep_data_effective | bool }}"
-      - "Snapshot versions kept: {{ [lifecycle_cleanup_versions.files | default([]) | length, lifecycle_cleanup_keep_backups | int] | min }}"
+      - >-
+        Snapshot versions kept:
+        {{ [lifecycle_cleanup_versions.files | default([]) | length, lifecycle_cleanup_keep_backups | int] | min }}
 
 - name: Set lifecycle result | 设置结果
   ansible.builtin.set_fact:

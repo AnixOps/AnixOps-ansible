@@ -72,11 +72,13 @@
 
 - name: Parse history and collect rollback candidates | 解析历史并收集回滚候选
   ansible.builtin.set_fact:
-    lifecycle_history_data: "{{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}"
+    lifecycle_history_data: >-
+      {{ (lifecycle_history_raw.content | b64decode | from_json) if lifecycle_history_stat.stat.exists else [] }}
 
 - name: Collect successful deployments | 收集成功的部署记录
   ansible.builtin.set_fact:
-    lifecycle_rollback_candidates: "{{ lifecycle_history_data | selectattr('status', 'in', ['success', 'unverified']) | list }}"
+    lifecycle_rollback_candidates: >-
+      {{ lifecycle_history_data | selectattr('status', 'in', ['success', 'unverified']) | list }}
 
 - name: Fail when no successful deployment is recorded | 无成功部署记录时失败
   ansible.builtin.fail:
@@ -94,7 +96,8 @@
       {{ lifecycle_rollback_candidates[lifecycle_rb_index | int - 1]
          if lifecycle_rb_index | int >= 1 else lifecycle_rollback_candidates[0] }}
     lifecycle_rollback_phase: "{{ 'post' if lifecycle_rb_index | int >= 1 else 'pre' }}"
-    lifecycle_rollback_alternate: "{{ lifecycle_rollback_candidates[lifecycle_rb_index | int] if lifecycle_rb_index | int >= 1 else {} }}"
+    lifecycle_rollback_alternate: >-
+      {{ lifecycle_rollback_candidates[lifecycle_rb_index | int] if lifecycle_rb_index | int >= 1 else {} }}
   vars:
     lifecycle_rb_versions: "{{ lifecycle_rollback_candidates | map(attribute='version') | list }}"
     lifecycle_rb_index: >-
@@ -133,7 +136,8 @@
       {{ lifecycle_rollback_candidates[lifecycle_rb_index | int + 1]
          if lifecycle_rb_index | int + 1 < lifecycle_rollback_candidates | length else {} }}
   vars:
-    lifecycle_rb_index: "{{ (lifecycle_rollback_candidates | map(attribute='version') | list).index(lifecycle_rollback_requested) }}"
+    lifecycle_rb_index: >-
+      {{ (lifecycle_rollback_candidates | map(attribute='version') | list).index(lifecycle_rollback_requested) }}
   when:
     - lifecycle_rollback_explicit_dir | length == 0
     - lifecycle_rollback_requested not in ['prev', 'initial']
@@ -194,7 +198,9 @@
 - name: Show rollback plan | 显示回滚计划
   ansible.builtin.debug:
     msg:
-      - "Rollback {{ lifecycle_target_role }} on {{ inventory_hostname }}: {{ lifecycle_rollback_current }} -> {{ lifecycle_rollback_target_label }}"
+      - >-
+        Rollback {{ lifecycle_target_role }} on {{ inventory_hostname }}:
+        {{ lifecycle_rollback_current }} -> {{ lifecycle_rollback_target_label }}
       - "Source snapshot: {{ lifecycle_rollback_source_dir }}"
       - "Files: {{ lifecycle_rollback_files | join(', ') }}"
       - "Safety snapshot of current files: {{ lifecycle_pre_rollback_snapshot_dir }}"
@@ -322,16 +328,22 @@
 - name: Build rollback record | 生成回滚记录
   ansible.builtin.set_fact:
     lifecycle_rollback_record:
-      version: "{{ lifecycle_rollback_target.version | default('initial') if lifecycle_rollback_phase | default('pre') == 'post' else 'initial' }}"
+      version: >-
+        {{ lifecycle_rollback_target.version | default('initial')
+           if lifecycle_rollback_phase | default('pre') == 'post' else 'initial' }}
       timestamp: "{{ ansible_date_time.iso8601 }}"
-      status: "{{ 'rolled_back' if (lifecycle_post_rollback_healthy | bool or not lifecycle_hooks_verify_enabled | bool) else 'rollback_failed' }}"
+      status: >-
+        {{ 'rolled_back' if (lifecycle_post_rollback_healthy | bool or not lifecycle_hooks_verify_enabled | bool)
+           else 'rollback_failed' }}
       from_version: "{{ lifecycle_rollback_current }}"
       restored_from: "{{ lifecycle_rollback_source_dir }}"
-      pre_rollback_snapshot: "{{ lifecycle_pre_rollback_snapshot_dir if lifecycle_pre_rollback_snapshot_taken | bool else '' }}"
+      pre_rollback_snapshot: >-
+        {{ lifecycle_pre_rollback_snapshot_dir if lifecycle_pre_rollback_snapshot_taken | bool else '' }}
       service: "{{ lifecycle_service_name }}"
       service_state: "{{ lifecycle_post_rollback_service.status.ActiveState | default('unknown') }}"
       health_status: "{{ lifecycle_post_rollback_health.status | default(0) }}"
-      triggered_by: "{{ lookup('env', 'GITHUB_ACTOR') | default(lookup('env', 'USER'), true) | default('unknown', true) }}"
+      triggered_by: >-
+        {{ lookup('env', 'GITHUB_ACTOR') | default(lookup('env', 'USER'), true) | default('unknown', true) }}
 
 - name: Update state file after rollback | 回滚后更新状态文件
   ansible.builtin.copy:
