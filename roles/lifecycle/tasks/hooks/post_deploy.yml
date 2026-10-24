@@ -8,10 +8,10 @@
 
 - name: Resolve deployment version and backup directory | 解析部署版本与备份目录
   ansible.builtin.set_fact:
-    lifecycle_deploy_version: "{{ lifecycle_deploy_version | default('v' ~ ansible_date_time.iso8601_basic_short) }}"
+    lifecycle_deploy_version: "{{ lifecycle_deploy_version | default('v' ~ lifecycle_now_stamp) }}"
     lifecycle_backup_dir: >-
-      {{ lifecycle_backup_dir | default(lifecycle_backup_root ~ '/' ~ ansible_date_time.iso8601_basic_short) }}
-    lifecycle_deploy_start_epoch: "{{ lifecycle_deploy_start_epoch | default(ansible_date_time.epoch) }}"
+      {{ lifecycle_backup_dir | default(lifecycle_backup_root ~ '/' ~ lifecycle_now_stamp) }}
+    lifecycle_deploy_start_epoch: "{{ lifecycle_deploy_start_epoch | default(lifecycle_now_epoch) }}"
     lifecycle_post_deploy_health_ok: true
 
 - name: Snapshot configuration after deployment | 部署后快照
@@ -87,7 +87,7 @@
   ansible.builtin.set_fact:
     lifecycle_deployment_record:
       version: "{{ lifecycle_deploy_version }}"
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      timestamp: "{{ lifecycle_now_iso }}"
       status: >-
         {{ 'unverified' if not lifecycle_hooks_verify_enabled | bool
            else ('success' if lifecycle_post_deploy_healthy | bool else 'failed') }}
@@ -95,7 +95,7 @@
       service_state: "{{ lifecycle_post_deploy_service.active_state }}"
       health_url: "{{ lifecycle_health_url_effective }}"
       health_status: "{{ lifecycle_post_deploy_health.status | default(0) }}"
-      duration_seconds: "{{ ansible_date_time.epoch | int - lifecycle_deploy_start_epoch | int }}"
+      duration_seconds: "{{ lifecycle_now_epoch | int - lifecycle_deploy_start_epoch | int }}"
       backup_location: "{{ lifecycle_backup_dir }}"
       files_backed_up: "{{ lifecycle_snapshot_entries | default([]) | length }}"
       triggered_by: >-

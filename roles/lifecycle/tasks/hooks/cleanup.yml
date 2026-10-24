@@ -35,7 +35,7 @@
       {{ lifecycle_cleanup_keep_data | bool and lifecycle_cleanup_strategy != 'aggressive' }}
     lifecycle_cleanup_keep_package_effective: >-
       {{ lifecycle_cleanup_keep_package | bool and lifecycle_cleanup_strategy != 'aggressive' }}
-    lifecycle_cleanup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    lifecycle_cleanup_timestamp: "{{ lifecycle_now_stamp }}"
 
 - name: Show cleanup plan | 显示清理计划
   ansible.builtin.debug:

@@ -68,7 +68,7 @@
       host: "{{ inventory_hostname }}"
       phase: "{{ lifecycle_snapshot_phase }}"
       version: "{{ lifecycle_snapshot_version | default('') }}"
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      timestamp: "{{ lifecycle_now_iso }}"
       files: "{{ lifecycle_snapshot_entries }}"
 
 - name: Write snapshot manifest | 写入快照清单

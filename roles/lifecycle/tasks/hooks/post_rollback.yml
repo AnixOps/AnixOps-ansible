@@ -40,7 +40,7 @@
 
 - name: Set rollback timestamp | 设置回滚时间戳
   ansible.builtin.set_fact:
-    lifecycle_rollback_timestamp: "{{ lifecycle_rollback_timestamp | default(ansible_date_time.iso8601_basic_short) }}"
+    lifecycle_rollback_timestamp: "{{ lifecycle_rollback_timestamp | default(lifecycle_now_stamp) }}"
     lifecycle_rollback_requested: "{{ lifecycle_version | default('prev', true) }}"
     lifecycle_rollback_current: "{{ lifecycle_pre_rollback_state.version | default('unknown') }}"
     lifecycle_rollback_explicit_dir: "{{ lifecycle_restore_from | default('', true) }}"
@@ -89,6 +89,17 @@
   when:
     - lifecycle_rollback_candidates | length == 0
     - lifecycle_rollback_explicit_dir | length == 0
+
+- name: Refuse 'prev' when already at the initial configuration | 已处于初始配置时拒绝 prev
+  ansible.builtin.fail:
+    msg: >-
+      {{ lifecycle_target_role }} on {{ inventory_hostname }} is already at the initial
+      (pre-first-deployment) configuration; pick an explicit version
+      ({{ lifecycle_rollback_candidates | map(attribute='version') | join(', ') }}) to roll forward.
+  when:
+    - lifecycle_rollback_explicit_dir | length == 0
+    - lifecycle_rollback_requested == 'prev'
+    - lifecycle_rollback_current == 'initial'
 
 - name: Pick the previous version | 选择上一版本
   ansible.builtin.set_fact:
@@ -217,6 +228,13 @@
   ansible.builtin.meta: end_host
   when: lifecycle_dry_run | bool
 
+- name: Never let the safety snapshot overwrite the restore source | 安全快照不得覆盖恢复来源
+  ansible.builtin.fail:
+    msg: >-
+      Refusing to roll back: the safety snapshot directory {{ lifecycle_pre_rollback_snapshot_dir }}
+      is the directory being restored. Wait a second and retry, or restore a different snapshot.
+  when: lifecycle_pre_rollback_snapshot_dir == lifecycle_rollback_source_dir
+
 # --- Make the rollback itself reversible --------------------------------------
 - name: Snapshot current files before rolling back | 回滚前快照当前文件
   ansible.builtin.include_tasks: snapshot.yml
@@ -336,7 +354,7 @@
   ansible.builtin.set_fact:
     lifecycle_rollback_record:
       version: "{{ lifecycle_rollback_restored_version }}"
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      timestamp: "{{ lifecycle_now_iso }}"
       status: >-
         {{ 'rolled_back' if (lifecycle_post_rollback_healthy | bool or not lifecycle_hooks_verify_enabled | bool)
            else 'rollback_failed' }}

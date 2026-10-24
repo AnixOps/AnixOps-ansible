@@ -46,7 +46,6 @@
   tags: [rollback]
 
   vars:
-    rollback_epoch: "{{ ansible_date_time.epoch }}"
     rollback_pg_version: "{{ postgresql_version | default('15') }}"
     # Backup suffix formats (regex, anchored at the end of the basename).
     rollback_backup_suffix_regex: '(\.\d+\.\d{4}-\d{2}-\d{2}@\d{2}:\d{2}:\d{2}~|\.backup\.[^/]+)$'
@@ -151,6 +150,13 @@
     rollback_validator_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
   pre_tasks:
+    # Controller clock, pinned once: ansible_date_time may be stale under fact caching.
+    - name: Pin the rollback epoch | 固定回滚时间戳
+      ansible.builtin.set_fact:
+        rollback_epoch: >-
+          {{ ((now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') | to_datetime('%Y-%m-%dT%H:%M:%SZ'))
+              - ('1970-01-01T00:00:00Z' | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() | int }}
+
     - name: Validate rollback_role | 校验 rollback_role
       ansible.builtin.fail:
         msg: >-
@@ -323,18 +329,36 @@
     - name: Check which original files currently exist | 检查原始文件是否存在
       ansible.builtin.stat:
         path: "{{ item.original }}"
-        get_checksum: false
+        checksum_algorithm: sha256
       loop: "{{ rollback_plan | selectattr('action', 'eq', 'restore') | list }}"
       loop_control:
         label: "{{ item.original }}"
       register: rollback_original_stat
 
+    - name: Checksum the chosen backups | 计算所选备份的校验和
+      ansible.builtin.stat:
+        path: "{{ item.backup }}"
+        checksum_algorithm: sha256
+      loop: "{{ rollback_plan | selectattr('action', 'eq', 'restore') | list }}"
+      loop_control:
+        label: "{{ item.backup }}"
+      register: rollback_backup_stat
+
+    # Only files whose content differs are snapshotted and copied, so a repeated run is a no-op.
     - name: Record restore set | 记录恢复集合
       ansible.builtin.set_fact:
-        rollback_restore_entries: "{{ rollback_plan | selectattr('action', 'eq', 'restore') | list }}"
+        rollback_restore_entries: >-
+          {{ rollback_plan | selectattr('action', 'eq', 'restore')
+             | rejectattr('original', 'in', rollback_identical_originals) | list }}
+        rollback_identical_originals: "{{ rollback_identical_originals }}"
         rollback_existing_originals: >-
           {{ rollback_original_stat.results | selectattr('stat.exists') | map(attribute='item.original') | list }}
         rollback_restored_files: []
+      vars:
+        rollback_identical_originals: >-
+          {{ rollback_original_stat.results | selectattr('stat.exists')
+             | selectattr('stat.checksum', 'in', rollback_backup_stat.results | map(attribute='stat.checksum') | list)
+             | map(attribute='item.original') | list }}
 
     - name: Restore files and validate the configuration | 恢复文件并校验配置
       block:
@@ -505,7 +529,7 @@
           {{ rollback_role }} on {{ inventory_hostname }}:
           {{ rollback_restored_files | length }} file(s) changed
           ({{ rollback_restored_files | join(', ') | default('none', true) }}),
-          {{ rollback_restore_entries | length - rollback_restored_files | length }} already identical,
+          {{ rollback_identical_originals | length }} already identical,
           {{ rollback_plan | selectattr('action', 'eq', 'skip') | list | length }} skipped;
           services restarted:
           {{ rollback_restart_services | default([]) | unique | join(', ') | default('none', true) }};

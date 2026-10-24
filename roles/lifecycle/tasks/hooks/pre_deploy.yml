@@ -8,10 +8,10 @@
 
 - name: Set deployment version and backup directory | 设置部署版本与备份目录
   ansible.builtin.set_fact:
-    lifecycle_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
-    lifecycle_deploy_version: "v{{ ansible_date_time.iso8601_basic_short }}"
-    lifecycle_deploy_start_epoch: "{{ ansible_date_time.epoch }}"
-    lifecycle_backup_dir: "{{ lifecycle_backup_root }}/{{ ansible_date_time.iso8601_basic_short }}"
+    lifecycle_backup_timestamp: "{{ lifecycle_now_stamp }}"
+    lifecycle_deploy_version: "v{{ lifecycle_now_stamp }}"
+    lifecycle_deploy_start_epoch: "{{ lifecycle_now_epoch }}"
+    lifecycle_backup_dir: "{{ lifecycle_backup_root }}/{{ lifecycle_now_stamp }}"
 
 - name: Ensure backup root exists | 确保备份根目录存在
   ansible.builtin.file:
@@ -93,7 +93,7 @@
       role: "{{ lifecycle_target_role }}"
       host: "{{ inventory_hostname }}"
       version: "{{ lifecycle_deploy_version }}"
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      timestamp: "{{ lifecycle_now_iso }}"
       service: "{{ lifecycle_service_name }}"
       service_state: "{{ lifecycle_pre_deploy_service.active_state }}"
       backup_location: "{{ lifecycle_backup_dir }}"

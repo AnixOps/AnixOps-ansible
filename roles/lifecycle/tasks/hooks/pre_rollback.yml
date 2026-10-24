@@ -7,7 +7,7 @@
 
 - name: Set rollback timestamp | 设置回滚时间戳
   ansible.builtin.set_fact:
-    lifecycle_rollback_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    lifecycle_rollback_timestamp: "{{ lifecycle_now_stamp }}"
 
 - name: Check state file | 检查状态文件
   ansible.builtin.stat:
@@ -37,7 +37,7 @@
       version: "{{ lifecycle_current_state.current_version | default('unknown') }}"
       service: "{{ lifecycle_service_name }}"
       service_state: "{{ lifecycle_service_probe.active_state }}"
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      timestamp: "{{ lifecycle_now_iso }}"
 
 - name: Write pre-rollback state file | 写入回滚前状态文件
   ansible.builtin.copy:
