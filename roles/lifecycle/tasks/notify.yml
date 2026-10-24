@@ -4,7 +4,8 @@
 # =============================================================================
 # Input: lifecycle_notify_event (deploy|rollback|cleanup), lifecycle_notify_status,
 #        lifecycle_notify_details (dict, optional)
-# Notifications never fail the play and never log their payload/URL.
+# Deliveries are retried, never log their payload/URL and never fail the play:
+# a webhook that stays unreachable is reported in one line and ignored.
 
 - name: Build notification payload | 构建通知内容
   ansible.builtin.set_fact:
@@ -15,37 +16,51 @@
       status: "{{ lifecycle_notify_status }}"
       timestamp: "{{ lifecycle_now_iso }}"
       details: "{{ lifecycle_notify_details | default({}) }}"
+    lifecycle_notify_delivered: true
 
-- name: Send webhook notification | 发送 Webhook 通知
-  ansible.builtin.uri:
-    url: "{{ lifecycle_notification_webhook_url }}"
-    method: POST
-    body_format: json
-    body: "{{ lifecycle_notify_payload }}"
-    status_code: [200, 201, 202, 204]
-    timeout: "{{ lifecycle_notification_timeout }}"
-  register: lifecycle_notify_webhook_result
-  failed_when: false
-  no_log: true
-  when:
-    - lifecycle_hooks_notify_enabled | bool
-    - lifecycle_notification_webhook_url | length > 0
+- name: Deliver notifications | 发送通知
+  when: lifecycle_hooks_notify_enabled | bool
+  block:
+    - name: Send webhook notification | 发送 Webhook 通知
+      ansible.builtin.uri:
+        url: "{{ lifecycle_notification_webhook_url }}"
+        method: POST
+        body_format: json
+        body: "{{ lifecycle_notify_payload }}"
+        status_code: [200, 201, 202, 204]
+        timeout: "{{ lifecycle_notification_timeout }}"
+      register: lifecycle_notify_webhook_result
+      retries: 3
+      delay: 5
+      until: lifecycle_notify_webhook_result is succeeded
+      no_log: true
+      when: lifecycle_notification_webhook_url | length > 0
 
-- name: Send Slack notification | 发送 Slack 通知
-  ansible.builtin.uri:
-    url: "{{ lifecycle_notification_slack_url }}"
-    method: POST
-    body_format: json
-    body:
-      text: >-
-        [AnixOps] {{ lifecycle_notify_event }} {{ lifecycle_notify_status | upper }}:
-        {{ lifecycle_target_role }} on {{ inventory_hostname }}
-        ({{ lifecycle_notify_details | default({}) | to_json }})
-    status_code: [200, 201, 202, 204]
-    timeout: "{{ lifecycle_notification_timeout }}"
-  register: lifecycle_notify_slack_result
-  failed_when: false
-  no_log: true
-  when:
-    - lifecycle_hooks_notify_enabled | bool
-    - lifecycle_notification_slack_url | length > 0
+    - name: Send Slack notification | 发送 Slack 通知
+      ansible.builtin.uri:
+        url: "{{ lifecycle_notification_slack_url }}"
+        method: POST
+        body_format: json
+        body:
+          text: >-
+            [AnixOps] {{ lifecycle_notify_event }} {{ lifecycle_notify_status | upper }}:
+            {{ lifecycle_target_role }} on {{ inventory_hostname }}
+            ({{ lifecycle_notify_details | default({}) | to_json }})
+        status_code: [200, 201, 202, 204]
+        timeout: "{{ lifecycle_notification_timeout }}"
+      register: lifecycle_notify_slack_result
+      retries: 3
+      delay: 5
+      until: lifecycle_notify_slack_result is succeeded
+      no_log: true
+      when: lifecycle_notification_slack_url | length > 0
+  rescue:
+    - name: Report undeliverable notification | 报告通知发送失败
+      ansible.builtin.set_fact:
+        lifecycle_notify_delivered: false
+
+    - name: Show notification failure | 显示通知失败
+      ansible.builtin.debug:
+        msg: >-
+          Notification for {{ lifecycle_notify_event }} ({{ lifecycle_target_role }} on
+          {{ inventory_hostname }}) could not be delivered after 3 attempts; ignored.

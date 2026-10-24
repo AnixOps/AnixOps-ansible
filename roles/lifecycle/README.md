@@ -94,6 +94,20 @@ cleanup  (lifecycle.yml --tags cleanup, cleanup_confirm=yes)
   ──► prune snapshots beyond keep ──► remove unit ──► remove state files ──► notify
 ```
 
+## Implementation notes | 实现说明
+
+* **Timestamps come from the controller clock** (`now()`), pinned once per hook run. `ansible_date_time`
+  can be up to an hour stale with `gathering = smart` + fact caching, which would make two
+  deployments share one version directory; the controller clock also gives every host of one
+  deployment run the same version label.
+* **Service state is read with `systemctl show`** (`tasks/probe_service.yml`): `systemd_service`
+  requires `state`/`enabled`/`daemon_reload` and cannot be used as a pure status probe. State
+  changes (restart, stop, daemon-reload) use `ansible.builtin.systemd_service`.
+* Every systemd task uses `<role>_service_name`; `""` disables service handling, an undefined
+  variable falls back to the role name. `uri` is skipped for an empty health URL and `wait_for`
+  for port `0`.
+* `lifecycle_cleanup_protected_roles` (plus `common`, always) can never be cleaned up.
+
 ## How the contract is loaded | 约定变量如何载入
 
 `tasks/main.yml` includes the target role with
