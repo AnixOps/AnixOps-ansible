@@ -1,4 +1,4 @@
-﻿---
+---
 - name: Create deployment directories
   ansible.builtin.file:
     path: "{{ item }}"

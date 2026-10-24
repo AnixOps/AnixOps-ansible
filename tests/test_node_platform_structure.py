@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Structure checks for the AnixOps node platform web template."""
 
 from pathlib import Path

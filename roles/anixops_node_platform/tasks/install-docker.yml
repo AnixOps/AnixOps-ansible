@@ -1,4 +1,4 @@
-﻿---
+---
 - name: Check supported operating system
   ansible.builtin.assert:
     that:

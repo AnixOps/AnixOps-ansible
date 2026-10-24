@@ -1,4 +1,4 @@
-﻿---
+---
 - name: Ensure UFW is installed for node platform port policy
   ansible.builtin.apt:
     name: ufw

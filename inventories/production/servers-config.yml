@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # 鏈嶅姟鍣ㄩ厤缃腑蹇?| Server Configuration Center
 # =============================================================================
 # 姝ゆ枃浠舵槸鏈嶅姟鍣ㄩ厤缃殑鍞竴鐪熷疄鏉ユ簮 (Single Source of Truth)
@@ -182,10 +182,6 @@ group_definitions:
     description: "鐩戞帶绯荤粺鏈嶅姟鍣?(Prometheus + Loki + Grafana) | Monitoring System Servers (PLG)"
     vars:
       server_role: observability
-
-    description: "Cloudflare Mesh 鑺傜偣 | Cloudflare Mesh Network Nodes"
-    vars:
-      server_role: mesh_node
 
   v2bx_servers:
     description: "V2bX 浠ｇ悊鑺傜偣 | V2bX Proxy Nodes"

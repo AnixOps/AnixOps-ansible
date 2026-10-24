@@ -1,4 +1,4 @@
-﻿# V2bX Proxy Node Role
+# V2bX Proxy Node Role
 
 閮ㄧ讲 V2bX 浠ｇ悊鑺傜偣锛岃嚜鍔ㄧ敓鎴?AuthKey 骞舵敞鍐屽埌 v2board 鎺у埗闈㈡澘銆?
 ## 渚濊禆

@@ -1,4 +1,4 @@
-﻿---
+---
 - name: Deploy AnixOps node platform web stack
   hosts: anixops_node_platform_servers
   serial: "30%"

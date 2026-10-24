@@ -1,4 +1,4 @@
-﻿name: Lifecycle Management
+name: Lifecycle Management
 
 on:
   workflow_dispatch:

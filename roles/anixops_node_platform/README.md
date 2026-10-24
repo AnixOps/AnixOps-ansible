@@ -1,4 +1,4 @@
-﻿# AnixOps node platform Web Stack
+# AnixOps node platform Web Stack
 
 This role deploys the upstream `anixops-node-platform` node platform stack as a normal host-managed compose project.
 

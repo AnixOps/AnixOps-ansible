@@ -1,4 +1,4 @@
-﻿name: Weekly Security Patch
+name: Weekly Security Patch
 
 on:
   schedule:

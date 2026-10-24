@@ -1,4 +1,4 @@
-﻿# AnixOps node platform Web Template
+# AnixOps node platform Web Template
 
 This template turns the AnixOps stack into a normal host-managed deployment:
 

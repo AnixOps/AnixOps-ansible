@@ -1,4 +1,4 @@
-﻿# V2board Control Panel Role
+# V2board Control Panel Role
 
 閮ㄧ讲 v2board 鎺у埗闈㈡澘锛堜簩杩涘埗閮ㄧ讲锛夛紝鐢ㄤ簬绠＄悊 V2bX 浠ｇ悊鑺傜偣銆?
 ## 閮ㄧ讲鏂瑰紡

@@ -1,4 +1,4 @@
-﻿---
+---
 - name: Validate required node platform variables
   ansible.builtin.assert:
     that:
