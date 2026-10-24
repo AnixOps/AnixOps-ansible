@@ -95,7 +95,16 @@
       Failed task: {{ ansible_failed_task.name | default('unknown') }}
       {{ ansible_failed_result.stderr | default(ansible_failed_result.msg | default('')) }}
 
-      Rollback: restored {{ nginx_rollback_restored.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | list | length }} file(s) from backup,
-      removed {{ nginx_rollback_removed.results | default([]) | selectattr('changed', 'defined') | selectattr('changed') | list | length }} newly created file(s).
-      Restored configuration (nginx -t): {{ 'OK' if nginx_rollback_config_test.rc == 0 else 'STILL INVALID - manual intervention required' }}
-      {{ nginx_rollback_config_test.stderr | default('') if nginx_rollback_config_test.rc != 0 else '' }}
+      Rollback: restored {{ nginx_rollback_restored_count }} file(s) from backup,
+      removed {{ nginx_rollback_removed_count }} newly created file(s).
+      Restored configuration (nginx -t): {{ nginx_rollback_validation }}
+  vars:
+    nginx_rollback_restored_count: >-
+      {{ nginx_rollback_restored.results | default([])
+         | selectattr('changed', 'defined') | selectattr('changed') | list | length }}
+    nginx_rollback_removed_count: >-
+      {{ nginx_rollback_removed.results | default([])
+         | selectattr('changed', 'defined') | selectattr('changed') | list | length }}
+    nginx_rollback_validation: >-
+      {{ 'OK' if nginx_rollback_config_test.rc == 0
+         else 'STILL INVALID - manual intervention required: ' ~ (nginx_rollback_config_test.stderr | default('')) }}

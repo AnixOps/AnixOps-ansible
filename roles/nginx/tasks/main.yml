@@ -54,12 +54,12 @@
           '/etc/nginx/sites-available/' ~ inventory_hostname ~ '_custom.conf',
           '/etc/logrotate.d/nginx']
          + (nginx_custom_configs | map(attribute='name')
-            | map('regex_replace', '^(.*)$', '/etc/nginx/conf.d/\\1.conf') | list)
+            | map('regex_replace', '^(.*)$', '/etc/nginx/conf.d/\1.conf') | list)
          + (nginx_all_sites | map(attribute='name')
-            | map('regex_replace', '^(.*)$', '/etc/nginx/sites-available/\\1.conf') | list) }}
+            | map('regex_replace', '^(.*)$', '/etc/nginx/sites-available/\1.conf') | list) }}
     nginx_managed_links: >-
       {{ (['default'] if nginx_default_site_enabled | bool else [])
-         + (nginx_enabled_site_names | map('regex_replace', '^(.*)$', '\\1.conf') | list)
+         + (nginx_enabled_site_names | map('regex_replace', '^(.*)$', '\1.conf') | list)
          + ([inventory_hostname ~ '_custom.conf'] if nginx_host_config_stat.stat.exists else []) }}
   vars:
     nginx_enabled_site_names: >-

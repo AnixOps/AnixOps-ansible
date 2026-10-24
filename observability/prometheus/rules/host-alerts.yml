@@ -41,7 +41,8 @@ groups:
             The host may be down or port 9100 may be blocked.
 
       - alert: HostRebooted
-        expr: node_time_seconds{job="node_exporter"} - node_boot_time_seconds{job="node_exporter"} < 600
+        expr: >-
+          node_time_seconds{job="node_exporter"} - node_boot_time_seconds{job="node_exporter"} < 600
         for: 0m
         labels:
           severity: warning
@@ -91,7 +92,8 @@ groups:
 
       - alert: HighMemoryUsage
         expr: >-
-          (1 - node_memory_MemAvailable_bytes{job="node_exporter"} / node_memory_MemTotal_bytes{job="node_exporter"}) * 100 > 85
+          (1 - node_memory_MemAvailable_bytes{job="node_exporter"}
+                 / node_memory_MemTotal_bytes{job="node_exporter"}) * 100 > 85
         for: 10m
         labels:
           severity: warning
@@ -102,7 +104,8 @@ groups:
 
       - alert: CriticalMemoryUsage
         expr: >-
-          (1 - node_memory_MemAvailable_bytes{job="node_exporter"} / node_memory_MemTotal_bytes{job="node_exporter"}) * 100 > 95
+          (1 - node_memory_MemAvailable_bytes{job="node_exporter"}
+                 / node_memory_MemTotal_bytes{job="node_exporter"}) * 100 > 95
         for: 5m
         labels:
           severity: critical
@@ -119,7 +122,9 @@ groups:
           category: performance
         annotations:
           summary: "OOM kill on {{ $labels.instance }}"
-          description: "The kernel OOM killer terminated {{ $value | printf \"%.0f\" }} process(es) in the last 10 minutes."
+          description: >-
+            The kernel OOM killer terminated {{ $value | printf "%.0f" }} process(es) in the last 10
+            minutes.
 
   # ---------------------------------------------------------------------------
   # Storage | 存储
@@ -129,7 +134,8 @@ groups:
       - alert: HighDiskUsage
         expr: >-
           (1 - node_filesystem_avail_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"}
-                 / node_filesystem_size_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"}) * 100 > 80
+                 / node_filesystem_size_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"})
+            * 100 > 80
         for: 10m
         labels:
           severity: warning
@@ -141,7 +147,8 @@ groups:
       - alert: CriticalDiskUsage
         expr: >-
           (1 - node_filesystem_avail_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"}
-                 / node_filesystem_size_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"}) * 100 > 90
+                 / node_filesystem_size_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"})
+            * 100 > 90
         for: 5m
         labels:
           severity: critical
@@ -158,7 +165,9 @@ groups:
           )
           and
           (
-            predict_linear(node_filesystem_avail_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"}[6h], 24 * 3600) < 0
+            predict_linear(
+              node_filesystem_avail_bytes{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay"}[6h],
+              24 * 3600) < 0
           )
         for: 30m
         labels:
@@ -171,14 +180,17 @@ groups:
             {{ $labels.instance }} is predicted to run out of space within 24 hours.
 
       - alert: FilesystemReadOnly
-        expr: node_filesystem_readonly{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay|iso9660"} == 1
+        expr: >-
+          node_filesystem_readonly{job="node_exporter",fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat|overlay|iso9660"} == 1
         for: 5m
         labels:
           severity: critical
           category: storage
         annotations:
           summary: "Read-only filesystem {{ $labels.mountpoint }} on {{ $labels.instance }}"
-          description: "{{ $labels.mountpoint }} ({{ $labels.device }}) was remounted read-only, usually after I/O errors."
+          description: >-
+            {{ $labels.mountpoint }} ({{ $labels.device }}) was remounted read-only, usually after I/O
+            errors.
 
       - alert: HighDiskIO
         expr: rate(node_disk_io_time_seconds_total{job="node_exporter"}[5m]) > 0.9
@@ -188,7 +200,9 @@ groups:
           category: performance
         annotations:
           summary: "Disk {{ $labels.device }} saturated on {{ $labels.instance }}"
-          description: "Device {{ $labels.device }} has been busy {{ $value | humanizePercentage }} of the time for 10 minutes."
+          description: >-
+            Device {{ $labels.device }} has been busy {{ $value | humanizePercentage }} of the time for 10
+            minutes.
 
   # ---------------------------------------------------------------------------
   # Network and time | 网络与时间

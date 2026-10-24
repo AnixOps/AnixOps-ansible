@@ -45,8 +45,13 @@ Design points that keep the run honest:
 
 ## Variables
 
-All knobs live in the `vars` block of the host play and can be overridden with `-e`
-(extra-vars also reach the report play) or per host/group in the inventory.
+The defaults live in the `security_patch_defaults` dictionary of the playbook; the
+first pre_task resolves the effective `security_patch_<knob>` per host with
+`| default(...)`. Because of that indirection every knob can be set per host or group
+in the inventory (`security_patch_allow_reboot: true` in `group_vars/web_servers`) as
+well as globally with `-e security_patch_<knob>=...` (extra-vars also reach the report
+play). Plain play-level `vars` would shadow inventory values, which is why the knobs
+are not defined that way.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

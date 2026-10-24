@@ -23,19 +23,21 @@ TASK_FILES = [
 ]
 
 EXPECTED_DEFAULTS = {
-    "security_patch_apply_updates": True,
-    "security_patch_allow_reboot": False,
-    "security_patch_reboot_timeout": 600,
-    "security_patch_trivy_version": "",
-    "security_patch_trivy_timeout": "15m",
-    "security_patch_trivy_update_db": True,
-    "security_patch_trivy_db_repository": "",
-    "security_patch_trivy_cache_dir": "/var/cache/trivy",
-    "security_patch_trivy_bin": "/usr/local/bin/trivy",
-    "security_patch_apt_lock_timeout": 300,
-    "security_patch_dnf_security_only": True,
-    "security_patch_severity": "HIGH,CRITICAL",
-    "security_patch_max_findings_in_report": 10,
+    "apply_updates": True,
+    "allow_reboot": False,
+    "reboot_timeout": 600,
+    "trivy_version": "",
+    "trivy_timeout": "15m",
+    "trivy_update_db": True,
+    "trivy_db_repository": "",
+    "trivy_cache_dir": "/var/cache/trivy",
+    "trivy_bin": "/usr/local/bin/trivy",
+    "trivy_installer_path": "/tmp/trivy-install.sh",
+    "apt_lock_timeout": 300,
+    "dnf_security_only": True,
+    "install_dnf_utils": True,
+    "severity": "HIGH,CRITICAL",
+    "max_findings_in_report": 10,
 }
 
 TASK_KEYWORDS = {
@@ -127,7 +129,10 @@ def test_security_patch_host_play_settings():
     assert host_play["ignore_unreachable"] is True
     assert host_play["tags"] == ["security_patch"]
     assert host_play["tasks"][0]["name"], "the stage block must be named"
-    assert [task["name"] for task in host_play["pre_tasks"]] == ["Initialize security patch facts"]
+    assert [task["name"] for task in host_play["pre_tasks"]] == [
+        "Resolve effective security patch settings",
+        "Initialize security patch facts",
+    ]
 
 
 def test_security_patch_localhost_play_settings():
@@ -142,20 +147,28 @@ def test_security_patch_localhost_play_settings():
     assert localhost_play["tags"] == ["security_patch", "report"]
     assert "security_patch_report_path" in localhost_play["vars"]
     assert "security_patch_report_markdown_path" in localhost_play["vars"]
+    # The defaults are shared through a YAML anchor so both plays agree.
+    assert localhost_play["vars"]["security_patch_defaults"] == _load(PLAYBOOK)[0]["vars"]["security_patch_defaults"]
 
 
 def test_security_patch_variable_defaults():
     host_play = _load(PLAYBOOK)[0]
-    host_vars = host_play["vars"]
+    defaults = host_play["vars"]["security_patch_defaults"]
 
     for name, expected in EXPECTED_DEFAULTS.items():
-        assert name in host_vars, f"missing default for {name}"
-        assert host_vars[name] == expected, f"{name} default changed: {host_vars[name]!r} != {expected!r}"
+        assert name in defaults, f"missing default for {name}"
+        assert defaults[name] == expected, f"{name} default changed: {defaults[name]!r} != {expected!r}"
+    assert isinstance(defaults["trivy_skip_dirs"], list) and defaults["trivy_skip_dirs"]
 
-    # The report play mirrors the knobs it records; they must agree with the host play.
-    localhost_vars = _load(PLAYBOOK)[1]["vars"]
-    for name in ("security_patch_apply_updates", "security_patch_severity"):
-        assert localhost_vars[name] == host_vars[name]
+    # Knobs must not be defined as plain play vars (they would shadow inventory
+    # overrides); every default is resolved into security_patch_<knob> by the pre_task.
+    for knob in defaults:
+        assert f"security_patch_{knob}" not in host_play["vars"], f"security_patch_{knob} must stay overridable"
+    resolve = host_play["pre_tasks"][0]["ansible.builtin.set_fact"]
+    assert set(resolve) == {f"security_patch_{knob}" for knob in defaults}
+    for knob in defaults:
+        expression = resolve[f"security_patch_{knob}"]
+        assert f"security_patch_{knob} | default(security_patch_defaults.{knob})" in expression, knob
 
     # Mode and reboot knobs must gate the remediation tasks.
     remediate_text = (TASK_DIR / "remediate.yml").read_text(encoding="utf-8")

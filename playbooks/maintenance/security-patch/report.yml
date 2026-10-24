@@ -7,9 +7,12 @@
 # unreachable_count therefore covers those placeholders plus every host that
 # failure.yml flagged as unreachable.
 
-- name: Determine security patch target group
+- name: Determine security patch target group and report defaults
   ansible.builtin.set_fact:
     security_patch_target_group_name: "{{ security_patch_target_group | default('all') }}"
+    security_patch_report_apply_updates: >-
+      {{ security_patch_apply_updates | default(security_patch_defaults.apply_updates) | bool }}
+    security_patch_report_severity: "{{ security_patch_severity | default(security_patch_defaults.severity) }}"
 
 - name: Determine target hosts for the report
   ansible.builtin.set_fact:
@@ -48,8 +51,8 @@
       update_changed: false
       reboot_required: false
       rebooted: false
-      apply_updates: "{{ security_patch_apply_updates | bool }}"
-      severity: "{{ security_patch_severity }}"
+      apply_updates: "{{ security_patch_report_apply_updates | bool }}"
+      severity: "{{ security_patch_report_severity }}"
       trivy_version: "unknown"
       unreachable: true
       findings: []
@@ -63,8 +66,8 @@
           'schema_version': 1,
           'generated_at': now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ'),
           'target_group': security_patch_target_group_name,
-          'apply_updates': security_patch_apply_updates | bool,
-          'severity': security_patch_severity,
+          'apply_updates': (security_patch_report_hosts | rejectattr('apply_updates') | list | length) == 0,
+          'severity': security_patch_report_severity,
           'total_hosts': security_patch_report_hosts | length,
           'clean_count': security_patch_report_hosts | selectattr('status', 'equalto', 'clean') | list | length,
           'patched_count': security_patch_report_hosts | selectattr('status', 'equalto', 'patched') | list | length,

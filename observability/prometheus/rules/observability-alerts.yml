@@ -16,7 +16,9 @@ groups:
           category: availability
         annotations:
           summary: "Promtail is down on {{ $labels.instance }}"
-          description: "Promtail metrics endpoint (port 9080) has been unreachable for 3 minutes; logs are not shipped to Loki."
+          description: >-
+            Promtail metrics endpoint (port 9080) has been unreachable for 3 minutes; logs are not shipped
+            to Loki.
 
       - alert: LokiDown
         expr: up{job="loki"} == 0
@@ -58,7 +60,9 @@ groups:
           category: configuration
         annotations:
           summary: "Prometheus rule evaluation failures on {{ $labels.instance }}"
-          description: "{{ $value | printf \"%.0f\" }} rule evaluations failed in the last 5 minutes (rule group {{ $labels.rule_group }})."
+          description: >-
+            {{ $value | printf "%.0f" }} rule evaluations failed in the last 5 minutes (rule group {{
+            $labels.rule_group }}).
 
       - alert: PrometheusTSDBCompactionsFailing
         expr: increase(prometheus_tsdb_compactions_failed_total[3h]) > 0
@@ -68,7 +72,9 @@ groups:
           category: storage
         annotations:
           summary: "Prometheus TSDB compactions failing on {{ $labels.instance }}"
-          description: "{{ $value | printf \"%.0f\" }} TSDB compactions failed in the last 3 hours; check disk space under /var/lib/prometheus."
+          description: >-
+            {{ $value | printf "%.0f" }} TSDB compactions failed in the last 3 hours; check disk space under
+            /var/lib/prometheus.
 
       - alert: PrometheusNotificationQueueFull
         expr: >-
@@ -93,12 +99,16 @@ groups:
           category: application
         annotations:
           summary: "Loki route {{ $labels.route }} returning errors"
-          description: "{{ $value | humanizePercentage }} of requests on {{ $labels.route }} failed with 5xx over 5 minutes."
+          description: >-
+            {{ $value | humanizePercentage }} of requests on {{ $labels.route }} failed with 5xx over 5
+            minutes.
 
       - alert: LokiRequestLatency
         expr: >-
           histogram_quantile(0.99,
-            sum by (le, route) (rate(loki_request_duration_seconds_bucket{route!~"(?i).*tail.*|/schedulerpb.SchedulerForQuerier/QuerierLoop"}[5m]))) > 10
+            sum by (le, route) (
+              rate(loki_request_duration_seconds_bucket{route!~"(?i).*tail.*|/schedulerpb.SchedulerForQuerier/QuerierLoop"}[5m])
+            )) > 10
         for: 15m
         labels:
           severity: warning

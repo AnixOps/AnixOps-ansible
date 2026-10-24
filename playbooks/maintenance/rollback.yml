@@ -1,210 +1,501 @@
 ---
 # =============================================================================
-# 回滚 Playbook | Rollback Playbook
+# Configuration rollback playbook | 配置文件回滚
 # =============================================================================
-# 将配置文件回滚到之前的备份版本
-# Rolls back configuration files to a previous backup version
+# Restores configuration files from the backups that `backup: true` leaves next
+# to every templated file. Two naming formats are recognised:
+#   native  <file>.<pid>.<YYYY-MM-DD@HH:MM:SS>~   (ansible-core backup_local)
+#   legacy  <file>.backup.<anything>              (ssh-config-force-apply.yml)
+# For every ORIGINAL file the newest backup (by mtime) is chosen, or the newest
+# whose name contains rollback_timestamp; files without a matching backup are
+# skipped with a notice (never restored from a different version).
 #
-# 使用方法 | Usage:
-#   # 回滚到最近的备份 | Rollback to most recent backup
-#   ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=nginx"
+# Safety: the current file is first saved as <file>.pre-rollback.<epoch>, the
+# restored configuration is validated (nginx -t, sshd -t, promtool ...) and
+# reverted from that snapshot when validation fails. Services are restarted
+# only when a file actually changed, then the role's health URL is polled.
 #
-#   # 回滚到特定时间戳的备份 | Rollback to specific timestamp
-#   ansible-playbook playbooks/maintenance/rollback.yml \
-#     -e "rollback_role=prometheus rollback_timestamp=20260426_120000"
+# Usage | 用法 (always narrow the target with --limit; see rollback_max_hosts):
+#   ansible-playbook playbooks/maintenance/rollback.yml -e rollback_role=nginx --limit jp-1
+#   ansible-playbook playbooks/maintenance/rollback.yml -e rollback_role=prometheus \
+#     -e rollback_timestamp=2026-04-26@12:0 --limit uk-1
+#   ansible-playbook playbooks/maintenance/rollback.yml -e rollback_role=common \
+#     -e rollback_dry_run=true --limit web_servers -e rollback_confirm_all=true
 #
-#   # 列出可用备份（不执行回滚）| List available backups (dry run)
-#   ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=nginx rollback_dry_run=yes"
-#
-# 支持的角色 | Supported roles:
-#   nginx, common (ssh/chrony/fail2ban), prometheus, loki,
-#   grafana, node_exporter, promtail
+# Variables | 变量:
+#   rollback_role           (required) nginx, common, prometheus, loki, grafana, node_exporter,
+#                           promtail, firewall, acme_ssl, postgresql, v2board, v2bx
+#   rollback_timestamp      substring that the backup name must contain (pid, date or epoch)
+#   rollback_dry_run=true   print the per-file plan and stop
+#   rollback_max_hosts      hosts allowed in one run (default 1); rollback_confirm_all=true overrides
+#   rollback_patterns_extra {role: [original file globs]} merged into the built-in table; the two
+#                           backup suffixes are appended automatically
+#   rollback_services_extra {role: [services]} added to the restart list
+#   rollback_load_role_defaults  read <role>_service_name/_health_url/_port/_backup_files from
+#                           roles/<role>/defaults (default true; set false for roles without a directory)
+#   postgresql_version      PostgreSQL major version used in the config path (default 15)
 # =============================================================================
 
-- name: Configuration Rollback | 配置回滚
-  hosts: all
+- name: Configuration rollback | 配置回滚
+  hosts: "{{ rollback_hosts | default('all') }}"
   serial: 1
   max_fail_percentage: 0
-  become: yes
-  gather_facts: yes
+  any_errors_fatal: false
+  become: true
+  gather_facts: true
+  tags: [rollback]
+
+  vars:
+    rollback_epoch: "{{ ansible_date_time.epoch }}"
+    rollback_pg_version: "{{ postgresql_version | default('15') }}"
+    # Backup suffix formats (regex, anchored at the end of the basename).
+    rollback_backup_suffix_regex: '(\.\d+\.\d{4}-\d{2}-\d{2}@\d{2}:\d{2}:\d{2}~|\.backup\.[^/]+)$'
+    # ORIGINAL files per role (globs allowed in the basename, not in the directory).
+    rollback_patterns_default:
+      nginx:
+        - /etc/nginx/nginx.conf
+        - /etc/nginx/sites-available/default
+        - /etc/nginx/sites-available/*.conf
+        - /etc/nginx/conf.d/*.conf
+      common:
+        - /etc/ssh/sshd_config
+        - /etc/chrony/chrony.conf
+        - /etc/chrony.conf
+        - /etc/fail2ban/jail.local
+      prometheus:
+        - /etc/prometheus/prometheus.yml
+        - /etc/systemd/system/prometheus.service
+      loki:
+        - /etc/loki/loki-config.yml
+        - /etc/systemd/system/loki.service
+      grafana:
+        - /etc/grafana/grafana.ini
+        - /etc/grafana/provisioning/datasources/*.yml
+      node_exporter:
+        - /etc/systemd/system/node_exporter.service
+      promtail:
+        - /etc/promtail/config.yml
+        - /etc/systemd/system/promtail.service
+      firewall:
+        - /etc/ufw/ufw.conf
+        - /etc/default/ufw
+        - /etc/ufw/user.rules
+        - /etc/ufw/user6.rules
+      acme_ssl:
+        - /etc/nginx/ssl/*.crt
+        - /etc/nginx/ssl/*.key
+        - /root/.acme.sh/account.conf
+      postgresql:
+        - "/etc/postgresql/{{ rollback_pg_version }}/main/postgresql.conf"
+        - "/etc/postgresql/{{ rollback_pg_version }}/main/pg_hba.conf"
+      v2board:
+        - /etc/v2board/config.yaml
+        - /etc/systemd/system/v2board.service
+      v2bx:
+        - /etc/V2bX/config.json
+        - /etc/systemd/system/V2bX.service
+    # Static service table (used when <role>_service_name is not available).
+    rollback_services_default:
+      nginx: [nginx]
+      common:
+        - "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
+        - "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'chrony' }}"
+        - fail2ban
+      prometheus: [prometheus]
+      loki: [loki]
+      grafana: [grafana-server]
+      node_exporter: [node_exporter]
+      promtail: [promtail]
+      firewall: [ufw]
+      acme_ssl: [nginx]
+      postgresql: [postgresql]
+      v2board: [v2board]
+      v2bx: [V2bX]
+    # Files under these prefixes restart only their own service.
+    rollback_file_services:
+      /etc/ssh/:
+        - "{{ lookup('vars', 'common_service_name', default=('sshd' if ansible_os_family == 'RedHat' else 'ssh')) }}"
+      /etc/chrony:
+        - "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'chrony' }}"
+      /etc/fail2ban/: [fail2ban]
+    rollback_health_urls_default:
+      nginx: http://localhost
+      prometheus: http://localhost:9090/-/healthy
+      loki: http://localhost:3100/ready
+      grafana: http://localhost:3000/api/health
+      node_exporter: http://localhost:9100/metrics
+      promtail: http://localhost:9080/ready
+    rollback_ports_default:
+      nginx: 80
+      prometheus: 9090
+      loki: 3100
+      grafana: 3000
+      node_exporter: 9100
+      promtail: 9080
+      postgresql: 5432
+      v2board: 8080
+    rollback_health_status_codes: [200, 204]
+    rollback_health_retries: 12
+    rollback_health_delay: 5
+    # Validators: run after restore; a failure reverts the restore. Missing binaries are skipped.
+    rollback_validators:
+      nginx:
+        - {bin: nginx, argv: [nginx, -t]}
+      acme_ssl:
+        - {bin: nginx, argv: [nginx, -t]}
+      common:
+        - {bin: sshd, argv: [sshd, -t]}
+        - {bin: fail2ban-client, argv: [fail2ban-client, -t]}
+      prometheus:
+        - {bin: promtool, argv: [promtool, check, config, /etc/prometheus/prometheus.yml]}
+    rollback_validator_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+  pre_tasks:
+    - name: Validate rollback_role | 校验 rollback_role
+      ansible.builtin.fail:
+        msg: >-
+          rollback_role is required. Usage: ansible-playbook playbooks/maintenance/rollback.yml
+          -e rollback_role=<role> [-e rollback_timestamp=<substring>] [-e rollback_dry_run=true]
+          --limit <host>. Supported roles: {{ rollback_patterns_default.keys() | join(', ') }}
+          (others via rollback_patterns_extra).
+      when: rollback_role is not defined or rollback_role | length == 0
+
+    - name: Refuse fleet-wide rollback without confirmation | 拒绝未经确认的批量回滚
+      ansible.builtin.fail:
+        msg: >-
+          This run targets {{ ansible_play_hosts_all | length }} hosts
+          ({{ ansible_play_hosts_all | join(', ') }}) but rollback_max_hosts is
+          {{ rollback_max_hosts | default(1) }}. Narrow the target with --limit <host> or pass
+          -e rollback_confirm_all=true to confirm a multi-host rollback.
+      run_once: true
+      when:
+        - ansible_play_hosts_all | length > rollback_max_hosts | default(1) | int
+        - not rollback_confirm_all | default(false) | bool
+
+    - name: Fail when the role has no backup patterns | 角色没有备份模式时失败
+      ansible.builtin.fail:
+        msg: >-
+          No backup patterns known for role '{{ rollback_role }}'. Supported:
+          {{ rollback_patterns_default.keys() | join(', ') }}; or pass
+          -e 'rollback_patterns_extra={"{{ rollback_role }}": ["/etc/x/y.conf"]}'.
+      when:
+        - rollback_role not in rollback_patterns_default
+        - rollback_patterns_extra[rollback_role] is not defined
 
   tasks:
     # -------------------------------------------------------------------------
-    # 前置验证 | Pre-flight Validation
+    # Role contract (service name, health URL, port, backup files)
     # -------------------------------------------------------------------------
-    - name: Validate rollback_role is set | 验证 rollback_role 已设置
-      ansible.builtin.fail:
-        msg: >
-          必须指定 rollback_role 参数！
-          Must specify rollback_role parameter!
+    - name: Load the role defaults without running the role | 载入角色默认变量（不执行任务）
+      ansible.builtin.include_role:
+        name: "{{ rollback_role }}"
+        public: true
+        apply:
+          when: false
+      when:
+        - rollback_load_role_defaults | default(true) | bool
+        - rollback_role in rollback_patterns_default
 
-          用法 | Usage:
-            ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=<role_name>"
-
-          支持的角色 | Supported roles:
-            nginx, common, prometheus, loki,
-            grafana, node_exporter, promtail
-      when: rollback_role is not defined or rollback_role == ''
-
-    - name: Define backup file patterns for each role | 定义各角色的备份文件模式
+    - name: Resolve patterns, services and health settings | 解析模式、服务与健康检查设置
       ansible.builtin.set_fact:
-        rollback_patterns:
-          nginx:
-            - "/etc/nginx/nginx.conf.backup.*"
-            - "/etc/nginx/sites-available/default.backup.*"
-            - "/etc/nginx/sites-available/*.conf.backup.*"
-          common:
-            - "/etc/ssh/sshd_config.backup.*"
-            - "/etc/chrony/chrony.conf.backup.*"
-            - "/etc/chrony.conf.backup.*"
-            - "/etc/fail2ban/jail.local.backup.*"
-          prometheus:
-            - "/etc/prometheus/prometheus.yml.backup.*"
-            - "/etc/systemd/system/prometheus.service.backup.*"
-          loki:
-            - "/etc/loki/loki-config.yml.backup.*"
-            - "/etc/systemd/system/loki.service.backup.*"
-          grafana:
-            - "/etc/grafana/grafana.ini.backup.*"
-          node_exporter:
-            - "/etc/systemd/system/node_exporter.service.backup.*"
-          promtail:
-            - "/etc/promtail/config.yml.backup.*"
-            - "/etc/systemd/system/promtail.service.backup.*"
+        rollback_patterns_effective: >-
+          {{ (rollback_patterns_default[rollback_role] | default([])
+              + (lookup('vars', rollback_role ~ '_backup_files', default=[]) | select('match', '^/') | list)
+              + (rollback_patterns_extra[rollback_role] | default([]))) | unique }}
+        rollback_services_effective: >-
+          {{ (([rollback_contract_service] if rollback_contract_service | length > 0
+               else rollback_services_default[rollback_role] | default([]))
+              + (rollback_services_extra[rollback_role] | default([]))) | unique }}
+        rollback_port: "{{ lookup('vars', rollback_role ~ '_port', default=rollback_ports_default[rollback_role] | default(0)) }}"
+        rollback_health_url_raw: >-
+          {{ lookup('vars', rollback_role ~ '_health_url', default=rollback_health_urls_default[rollback_role] | default('')) }}
+      vars:
+        rollback_contract_service: "{{ lookup('vars', rollback_role ~ '_service_name', default='') }}"
 
-    - name: Define service names for each role | 定义各角色的服务名称
+    - name: Normalise the health URL | 规范化健康检查地址
       ansible.builtin.set_fact:
-        rollback_services:
-          nginx: nginx
-          common: "ssh|chrony|fail2ban"
-          prometheus: prometheus
-          loki: loki
-          grafana: grafana-server
-          node_exporter: node_exporter
-          promtail: promtail
+        rollback_health_url: >-
+          {{ rollback_health_url_raw
+             if (rollback_health_url_raw | length == 0 or rollback_health_url_raw is match('^https?://'))
+             else 'http://localhost:' ~ rollback_port ~ rollback_health_url_raw }}
 
     # -------------------------------------------------------------------------
-    # 查找可用备份 | Find Available Backups
+    # Find backups and group them by original file
     # -------------------------------------------------------------------------
-    - name: Find backup files for the specified role | 查找指定角色的备份文件
+    - name: Check which search directories exist | 检查搜索目录是否存在
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        get_checksum: false
+      loop: "{{ rollback_patterns_effective | map('dirname') | unique }}"
+      register: rollback_dir_stat
+
+    - name: Find backup files (native and legacy naming) | 查找备份文件
       ansible.builtin.find:
         paths: "{{ item | dirname }}"
-        patterns: "{{ item | basename | replace('.*', '.*') }}"
-        use_regex: yes
-      loop: "{{ rollback_patterns[rollback_role] | default([]) }}"
-      register: backup_files_raw
-      when: rollback_role is defined
+        patterns:
+          - "{{ item | basename }}.*~"
+          - "{{ item | basename }}.backup.*"
+        file_type: file
+        recurse: false
+      loop: "{{ rollback_patterns_effective }}"
+      when: (item | dirname) in (rollback_dir_stat.results | selectattr('stat.exists') | map(attribute='item') | list)
+      register: rollback_found
 
-    - name: Flatten backup files list | 展平备份文件列表
+    - name: Index backup candidates by original file | 按原始文件索引备份
       ansible.builtin.set_fact:
-        backup_files: "{{ backup_files_raw.results | default([]) | map(attribute='files') | flatten }}"
-      when: rollback_role is defined
+        rollback_candidates: >-
+          {{ rollback_candidates | default([]) + [{
+               'path': item.path,
+               'mtime': item.mtime,
+               'ctime': item.ctime,
+               'original': item.path | regex_replace(rollback_backup_suffix_regex, '')
+             }] }}
+      loop: "{{ rollback_found.results | map(attribute='files', default=[]) | flatten | sort(attribute='path') }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when: item.path | basename is search(rollback_backup_suffix_regex)
 
-    - name: Fail if no backups found | 如果未找到备份则失败
+    - name: Fail when no backups exist | 未找到备份时失败
       ansible.builtin.fail:
-        msg: >
-          未找到 {{ rollback_role }} 的备份文件！
-          No backup files found for {{ rollback_role }}!
+        msg: >-
+          No backup files found for {{ rollback_role }} on {{ inventory_hostname }}. Looked for
+          <file>.<pid>.<YYYY-MM-DD@HH:MM:SS>~ and <file>.backup.* next to:
+          {{ rollback_patterns_effective | join(', ') }}. Backups only exist for files written
+          with `backup: true`.
+      when: rollback_candidates | default([]) | length == 0
 
-          备份文件应该以 .backup. 或 .bak. 结尾。
-          Backup files should end with .backup. or .bak.
+    - name: Choose the backup to restore for every original file | 为每个原始文件选择备份
+      ansible.builtin.set_fact:
+        rollback_plan: >-
+          {{ rollback_plan | default([]) + [{
+               'original': item,
+               'backup': rollback_file_chosen.path | default(''),
+               'backup_mtime': rollback_file_chosen.mtime | default(0),
+               'candidates': rollback_file_candidates | length,
+               'action': 'restore' if rollback_file_chosen else 'skip',
+               'reason': ('newest of ' ~ (rollback_file_candidates | length) ~ ' backup(s)'
+                          if rollback_timestamp | default('') | length == 0
+                          else ('newest backup containing ' ~ rollback_timestamp | default('')))
+                         if rollback_file_chosen
+                         else 'no backup contains ' ~ rollback_timestamp | default('')
+             }] }}
+      vars:
+        rollback_file_candidates: "{{ rollback_candidates | selectattr('original', 'eq', item) | list }}"
+        rollback_file_matching: >-
+          {{ rollback_file_candidates if rollback_timestamp | default('') | length == 0
+             else rollback_file_candidates | selectattr('path', 'search', rollback_timestamp | regex_escape) | list }}
+        rollback_file_chosen: >-
+          {{ (rollback_file_matching | sort(attribute='ctime') | sort(attribute='mtime') | last)
+             if rollback_file_matching | length > 0 else none }}
+      loop: "{{ rollback_candidates | map(attribute='original') | unique | sort }}"
 
-          提示：确保 playbook 中的 template 任务设置了 backup: yes。
-          Hint: Ensure template tasks in playbooks have backup: yes set.
-      when: backup_files | default([]) | length == 0
-
-    # -------------------------------------------------------------------------
-    # 列出可用备份 | List Available Backups
-    # -------------------------------------------------------------------------
-    - name: List available backups | 列出可用备份
+    - name: Show rollback plan | 显示回滚计划
       ansible.builtin.debug:
-        msg: |
-          ═══════════════════════════════════════════════════════════
-          可用备份文件 | Available Backup Files
-          角色 | Role: {{ rollback_role }}
-          主机 | Host: {{ inventory_hostname }}
-          ═══════════════════════════════════════════════════════════
-          {% for f in backup_files | sort(reverse=true) %}
-          {{ f.path }}
+        msg: >-
+          {{ rollback_role }} on {{ inventory_hostname }}
+          {{ '(dry run)' if rollback_dry_run | default(false) | bool else '' }}
+          {{ '| filter: ' ~ rollback_timestamp if rollback_timestamp | default('') | length > 0 else '' }}
+          {% for entry in rollback_plan %}
+          | {{ entry.action | upper }} {{ entry.original }}
+          {{ '<- ' ~ entry.backup if entry.action == 'restore' else '' }} ({{ entry.reason }})
           {% endfor %}
-          ═══════════════════════════════════════════════════════════
+          | services: {{ rollback_services_effective | join(', ') | default('none', true) }}
+          | health: {{ rollback_health_url | default('none', true) }}
 
-    # -------------------------------------------------------------------------
-    # 干运行模式（仅列出，不执行回滚）| Dry Run (list only, no rollback)
-    # -------------------------------------------------------------------------
-    - name: Exit in dry run mode | 干运行模式退出
-      ansible.builtin.meta: end_play
+    - name: Fail when a timestamp filter matches nothing | 时间戳过滤无匹配时失败
+      ansible.builtin.fail:
+        msg: >-
+          No backup of {{ rollback_role }} on {{ inventory_hostname }} contains
+          '{{ rollback_timestamp }}'. Run with rollback_dry_run=true and no timestamp to list them.
+      when:
+        - rollback_timestamp | default('') | length > 0
+        - rollback_plan | selectattr('action', 'eq', 'restore') | list | length == 0
+
+    - name: Stop here in dry-run mode | 干运行模式到此为止
+      ansible.builtin.meta: end_host
       when: rollback_dry_run | default(false) | bool
 
     # -------------------------------------------------------------------------
-    # 执行回滚 | Perform Rollback
+    # Restore (reversible) + validate
     # -------------------------------------------------------------------------
-    - name: Determine the most recent backup file | 确定最新的备份文件
+    - name: Check which original files currently exist | 检查原始文件是否存在
+      ansible.builtin.stat:
+        path: "{{ item.original }}"
+        get_checksum: false
+      loop: "{{ rollback_plan | selectattr('action', 'eq', 'restore') | list }}"
+      loop_control:
+        label: "{{ item.original }}"
+      register: rollback_original_stat
+
+    - name: Record restore set | 记录恢复集合
       ansible.builtin.set_fact:
-        latest_backup: "{{ (backup_files | sort(attribute='mtime', reverse=true) | first).path }}"
-      when: rollback_timestamp is not defined or rollback_timestamp == ''
+        rollback_restore_entries: "{{ rollback_plan | selectattr('action', 'eq', 'restore') | list }}"
+        rollback_existing_originals: >-
+          {{ rollback_original_stat.results | selectattr('stat.exists') | map(attribute='item.original') | list }}
+        rollback_restored_files: []
 
-    - name: Find backup matching timestamp | 查找匹配时间戳的备份
+    - name: Restore files and validate the configuration | 恢复文件并校验配置
+      block:
+        - name: Snapshot current files as <file>.pre-rollback.<epoch> | 保存当前文件快照
+          ansible.builtin.copy:
+            src: "{{ item.original }}"
+            dest: "{{ item.original }}.pre-rollback.{{ rollback_epoch }}"
+            remote_src: true
+            mode: preserve
+          loop: "{{ rollback_restore_entries }}"
+          loop_control:
+            label: "{{ item.original }}"
+          when: item.original in rollback_existing_originals
+
+        - name: Restore backups to their original paths | 将备份恢复到原始路径
+          ansible.builtin.copy:
+            src: "{{ item.backup }}"
+            dest: "{{ item.original }}"
+            remote_src: true
+            mode: preserve
+          loop: "{{ rollback_restore_entries }}"
+          loop_control:
+            label: "{{ item.original }}"
+          register: rollback_copy_results
+
+        - name: Record which files changed | 记录发生变化的文件
+          ansible.builtin.set_fact:
+            rollback_restored_files: >-
+              {{ rollback_copy_results.results | selectattr('changed') | map(attribute='item.original') | list }}
+
+        - name: Locate validator binaries | 查找校验工具
+          ansible.builtin.command:
+            argv:
+              - which
+              - "{{ item.bin }}"
+          environment:
+            PATH: "{{ rollback_validator_path }}"
+          loop: "{{ rollback_validators[rollback_role] | default([]) }}"
+          loop_control:
+            label: "{{ item.bin }}"
+          register: rollback_validator_which
+          changed_when: false
+          failed_when: false
+
+        - name: Validate the restored configuration | 校验恢复后的配置
+          ansible.builtin.command:
+            argv: "{{ item.item.argv }}"
+          environment:
+            PATH: "{{ rollback_validator_path }}"
+          loop: "{{ rollback_validator_which.results }}"
+          loop_control:
+            label: "{{ item.item.argv | join(' ') }}"
+          when: item.rc | default(1) == 0
+          changed_when: false
+      rescue:
+        - name: Put the pre-rollback snapshots back | 放回回滚前快照
+          ansible.builtin.copy:
+            src: "{{ item.original }}.pre-rollback.{{ rollback_epoch }}"
+            dest: "{{ item.original }}"
+            remote_src: true
+            mode: preserve
+          loop: "{{ rollback_restore_entries }}"
+          loop_control:
+            label: "{{ item.original }}"
+          when: item.original in rollback_existing_originals
+
+        - name: Remove restored files that did not exist before | 删除此前不存在的恢复文件
+          ansible.builtin.file:
+            path: "{{ item.original }}"
+            state: absent
+          loop: "{{ rollback_restore_entries }}"
+          loop_control:
+            label: "{{ item.original }}"
+          when: item.original not in rollback_existing_originals
+
+        - name: Fail after reverting | 还原后报错退出
+          ansible.builtin.fail:
+            msg: >-
+              Rollback of {{ rollback_role }} on {{ inventory_hostname }} failed while restoring or
+              validating the configuration; every file was put back from its
+              .pre-rollback.{{ rollback_epoch }} snapshot and no service was restarted.
+
+    # -------------------------------------------------------------------------
+    # Restart affected services and verify health
+    # -------------------------------------------------------------------------
+    - name: Map restored files to their services | 将恢复的文件映射到服务
       ansible.builtin.set_fact:
-        timestamped_backup: "{{ item }}"
-      loop: "{{ backup_files | map(attribute='path') | list | sort(reverse=true) }}"
-      when: rollback_timestamp is defined and rollback_timestamp != ''
-      # Takes the last match (most recent for the given timestamp prefix)
+        rollback_restart_services: "{{ rollback_restart_services | default([]) + item.value }}"
+      loop: "{{ rollback_file_services | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: rollback_restored_files | select('match', '^' ~ (item.key | regex_escape)) | list | length > 0
 
-    - name: Fail if timestamped backup not found | 如果未找到指定时间戳的备份则失败
-      ansible.builtin.fail:
-        msg: >
-          未找到包含时间戳 "{{ rollback_timestamp }}" 的备份文件！
-          No backup file found containing timestamp "{{ rollback_timestamp }}"!
-      when: >
-        rollback_timestamp is defined and rollback_timestamp != '' and
-        (timestamped_backup is not defined)
-
-    - name: Set target backup file | 设置目标备份文件
+    - name: Add the role services for files without a specific mapping | 为未单独映射的文件添加角色服务
       ansible.builtin.set_fact:
-        target_backup: "{{ timestamped_backup | default(latest_backup) }}"
+        rollback_restart_services: "{{ rollback_restart_services | default([]) + rollback_services_effective }}"
+      vars:
+        rollback_file_services_regex: "^({{ rollback_file_services.keys() | map('regex_escape') | join('|') }})"
+      when: rollback_restored_files | reject('match', rollback_file_services_regex) | list | length > 0
 
-    - name: Confirm backup target | 确认回滚目标
-      ansible.builtin.debug:
-        msg: "Will rollback {{ target_backup }} -> {{ target_backup | regex_replace('\\.backup\\.[^/]+$', '') }}"
+    - name: Reload systemd when unit files were restored | 恢复了 unit 文件时重载 systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: rollback_restored_files | select('match', '^/etc/systemd/') | list | length > 0
 
-    - name: Copy backup file to original location | 将备份文件复制到原始位置
-      ansible.builtin.copy:
-        src: "{{ target_backup }}"
-        dest: "{{ target_backup | regex_replace('\\.backup\\.[^/]+$', '') }}"
-        remote_src: yes
-        mode: 'preserve'
-      register: rollback_result
-
-    - name: Restart service after rollback | 回滚后重启服务
-      ansible.builtin.service:
+    - name: Restart affected services | 重启受影响的服务
+      ansible.builtin.systemd_service:
         name: "{{ item }}"
         state: restarted
-      loop: "{{ rollback_services[rollback_role] | default('') | split('|') }}"
+      loop: "{{ rollback_restart_services | default([]) | unique }}"
+
+    - name: Wait for the health URL | 等待健康检查通过
+      ansible.builtin.uri:
+        url: "{{ rollback_health_url }}"
+        method: GET
+        status_code: "{{ rollback_health_status_codes }}"
+        timeout: 10
+        validate_certs: false
+      register: rollback_health
+      retries: "{{ rollback_health_retries | int }}"
+      delay: "{{ rollback_health_delay | int }}"
+      until: rollback_health.status in rollback_health_status_codes
       when:
-        - rollback_result.changed
-        - item != ''
+        - rollback_restored_files | length > 0
+        - rollback_health_url | length > 0
 
-    # -------------------------------------------------------------------------
-    # 验证回滚 | Verify Rollback
-    # -------------------------------------------------------------------------
-    - name: Verify service is running after rollback | 验证回滚后服务正在运行
-      ansible.builtin.service:
-        name: "{{ item }}"
+    - name: Wait for the service port | 等待服务端口
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ rollback_port | int }}"
+        timeout: "{{ rollback_health_retries | int * rollback_health_delay | int }}"
         state: started
-      loop: "{{ rollback_services[rollback_role] | default('') | split('|') }}"
-      when: item != ''
+      when:
+        - rollback_restored_files | length > 0
+        - rollback_health_url | length == 0
+        - rollback_port | int > 0
 
-    - name: Display rollback summary | 显示回滚摘要
+    - name: Probe restarted services | 探测已重启的服务
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+      loop: "{{ rollback_restart_services | default([]) | unique }}"
+      register: rollback_service_probe
+
+    - name: Assert restarted services are active | 断言已重启的服务处于 active
+      ansible.builtin.assert:
+        that:
+          - rollback_service_probe.results | default([]) | map(attribute='status.ActiveState') | reject('eq', 'active') | list | length == 0
+        fail_msg: >-
+          Not all services are active after the rollback on {{ inventory_hostname }}:
+          {{ rollback_service_probe.results | default([]) | map(attribute='item') | zip(
+             rollback_service_probe.results | default([]) | map(attribute='status.ActiveState'))
+             | map('join', '=') | join(', ') }}
+        quiet: true
+      when: rollback_restart_services | default([]) | length > 0
+
+    - name: Show rollback summary | 显示回滚摘要
       ansible.builtin.debug:
-        msg: |
-          ═══════════════════════════════════════════════════════════
-          {% if rollback_result.changed %}
-          ✓ 配置已回滚 | Configuration rolled back
-          从备份 | From backup: {{ target_backup }}
-          {% else %}
-          ℹ 配置未改变 | Configuration unchanged
-          备份已是当前版本 | Backup is already the current version
-          {% endif %}
-          主机 | Host: {{ inventory_hostname }}
-          ═══════════════════════════════════════════════════════════
+        msg: >-
+          {{ rollback_role }} on {{ inventory_hostname }}:
+          {{ rollback_restored_files | length }} file(s) changed
+          ({{ rollback_restored_files | join(', ') | default('none', true) }}),
+          {{ rollback_restore_entries | length - rollback_restored_files | length }} already identical,
+          {{ rollback_plan | selectattr('action', 'eq', 'skip') | list | length }} skipped;
+          services restarted: {{ rollback_restart_services | default([]) | unique | join(', ') | default('none', true) }};
+          health: {{ rollback_health.status | default('n/a') }};
+          pre-rollback snapshots: <file>.pre-rollback.{{ rollback_epoch }}

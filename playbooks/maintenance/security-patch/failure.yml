@@ -34,10 +34,12 @@
         }
       }}
   vars:
+    security_patch_failure_stderr: "{{ ansible_failed_result.stderr | default('') | trim }}"
     security_patch_failure_reason: >-
       {{
-        ansible_failed_result.msg
-        | default(ansible_failed_result.stderr | default('security scan failed'))
+        (ansible_failed_result.msg | default('security scan failed'))
+        ~ ((': ' ~ (security_patch_failure_stderr | regex_replace('\n', ' | ')))
+           if security_patch_failure_stderr | length > 0 else '')
       }}
 
 - name: Show scan failure summary
