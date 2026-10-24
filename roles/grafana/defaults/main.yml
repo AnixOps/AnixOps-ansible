@@ -69,6 +69,9 @@ grafana_reset_admin_password: false
 # -----------------------------------------------------------------------------
 # Provisioning | 自动配置
 # -----------------------------------------------------------------------------
+# Owner of the data/dashboard directories (created by the package).
+grafana_user: grafana
+grafana_group: grafana
 grafana_config_dir: /etc/grafana
 grafana_config_file: "{{ grafana_config_dir }}/grafana.ini"
 grafana_provisioning_dir: "{{ grafana_config_dir }}/provisioning"

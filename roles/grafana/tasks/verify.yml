@@ -38,7 +38,7 @@
         src: "{{ grafana_config_result.backup_file }}"
         dest: "{{ grafana_config_file }}"
         owner: root
-        group: grafana
+        group: "{{ grafana_group }}"
         mode: "0640"
         remote_src: true
       no_log: true

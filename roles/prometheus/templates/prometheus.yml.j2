@@ -2,8 +2,8 @@
 # Prometheus server configuration | Prometheus 服务端配置
 # Managed by roles/prometheus; edit the inventory / role variables, not this file.
 ---
-{#- Relabelling shared by every job: keep the scraped address in `target_ip`
-    and expose the friendly alias as `instance` (applies to `up` as well). -#}
+{# Relabelling shared by every job: keep the scraped address in `target_ip`
+   and expose the friendly alias as `instance` (applies to `up` as well). #}
 {% macro alias_relabel() %}
     relabel_configs:
       - source_labels: [__address__]
@@ -40,6 +40,7 @@ scrape_configs:
         labels:
           alias: {{ prometheus_self_alias | to_json(ensure_ascii=False) }}
 {{ alias_relabel() }}
+
 {# ---------------------------------------------------------------------------
    node_exporter: one target per inventory host.
    - skipped: hosts whose ansible_host renders empty (e.g. unset env var), hosts

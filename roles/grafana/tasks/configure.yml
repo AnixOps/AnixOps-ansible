@@ -8,7 +8,7 @@
     src: grafana.ini.j2
     dest: "{{ grafana_config_file }}"
     owner: root
-    group: grafana
+    group: "{{ grafana_group }}"
     mode: "0640"
     backup: true
   register: grafana_config_result
@@ -20,12 +20,12 @@
     path: "{{ item.path }}"
     state: directory
     owner: "{{ item.owner }}"
-    group: grafana
+    group: "{{ grafana_group }}"
     mode: "0755"
   loop:
     - { path: "{{ grafana_provisioning_dir }}/datasources", owner: root }
     - { path: "{{ grafana_provisioning_dir }}/dashboards", owner: root }
-    - { path: "{{ grafana_dashboards_dir }}", owner: grafana }
+    - { path: "{{ grafana_dashboards_dir }}", owner: "{{ grafana_user }}" }
   loop_control:
     label: "{{ item.path }}"
 
@@ -34,7 +34,7 @@
     src: datasource-prometheus.yml.j2
     dest: "{{ grafana_provisioning_dir }}/datasources/prometheus.yml"
     owner: root
-    group: grafana
+    group: "{{ grafana_group }}"
     mode: "0640"
     backup: true
   notify: Restart grafana
@@ -44,7 +44,7 @@
     src: datasource-loki.yml.j2
     dest: "{{ grafana_provisioning_dir }}/datasources/loki.yml"
     owner: root
-    group: grafana
+    group: "{{ grafana_group }}"
     mode: "0640"
     backup: true
   notify: Restart grafana
@@ -54,7 +54,7 @@
     src: dashboards-provider.yml.j2
     dest: "{{ grafana_provisioning_dir }}/dashboards/anixops.yml"
     owner: root
-    group: grafana
+    group: "{{ grafana_group }}"
     mode: "0640"
     backup: true
   notify: Restart grafana
@@ -71,7 +71,7 @@
     src: "{{ item }}"
     dest: "{{ grafana_dashboards_dir }}/{{ item | basename }}"
     owner: root
-    group: grafana
+    group: "{{ grafana_group }}"
     mode: "0644"
   loop: "{{ grafana_dashboard_files }}"
   loop_control:

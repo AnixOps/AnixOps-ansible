@@ -70,8 +70,10 @@ PIPE_RE = re.compile(r"(?<!\|)\|(?!\|)")
 PIPEFAIL_RE = re.compile(r"\bpipefail\b")
 COMMAND_SHELL_SYNTAX_RE = re.compile(r"\s(?:\||\|\||&&|;|>|>>|2>|<)\s|\s2>\S|\$\(|`")
 ERROR_HIDING_RE = re.compile(r"\|\|\s*(?:true\b|:(?!\S)|exit\s+0\b)|;\s*true\s*$", re.M)
+# An identifier that IS a secret ends with one of these suffixes (optionally _hash);
+# *_token_file / *_password_authentication style names are paths or switches, not secrets.
 SECRET_NAME_RE = re.compile(
-    r"\b[A-Za-z0-9_]*(?:password|passwd|token|secret|api_key|private_key|access_key)[A-Za-z0-9_]*\b", re.I
+    r"\b[A-Za-z0-9_]*(?:password|passwd|token|secret|api_key|private_key|access_key)(?:_hash)?\b", re.I
 )
 SECRET_REF_RE = re.compile(r"\{\{[^}]*?" + SECRET_NAME_RE.pattern + r"[^}]*?\}\}", re.I)
 BASH_EXECUTABLES = {"/bin/bash", "/usr/bin/bash", "bash"}
@@ -442,6 +444,10 @@ def test_network_tasks_retry(path: Path) -> None:
         args = module_args(task, action)
         if str(args.get("state", "")) in ("absent", "removed"):
             continue  # removal is local
+        if short == "deb822_repository" and not str(args.get("signed_by", "")).startswith(("http://", "https://")):
+            continue  # only fetches when the signing key is a URL
+        if short == "apt_key" and not (args.get("url") or args.get("keyserver")):
+            continue  # key material supplied inline
         if short == "apt" and not any(k in args for k in ("name", "pkg", "package", "deb")):
             if args.get("update_cache") and "update_cache_retries" in args:
                 continue  # cache refresh with module-native retries
@@ -496,6 +502,11 @@ def test_etc_config_writes_are_backed_up_with_explicit_permissions(path: Path) -
         dest = _resolve_path(args.get("dest"), role)
         if not dest or not dest.startswith("/etc/") or dest.lower().endswith(CONTENT_SUFFIXES):
             continue
+        if dest.endswith("/"):
+            continue  # directory sync (e.g. console assets), not a config file
+        restoring = bool(args.get("remote_src")) and (".rescue[" in location or "backup" in str(args.get("src", "")).lower())
+        if restoring:
+            continue  # rescue path putting a .backup_file back: not a config roll-out
         pointer = where(path, task, location)
         missing = [key for key in ("backup", "owner", "group", "mode") if key not in args]
         if missing:
