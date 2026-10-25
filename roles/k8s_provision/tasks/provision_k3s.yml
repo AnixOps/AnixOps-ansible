@@ -104,6 +104,15 @@
         mode: "0755"
       become: true
 
+    # The rescue removes a file created by this run (copy reports no backup_file for a new file).
+    # rescue 会删除本次新建的文件（新文件没有 backup_file）。
+    - name: Check whether k3s config.yaml already exists
+      ansible.builtin.stat:
+        path: "{{ k8s_provision_k3s_config_path }}"
+        get_checksum: false
+      become: true
+      register: k8s_provision_k3s_config_before
+
     - name: Write k3s config.yaml
       ansible.builtin.copy:
         content: "{{ k8s_provision_k3s_config | to_nice_yaml(indent=2) }}"
@@ -137,19 +146,31 @@
       become: true
       when: k8s_provision_k3s_config_result.backup_file is defined
 
+    - name: Remove the k3s config.yaml created by this run
+      ansible.builtin.file:
+        path: "{{ k8s_provision_k3s_config_path }}"
+        state: absent
+      become: true
+      register: k8s_provision_k3s_config_removed
+      when:
+        - (k8s_provision_k3s_config_result | default({})).changed | default(false)
+        - not (k8s_provision_k3s_config_before.stat.exists | default(true))
+
     - name: Restart k3s with the restored configuration
       ansible.builtin.systemd_service:
         name: "{{ k8s_provision_service_name }}"
         state: restarted
       become: true
-      when: k8s_provision_k3s_config_result.backup_file is defined
+      when: >-
+        k8s_provision_k3s_config_result.backup_file is defined
+        or k8s_provision_k3s_config_removed is changed
 
     - name: Fail after the k3s configuration rollback
       ansible.builtin.fail:
         msg: >-
           k3s did not come back after applying {{ k8s_provision_k3s_config_path }}; the previous file was
-          restored when one existed. Inspect 'journalctl -u {{ k8s_provision_service_name }}' on
-          {{ inventory_hostname }}.
+          restored, or the new file removed when none existed before. Inspect
+          'journalctl -u {{ k8s_provision_service_name }}' on {{ inventory_hostname }}.
 
 - name: Wait for the k3s API port
   ansible.builtin.wait_for:
@@ -164,6 +185,30 @@
     timeout: "{{ k8s_provision_wait_timeout }}"
   when: k8s_provision_k3s_role == 'server'
 
+# The admin kubeconfig grants cluster-admin. Installs made with '--write-kubeconfig-mode 644' keep that
+# flag in the unit (the installer never re-runs), so enforce 0600 here and report the drift.
+# 管理员 kubeconfig 拥有集群管理员权限：强制 0600，并提示单元文件中残留的 644 参数。
+- name: Restrict the k3s admin kubeconfig to root
+  ansible.builtin.file:
+    path: "{{ k8s_provision_k3s_kubeconfig_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  register: k8s_provision_k3s_kubeconfig_perms
+  when: k8s_provision_k3s_role == 'server'
+
+- name: Report a k3s unit that rewrites a world-readable kubeconfig
+  ansible.builtin.debug:
+    msg: >-
+      {{ k8s_provision_k3s_kubeconfig_path }} was not root-only 0600 and has been reset. k3s re-applies the
+      --write-kubeconfig-mode baked into the {{ k8s_provision_service_name }} unit at every start, so remove
+      '--write-kubeconfig-mode 644' from ExecStart in /etc/systemd/system/{{ k8s_provision_service_name }}.service,
+      then run 'systemctl daemon-reload && systemctl restart {{ k8s_provision_service_name }}'.
+  when:
+    - k8s_provision_k3s_role == 'server'
+    - k8s_provision_k3s_kubeconfig_perms is changed
+
 - name: Wait for the k3s nodes to report Ready
   ansible.builtin.command:
     argv:
@@ -175,6 +220,7 @@
       - --timeout=60s
   environment:
     KUBECONFIG: "{{ k8s_provision_k3s_kubeconfig_path }}"
+  become: true
   register: k8s_provision_k3s_nodes_ready
   changed_when: false
   retries: "{{ k8s_provision_ready_retries }}"

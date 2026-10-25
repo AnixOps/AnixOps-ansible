@@ -15,6 +15,8 @@ firewall_port_regex: ^[1-9][0-9]{0,4}(?::[1-9][0-9]{0,4})?$
 
 # "ufw show added" line of a whitelist rule created by this role
 # (also matches the comment format of the previous role version).
+# ufw prints the "from" address normalised; preflight.yml canonicalises the
+# whitelist the same way (firewall_ufw_address) before the prune diff.
 firewall_ufw_whitelist_rule_regex: >-
   ^ufw allow from (\S+) to any port ([0-9:]+) proto tcp comment 'Monitoring access from .*$
 

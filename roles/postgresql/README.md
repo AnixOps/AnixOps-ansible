@@ -14,8 +14,14 @@ daily logical backup.
    distribution lacks the version, set `postgresql_use_pgdg: true`: the PGDG
    key is downloaded to `/etc/apt/keyrings/postgresql.asc` and a signed
    `deb822` source is added (no `apt-key`, no shell hacks). A **missing**
-   cluster is created with `pg_createcluster` (data checksums on); an existing
-   cluster is never dropped or recreated, whatever its state.
+   cluster is created with `pg_createcluster`; an existing cluster is never
+   dropped or recreated, whatever its state. With `postgresql_data_checksums`
+   (default `true`) and no cluster on the host yet, the drop-in
+   `/etc/postgresql-common/createcluster.d/50-anixops-checksums.conf` sets
+   `initdb_options = '--data-checksums'` before the package is installed, so the
+   cluster the Debian package creates automatically has data checksums too.
+   Hosts that already have a cluster are left alone (enable checksums there
+   offline with `pg_checksums --enable`).
 2. **Configure** `postgresql.conf` and `pg_hba.conf` (templates with
    `backup: true`, owned by `postgres`), `meta: flush_handlers`, then wait for
    `pg_isready` with retries. If the instance does not come back the backups

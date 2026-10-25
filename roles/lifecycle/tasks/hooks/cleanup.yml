@@ -5,6 +5,8 @@
 # Stops/disables the service, removes packages, archives (or removes) the
 # configuration directories, prunes snapshot versions, removes the unit file
 # and the state files. Requires cleanup_confirm=yes (or cleanup_force=yes).
+# The unit handled here is lifecycle_cleanup_service_name (<role>_cleanup_service_name,
+# default <role>_service_name); '' leaves every unit alone, e.g. a host-wide cron or docker.
 
 - name: Require explicit confirmation | 要求明确确认
   ansible.builtin.fail:
@@ -41,7 +43,7 @@
   ansible.builtin.debug:
     msg:
       - "Cleanup {{ lifecycle_target_role }} on {{ inventory_hostname }} (strategy={{ lifecycle_cleanup_strategy }})"
-      - "Service to stop/disable: {{ lifecycle_service_name | default('none', true) }}"
+      - "Service to stop/disable: {{ lifecycle_cleanup_service_name | default('none', true) }}"
       - >-
         Packages to remove: {{ 'none (kept)' if lifecycle_cleanup_keep_package_effective | bool
         else (lifecycle_cleanup_packages | join(', ') | default('none', true)) }}
@@ -58,14 +60,16 @@
 
 - name: Probe service unit | 探测服务 unit
   ansible.builtin.include_tasks: probe_service.yml
+  vars:
+    lifecycle_service_name: "{{ lifecycle_cleanup_service_name }}"
 
 - name: Stop and disable service | 停止并禁用服务
   ansible.builtin.systemd_service:
-    name: "{{ lifecycle_service_name }}"
+    name: "{{ lifecycle_cleanup_service_name }}"
     state: stopped
     enabled: false
   when:
-    - lifecycle_service_name | length > 0
+    - lifecycle_cleanup_service_name | length > 0
     - lifecycle_service_probe.present | bool
 
 - name: Remove packages | 删除软件包
@@ -149,16 +153,16 @@
 
 - name: Check for a role-owned systemd unit file | 检查角色自带的 systemd unit 文件
   ansible.builtin.stat:
-    path: "/etc/systemd/system/{{ lifecycle_service_name }}.service"
+    path: "/etc/systemd/system/{{ lifecycle_cleanup_service_name }}.service"
     get_checksum: false
   register: lifecycle_cleanup_unit_stat
   when:
     - lifecycle_cleanup_remove_unit | bool
-    - lifecycle_service_name | length > 0
+    - lifecycle_cleanup_service_name | length > 0
 
 - name: Remove systemd unit file | 删除 systemd unit 文件
   ansible.builtin.file:
-    path: "/etc/systemd/system/{{ lifecycle_service_name }}.service"
+    path: "/etc/systemd/system/{{ lifecycle_cleanup_service_name }}.service"
     state: absent
   when: lifecycle_cleanup_unit_stat.stat.exists | default(false)
 
@@ -192,7 +196,9 @@
   ansible.builtin.debug:
     msg:
       - "Cleanup completed: {{ lifecycle_target_role }} on {{ inventory_hostname }}"
-      - "Service: {{ 'stopped and disabled' if lifecycle_service_probe.present | bool else 'not installed' }}"
+      - >-
+        Service: {{ 'none (left untouched)' if lifecycle_cleanup_service_name | length == 0
+        else ('stopped and disabled' if lifecycle_service_probe.present | bool else 'not installed') }}
       - "Archive: {{ lifecycle_cleanup_archive.dest | default('none') }}"
       - "Config dirs removed: {{ not lifecycle_cleanup_keep_data_effective | bool }}"
       - >-

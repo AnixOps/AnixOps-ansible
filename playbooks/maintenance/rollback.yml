@@ -31,8 +31,10 @@
 #   rollback_patterns_extra {role: [original file globs]} merged into the built-in table; the two
 #                           backup suffixes are appended automatically
 #   rollback_services_extra {role: [services]} added to the restart list
-#   rollback_load_role_defaults  read <role>_service_name/_health_url/_port/_backup_files from
-#                           roles/<role>/defaults (default true; set false for roles without a directory)
+#   rollback_load_role_defaults  read <role>_service_name/_container_name/_health_url/_port/
+#                           _backup_files from roles/<role>/defaults (default true; set false for
+#                           roles without a directory). A defined "" service name means no systemd
+#                           unit (no fallback to rollback_services_default)
 #   postgresql_version      PostgreSQL major version used in the config path (default 15)
 # =============================================================================
 
@@ -93,7 +95,8 @@
       v2bx:
         - /etc/V2bX/config.json
         - /etc/systemd/system/V2bX.service
-    # Static service table (used when <role>_service_name is not available).
+    # Static service table (used when <role>_service_name is not defined; a
+    # defined '' means the role has no systemd unit, e.g. v2board in docker mode).
     rollback_services_default:
       nginx: [nginx]
       common:
@@ -209,16 +212,19 @@
               + (lookup('vars', rollback_role ~ '_backup_files', default=[]) | select('match', '^/') | list)
               + (rollback_patterns_extra[rollback_role] | default([]))) | unique }}
         rollback_services_effective: >-
-          {{ (([rollback_contract_service] if rollback_contract_service | length > 0
-               else rollback_services_default[rollback_role] | default([]))
+          {{ ((rollback_services_default[rollback_role] | default([])
+               if rollback_contract_service == '__undefined__'
+               else ([rollback_contract_service] if rollback_contract_service | length > 0 else []))
               + (rollback_services_extra[rollback_role] | default([]))) | unique }}
+        # Docker container restarted after a restore ('' = none).
+        rollback_container: "{{ lookup('vars', rollback_role ~ '_container_name', default='') }}"
         rollback_port: >-
           {{ lookup('vars', rollback_role ~ '_port', default=rollback_ports_default[rollback_role] | default(0)) }}
         rollback_health_url_raw: >-
           {{ lookup('vars', rollback_role ~ '_health_url',
                     default=rollback_health_urls_default[rollback_role] | default('')) }}
       vars:
-        rollback_contract_service: "{{ lookup('vars', rollback_role ~ '_service_name', default='') }}"
+        rollback_contract_service: "{{ lookup('vars', rollback_role ~ '_service_name', default='__undefined__') }}"
 
     - name: Normalise the health URL | 规范化健康检查地址
       ansible.builtin.set_fact:
@@ -308,6 +314,7 @@
           {{ '<- ' ~ entry.backup if entry.action == 'restore' else '' }} ({{ entry.reason }})
           {% endfor %}
           | services: {{ rollback_services_effective | join(', ') | default('none', true) }}
+          | container: {{ rollback_container | default('none', true) }}
           | health: {{ rollback_health_url | default('none', true) }}
 
     - name: Fail when a timestamp filter matches nothing | 时间戳过滤无匹配时失败
@@ -470,6 +477,16 @@
         state: restarted
       loop: "{{ rollback_restart_services | default([]) | unique }}"
 
+    # A container without a unit reloads the restored files only on a restart.
+    - name: Restart the role container | 重启角色容器
+      community.docker.docker_container:
+        name: "{{ rollback_container }}"
+        state: started
+        restart: true
+      when:
+        - rollback_container | length > 0
+        - rollback_restored_files | length > 0
+
     - name: Wait for the health URL | 等待健康检查通过
       ansible.builtin.uri:
         url: "{{ rollback_health_url }}"
@@ -533,5 +550,8 @@
           {{ rollback_plan | selectattr('action', 'eq', 'skip') | list | length }} skipped;
           services restarted:
           {{ rollback_restart_services | default([]) | unique | join(', ') | default('none', true) }};
+          container restarted:
+          {{ rollback_container if rollback_container | length > 0 and rollback_restored_files | length > 0
+             else 'none' }};
           health: {{ rollback_health.status | default('n/a') }};
           pre-rollback snapshots: <file>.pre-rollback.{{ rollback_epoch }}

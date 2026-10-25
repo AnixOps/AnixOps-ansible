@@ -17,9 +17,10 @@ configuration roll-outs. | 具备配置校验、零停机发布和失败自动�
    site, one `sites-available/<name>.conf` per entry of
    `nginx_sites + nginx_group_sites + nginx_host_sites` (enable/disable symlinks, optional
    pruning of unmanaged symlinks), an optional host-specific raw file
-   (`templates/hosts/<inventory_hostname>.conf.j2`), **then** `nginx.conf` (validated with
-   `nginx -t -c %s` before it is written - includes use absolute paths, so the temporary file
-   validates the whole tree) and `/etc/logrotate.d/nginx`.
+   (`templates/hosts/<inventory_hostname>.conf.j2`), **then** `nginx.conf` (validated before
+   it is written: the rendered file is copied to `/etc/nginx/.nginx.conf.ansible-validate`,
+   checked with `nginx -t -c` and removed again, so relative `include` paths resolve against
+   `/etc/nginx` exactly as in production) and `/etc/logrotate.d/nginx`.
 5. Validates the complete configuration with `nginx -t`.
 6. **Rollback** - if anything in steps 4-5 fails: every backup taken in this run is copied
    back, files that did not exist before are removed, `sites-enabled` is restored to the
@@ -37,10 +38,10 @@ A second run with unchanged variables reports `changed=0`.
 
 ### Why vhosts are written before nginx.conf | 为什么先写站点再写 nginx.conf
 
-`validate: nginx -t -c %s` always checks the *whole* tree the temporary `nginx.conf`
-includes. Writing the vhosts and snippets first means a broken pre-existing vhost (for
-example a certificate that disappeared) is repaired by the same run instead of blocking it,
-and a directive removed from `nginx.conf` can no longer be referenced by a stale vhost. Any
+The `validate:` step always checks the *whole* tree the staged `nginx.conf` includes.
+Writing the vhosts and snippets first means a broken pre-existing vhost (for example a
+certificate that disappeared) is repaired by the same run instead of blocking it, and a
+directive removed from `nginx.conf` can no longer be referenced by a stale vhost. Any
 mistake in the new files is still caught by the final `nginx -t` and rolled back.
 
 ## Handlers | 处理器
@@ -61,7 +62,7 @@ Role defaults live in `defaults/main.yml`; everything is prefixed `nginx_`.
 | `nginx_packages` | `[nginx]` | Packages to install. |
 | `nginx_package_state` | `present` | `present` or a pinned version policy; never `latest` by default. |
 | `nginx_service_name` | `nginx` | systemd unit. |
-| `nginx_user` / `nginx_group` | `www-data` (Debian) / `nginx` (RedHat) | Worker user, web root owner. |
+| `nginx_user` / `nginx_group` | `www-data` (Debian) / `nginx` (RedHat) | Worker user (nginx.conf `user`, logrotate `create`). The web root and landing page are owned by `root:root` (`0755`/`0644`). |
 | `nginx_port` | `80` | Port of the default site and the health probe. |
 | `nginx_health_url` | `http://127.0.0.1:80/health` (`/` when the default site is disabled) | Probed after every deploy. |
 | `nginx_health_status_codes` | `[200, 204, 301, 302, 307, 308, 401, 403, 404]` | Accepted answers; 5xx is never accepted. |

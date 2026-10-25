@@ -103,6 +103,8 @@
         dest: "{{ loki_tmpdir.path }}"
         remote_src: true
 
+    # The backup keeps the replaced binary so the verify rescue can roll binary and
+    # configuration back together; verify.yml removes the copy again. | 备份被替换的二进制文件，供 verify 回滚使用
     - name: Install loki binary | 安装 loki 二进制文件
       ansible.builtin.copy:
         src: "{{ loki_tmpdir.path }}/loki-linux-{{ loki_arch }}"
@@ -111,6 +113,8 @@
         group: root
         mode: "0755"
         remote_src: true
+        backup: true
+      register: loki_binary_result
       notify: Restart loki
   always:
     - name: Remove temporary download directory | 删除临时下载目录

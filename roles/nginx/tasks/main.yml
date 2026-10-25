@@ -6,7 +6,8 @@
 #   1. install packages, optionally stop conflicting services, create directories
 #   2. snapshot the current state (which managed files exist, which vhosts are enabled)
 #   3. template every configuration file (backup: true); nginx.conf is validated
-#      with `nginx -t -c %s` before it is written, then the whole tree with `nginx -t`
+#      (`nginx -t -c` on a staged copy inside /etc/nginx) before it is written,
+#      then the whole tree with `nginx -t`
 #   4. on ANY failure in step 3: restore the backups, remove new files, put
 #      sites-enabled back, re-validate and fail with the captured error (rollback.yml)
 #   5. ensure the service is started and enabled (diagnostics on failure), then
@@ -242,9 +243,13 @@
       when: nginx_host_config_stat.stat.exists
       notify: Reload nginx
 
-    # Written last so `nginx -t -c %s` validates it together with the vhosts and
-    # snippets deployed above (includes use absolute paths). A broken pre-existing
-    # vhost can therefore be repaired by the same run instead of blocking it.
+    # Written last so the validation checks it together with the vhosts and
+    # snippets deployed above. A broken pre-existing vhost can therefore be
+    # repaired by the same run instead of blocking it.
+    # nginx resolves relative include paths against the directory of the -c file,
+    # so the rendered file is validated as a staged copy inside /etc/nginx (removed
+    # again on exit) instead of in Ansible's temp dir. The hidden name matches no
+    # include glob. | 在 /etc/nginx 内校验临时副本，以便相对 include 路径正确解析
     - name: Deploy the main Nginx configuration
       ansible.builtin.template:
         src: nginx.conf.j2
@@ -253,7 +258,10 @@
         group: root
         mode: "0644"
         backup: true
-        validate: nginx -t -c %s
+        validate: >-
+          sh -c 'trap "rm -f /etc/nginx/.nginx.conf.ansible-validate" EXIT;
+          cp -- "$1" /etc/nginx/.nginx.conf.ansible-validate
+          && nginx -t -c /etc/nginx/.nginx.conf.ansible-validate' sh %s
       register: nginx_main_config_result
       notify: Reload nginx
 
@@ -273,20 +281,22 @@
         path: "{{ nginx_web_root }}/index.nginx-debian.html"
         state: absent
 
+    # Root-owned so the worker user cannot modify the served content (nginx only
+    # needs read access). | 网站根目录归 root 所有，worker 只需读权限
     - name: Create the web root directory
       ansible.builtin.file:
         path: "{{ nginx_web_root }}"
         state: directory
-        owner: "{{ nginx_user }}"
-        group: "{{ nginx_group }}"
+        owner: root
+        group: root
         mode: "0755"
 
     - name: Deploy the landing page
       ansible.builtin.template:
         src: index.html.j2
         dest: "{{ nginx_web_root }}/index.html"
-        owner: "{{ nginx_user }}"
-        group: "{{ nginx_group }}"
+        owner: root
+        group: root
         mode: "0644"
       when: nginx_deploy_index | bool
 

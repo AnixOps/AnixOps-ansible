@@ -8,6 +8,9 @@
     path: "{{ speedtest_install_dir }}/{{ speedtest_bin_name }}"
   register: speedtest_binary_stat
 
+# The scratch directory and the download into it always look "changed"; only the
+# install copy (replaced when the content differs) reports a real change, so a
+# forced re-run of an unchanged release reports no change. | 临时目录与下载步骤不计为变更
 - name: Download and install speedtest | 下载并安装 speedtest
   when: (not speedtest_binary_stat.stat.exists) or (speedtest_force_update | bool)
   block:
@@ -16,6 +19,7 @@
         state: directory
         suffix: speedtest
       register: speedtest_tmpdir
+      changed_when: false
 
     - name: Download speedtest binary | 下载 speedtest 二进制文件
       ansible.builtin.get_url:
@@ -25,6 +29,7 @@
         timeout: "{{ speedtest_download_timeout }}"
         mode: "0755"
       register: speedtest_download
+      changed_when: false
       retries: "{{ speedtest_download_retries }}"
       delay: "{{ speedtest_download_delay }}"
       until: speedtest_download is succeeded
@@ -50,4 +55,5 @@
       ansible.builtin.file:
         path: "{{ speedtest_tmpdir.path }}"
         state: absent
+      changed_when: false
       when: speedtest_tmpdir.path is defined

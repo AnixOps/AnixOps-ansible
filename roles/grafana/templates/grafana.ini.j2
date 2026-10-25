@@ -19,7 +19,10 @@ enforce_domain = false
 
 [security]
 admin_user = {{ grafana_admin_user }}
-admin_password = {{ grafana_admin_password }}
+{# Triple quotes keep the password literal: unquoted, Grafana's INI parser cuts
+   the value at the first # or ;, strips surrounding quotes and joins a trailing
+   backslash with the next line. | 三引号保持密码原样 #}
+admin_password = """{{ grafana_admin_password }}"""
 cookie_secure = {{ 'true' if grafana_ssl_enabled | bool else 'false' }}
 cookie_samesite = lax
 disable_gravatar = true

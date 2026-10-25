@@ -3,8 +3,10 @@
 # Loki - verify | 验证
 # =============================================================================
 # /ready returns 503 for about 15 seconds after start while the ingester warms
-# up, hence 12 retries x 5s. On failure: journal tail, restore backups,
-# restart, fail.
+# up, hence 12 retries x 5s. On failure: journal tail, restore the binary,
+# configuration and unit replaced in this run, restart, fail. The previous
+# binary is restored together with its configuration because a config
+# rendered for one Loki version may not start another (e.g. across 3.0).
 
 - name: Verify loki readiness | 验证 loki 就绪状态
   block:
@@ -35,6 +37,22 @@
       ansible.builtin.debug:
         msg: "{{ loki_journal.stdout_lines | default([]) }}"
 
+    - name: Restore previous loki binary | 恢复之前的 loki 二进制文件
+      ansible.builtin.copy:
+        src: "{{ loki_binary_result.backup_file }}"
+        dest: "{{ loki_install_dir }}/loki"
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      when: loki_binary_result.backup_file is defined
+
+    - name: Remove the loki binary backup after the restore | 恢复后删除 loki 二进制备份
+      ansible.builtin.file:
+        path: "{{ loki_binary_result.backup_file }}"
+        state: absent
+      when: loki_binary_result.backup_file is defined
+
     - name: Restore previous loki-config.yml | 恢复之前的 loki-config.yml
       ansible.builtin.copy:
         src: "{{ loki_config_result.backup_file }}"
@@ -61,6 +79,7 @@
         state: restarted
         daemon_reload: true
       when: >-
+        loki_binary_result.backup_file is defined or
         loki_config_result.backup_file is defined or
         loki_unit_result.backup_file is defined
 
@@ -69,7 +88,22 @@
         msg: >-
           Loki did not answer 200 on {{ loki_health_url }} within
           {{ loki_verify_retries * loki_verify_delay }}s.
+          {% if loki_binary_result.backup_file is defined %}
+          The previous loki binary was restored.
+          {% endif %}
           {% if loki_config_result.backup_file is defined or loki_unit_result.backup_file is defined %}
-          The previous configuration was restored and the service restarted.
+          The previous configuration was restored.
+          {% endif %}
+          {% if loki_binary_result.backup_file is defined or loki_config_result.backup_file is defined
+                or loki_unit_result.backup_file is defined %}
+          The service was restarted.
           {% endif %}
           Inspect `journalctl -u {{ loki_service_name }}` on {{ inventory_hostname }}.
+
+# Reached only when loki became ready: the binary kept for the rescue is no
+# longer needed. | loki 就绪后删除为回滚保留的旧二进制文件
+- name: Remove the previous loki binary kept for rollback | 删除为回滚保留的旧 loki 二进制文件
+  ansible.builtin.file:
+    path: "{{ loki_binary_result.backup_file }}"
+    state: absent
+  when: loki_binary_result.backup_file is defined

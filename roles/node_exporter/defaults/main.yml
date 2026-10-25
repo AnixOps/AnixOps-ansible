@@ -3,8 +3,9 @@
 # node_exporter role - default variables | node_exporter 角色默认变量
 # =============================================================================
 # Override any value in inventory group_vars/host_vars or with `-e`.
-# The global `prometheus.node_exporter.*` dict in group_vars/all is informational
-# for operators; the role reads only the prefixed variables below.
+# The role reads only the prefixed variables below; `node_exporter_port` falls
+# back to `prometheus.node_exporter.port` from group_vars/all, the same value
+# the prometheus role scrapes. The other keys of that dict are informational.
 # =============================================================================
 
 # --- Release / download ------------------------------------------------------
@@ -27,7 +28,10 @@ node_exporter_group: node_exporter
 node_exporter_unit_path: "/etc/systemd/system/{{ node_exporter_service_name }}.service"
 
 # --- Runtime -----------------------------------------------------------------
-node_exporter_port: 9100
+# Set node_exporter_port in group_vars/host_vars (the prometheus role reads it
+# per target) or change prometheus.node_exporter.port; also keep
+# firewall_restricted_ports in step.
+node_exporter_port: "{{ ((prometheus | default({})).node_exporter | default({})).port | default(9100) }}"
 # Bind address for the metrics endpoint. Empty or 0.0.0.0 binds all interfaces.
 node_exporter_listen_address: "0.0.0.0"
 # Collector flags (unchanged from the original role); override to tune collectors.

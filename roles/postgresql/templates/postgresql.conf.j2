@@ -41,12 +41,12 @@ checkpoint_timeout = {{ postgresql_checkpoint_timeout }}
 checkpoint_completion_target = {{ postgresql_checkpoint_completion_target }}
 
 # --- Logging | 日志 -----------------------------------------------------------
+# Debian layout: pg_ctlcluster sends stderr to
+# /var/log/postgresql/postgresql-<version>-<cluster>.log, which the
+# postgresql-common logrotate policy rotates. A logging collector would write
+# never-pruned daily files into the data directory instead.
 log_destination = 'stderr'
-logging_collector = on
-log_directory = 'log'
-log_filename = 'postgresql-%Y-%m-%d.log'
-log_rotation_age = '{{ postgresql_log_rotation_age }}'
-log_rotation_size = '{{ postgresql_log_rotation_size }}'
+logging_collector = off
 log_line_prefix = '{{ postgresql_log_line_prefix }}'
 log_min_duration_statement = {{ postgresql_log_min_duration_statement }}
 log_timezone = '{{ postgresql_timezone }}'

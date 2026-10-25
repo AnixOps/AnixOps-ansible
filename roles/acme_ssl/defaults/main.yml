@@ -81,6 +81,11 @@ acme_ssl_cron_hour: "{{ 23 | random(seed=inventory_hostname ~ '-hour') }}"
 acme_ssl_packages: >-
   {{ ['curl', 'openssl', 'socat', 'tar']
      + (['cronie'] if ansible_os_family | default('Debian') == 'RedHat' else ['cron']) }}
+# Lifecycle cleanup never removes packages: acme_ssl_packages is a shared base
+# set (curl/tar also come from common, tar is Essential, and removing openssl
+# would also remove ca-certificates, which depends on it) that other roles and
+# the host rely on.
+acme_ssl_cleanup_packages: []
 
 # -----------------------------------------------------------------------------
 # Lifecycle contract | 生命周期约定 (roles/lifecycle)
@@ -88,6 +93,9 @@ acme_ssl_packages: >-
 # The role has no daemon of its own: the cron service runs the renewals and the
 # installed certificates are served by Nginx on port 443.
 acme_ssl_service_name: "{{ 'crond' if ansible_os_family | default('Debian') == 'RedHat' else 'cron' }}"
+# Cleanup must not stop or disable cron: it is host-wide and runs other jobs
+# (e.g. the PostgreSQL backups). '' = lifecycle cleanup leaves every unit alone.
+acme_ssl_cleanup_service_name: ""
 acme_ssl_port: 443
 acme_ssl_health_url: "https://127.0.0.1:{{ acme_ssl_port }}/"
 acme_ssl_backup_files:

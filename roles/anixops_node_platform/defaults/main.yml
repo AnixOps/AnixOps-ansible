@@ -27,10 +27,12 @@ anixops_node_platform_project_name: "anixops-node-platform"
 # -----------------------------------------------------------------------------
 # Packages installed from the official Docker apt repository (deb822 source +
 # detached GPG key; no `curl | sh`).
+# deb822_repository (install-docker.yml) needs python3-debian on the target.
 anixops_node_platform_docker_prerequisites:
   - ca-certificates
   - git
   - gnupg
+  - python3-debian
 anixops_node_platform_docker_packages:
   - docker-ce
   - docker-ce-cli
@@ -297,3 +299,9 @@ anixops_node_platform_config_dirs:
 # the lifecycle package list so a lifecycle cleanup never uninstalls the engine.
 anixops_node_platform_packages: []
 anixops_node_platform_service_name: "docker"
+# Lifecycle cleanup must never stop/disable the shared host Docker engine (other
+# containers run on it) nor remove packages. Cleanup does not tear the stack down:
+# run `docker compose ... down` by hand first (role README, Rollback step 3).
+# 生命周期清理不得停止/禁用宿主机 Docker 引擎，也不得卸载软件包。
+anixops_node_platform_cleanup_service_name: ""
+anixops_node_platform_cleanup_packages: []

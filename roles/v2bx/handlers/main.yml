@@ -2,6 +2,9 @@
 # =============================================================================
 # V2bX handlers | V2bX 处理器
 # =============================================================================
+# The restart handler also daemon-reloads so a unit change is picked up even when
+# several roles share one play and their same-named "Reload systemd" handlers
+# merge (the last role loaded wins). | 重启前先 daemon-reload
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
@@ -11,3 +14,4 @@
     name: "{{ v2bx_service_name }}"
     state: restarted
     enabled: true
+    daemon_reload: true

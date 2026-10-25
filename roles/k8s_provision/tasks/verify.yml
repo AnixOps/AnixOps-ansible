@@ -8,19 +8,21 @@
     - k8s_provision_provider == 'k3s'
     - k8s_provision_k3s_role == 'agent'
   block:
+    # systemd_service with only `name:` fails (required_one_of), so read the state with systemctl.
     - name: Read the k3s agent service state
-      ansible.builtin.systemd_service:
-        name: "{{ k8s_provision_service_name }}"
+      ansible.builtin.command:
+        argv: [systemctl, is-active, "{{ k8s_provision_service_name }}"]
       register: k8s_provision_agent_service
-      become: true
+      changed_when: false
+      failed_when: false
       check_mode: false
 
     - name: Assert the k3s agent service is active
       ansible.builtin.assert:
         that:
-          - k8s_provision_agent_service.status.ActiveState == 'active'
+          - k8s_provision_agent_service.stdout | trim == 'active'
         fail_msg: >-
-          {{ k8s_provision_service_name }} is {{ k8s_provision_agent_service.status.ActiveState }}
+          {{ k8s_provision_service_name }} is {{ k8s_provision_agent_service.stdout | default('unknown') | trim }}
           on {{ inventory_hostname }}
         quiet: true
 

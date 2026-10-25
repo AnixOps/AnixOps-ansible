@@ -4,6 +4,8 @@
 # =============================================================================
 # Tasks notify "Restart v2board"; the handler matching the active deployment
 # method runs (both listen on the same topic).
+# The systemd restart reloads units itself: same-named "Reload systemd" handlers
+# of roles sharing one play merge, and the last role loaded wins.
 
 - name: Reload systemd
   ansible.builtin.systemd:
@@ -22,5 +24,6 @@
     name: "{{ v2board_service_name }}"
     state: restarted
     enabled: true
+    daemon_reload: true
   when: v2board_deploy_method == 'binary'
   listen: Restart v2board

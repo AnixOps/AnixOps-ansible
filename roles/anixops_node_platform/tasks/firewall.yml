@@ -51,19 +51,21 @@
         comment: "AnixOps edge only"
       loop: "{{ anixops_node_platform_block_direct_public_ports }}"
 
+    # The SSH and 80/443 allow rules must match roles/firewall/tasks/ufw.yml exactly,
+    # comment included (none for 80/443): ufw rewrites a rule whose only difference
+    # is the comment, so different comments make the two roles flip each other's rules.
     - name: Ensure the SSH port stays reachable before UFW is enabled
       community.general.ufw:
         rule: allow
         port: "{{ ansible_port | default(ssh_port | default(22)) | string }}"
         proto: tcp
-        comment: "SSH (lockout protection)"
+        comment: "SSH (managed by Ansible)"
 
     - name: Ensure HTTP and HTTPS stay publicly reachable through Nginx
       community.general.ufw:
         rule: allow
         port: "{{ item }}"
         proto: tcp
-        comment: "AnixOps edge (Nginx)"
       loop:
         - "80"
         - "443"

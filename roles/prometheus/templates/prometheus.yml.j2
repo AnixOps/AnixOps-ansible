@@ -48,6 +48,8 @@ scrape_configs:
      inventory names for one machine). Priority on duplicates: this host first,
      then hosts that define server_alias, then the rest (all sorted).
    - hosts without ansible_host are scraped by inventory name.
+   - port: the target's own node_exporter_port from inventory, else
+     prometheus_node_exporter_port.
    --------------------------------------------------------------------------- #}
 {% set prometheus_group_hosts = groups[prometheus_node_exporter_group] | default([]) | sort %}
 {% set prometheus_ns = namespace(seen=[], aliased=[], plain=[]) %}
@@ -69,7 +71,8 @@ scrape_configs:
         and (hostvars[host]['prometheus_scrape_enabled'] | default(true) | bool) %}
 {%     set prometheus_ns.seen = prometheus_ns.seen + [host_address] %}
       - targets:
-          - {{ (host_address ~ ':' ~ prometheus_node_exporter_port) | to_json }}
+          - {{ (host_address ~ ':' ~ (hostvars[host]['node_exporter_port'] | default(prometheus_node_exporter_port)))
+               | to_json }}
         labels:
           alias: {{ hostvars[host]['server_alias'] | default(host) | string | to_json(ensure_ascii=False) }}
           location: {{ hostvars[host]['location'] | default('unknown') | string | to_json(ensure_ascii=False) }}

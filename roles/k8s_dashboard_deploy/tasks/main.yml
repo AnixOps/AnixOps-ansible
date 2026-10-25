@@ -49,13 +49,22 @@
     group: root
     mode: "0644"
 
+# The kustomization drops the placeholder data of the CSRF Secret so a re-run stays unchanged.
+# kustomization 去掉 CSRF Secret 的占位 data，重复执行保持 unchanged。
+- name: Render the Dashboard kustomization
+  ansible.builtin.template:
+    src: kustomization.yaml.j2
+    dest: "{{ k8s_dashboard_deploy_manifest_dir }}/kustomization.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Apply the Kubernetes Dashboard manifests
   ansible.builtin.command:
     argv:
       - "{{ k8s_dashboard_deploy_kubectl_bin }}"
       - apply
-      - "--filename={{ k8s_dashboard_deploy_manifest_dir }}/recommended-{{ k8s_dashboard_deploy_version }}.yaml"
-      - "--filename={{ k8s_dashboard_deploy_manifest_dir }}/admin-user.yaml"
+      - "--kustomize={{ k8s_dashboard_deploy_manifest_dir }}"
   environment:
     KUBECONFIG: "{{ k8s_dashboard_deploy_kubeconfig_path }}"
   register: k8s_dashboard_deploy_apply

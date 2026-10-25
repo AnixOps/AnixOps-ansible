@@ -44,11 +44,35 @@
       no_log: true
       when: grafana_config_result.backup_file is defined
 
+    # Only files that changed in this run have a backup; files created for the
+    # first time in this run stay in place. | 仅恢复本次运行中有备份的文件
+    - name: Collect provisioning files changed in this run | 收集本次运行中变更的 provisioning 文件
+      ansible.builtin.set_fact:
+        grafana_provisioning_restore: >-
+          {{ [grafana_datasource_prometheus_result | default({}),
+              grafana_datasource_loki_result | default({}),
+              grafana_dashboard_provider_result | default({})]
+             | selectattr('backup_file', 'defined') | list }}
+
+    - name: Restore previous provisioning files | 恢复之前的 provisioning 文件
+      ansible.builtin.copy:
+        src: "{{ item.backup_file }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: "{{ grafana_group }}"
+        mode: "0640"
+        remote_src: true
+      loop: "{{ grafana_provisioning_restore }}"
+      loop_control:
+        label: "{{ item.dest }}"
+
     - name: Restart grafana with the restored configuration | 使用恢复的配置重启 grafana
       ansible.builtin.systemd_service:
         name: "{{ grafana_service_name }}"
         state: restarted
-      when: grafana_config_result.backup_file is defined
+      when: >-
+        grafana_config_result.backup_file is defined or
+        grafana_provisioning_restore | length > 0
 
     - name: Fail because grafana did not become healthy | grafana 未能恢复健康，任务失败
       ansible.builtin.fail:
@@ -56,6 +80,13 @@
           Grafana did not report database "ok" on {{ grafana_health_url }} within
           {{ grafana_verify_retries * grafana_verify_delay }}s.
           {% if grafana_config_result.backup_file is defined %}
-          The previous grafana.ini was restored and the service restarted.
+          The previous grafana.ini was restored.
+          {% endif %}
+          {% if grafana_provisioning_restore | length > 0 %}
+          The previous provisioning files were restored:
+          {{ grafana_provisioning_restore | map(attribute='dest') | join(', ') }}.
+          {% endif %}
+          {% if grafana_config_result.backup_file is defined or grafana_provisioning_restore | length > 0 %}
+          The service was restarted.
           {% endif %}
           Inspect `journalctl -u {{ grafana_service_name }}` on {{ inventory_hostname }}.

@@ -10,7 +10,10 @@
 # Version semantics (record N = deployment N; its pre/ snapshot holds the config
 # from BEFORE deployment N, its post/ snapshot the config right AFTER it):
 #   prev        -> post/ of the deployment before the current one
-#                  (pre/ of the current one is the equivalent fallback)
+#                  (pre/ of the current one is the equivalent fallback);
+#                  when the current deployment FAILED: the last good state
+#                  before it, skipping consecutive failed deployments (pre/
+#                  of the first failed one is the fallback)
 #   initial     -> pre/ of the first recorded deployment
 #   v<stamp>    -> post/ of that deployment
 #   lifecycle_restore_from=<dir> -> that snapshot directory, bypassing history
@@ -101,6 +104,74 @@
     - lifecycle_rollback_requested == 'prev'
     - lifecycle_rollback_current == 'initial'
 
+# A failed deployment is never a candidate, yet it is what 'prev' rolls back
+# from: the target is the last good state before it, not the candidate before
+# the newest success (which would skip one good version).
+- name: Find the last good state before a failed current deployment | 查找失败部署之前的最后正常状态
+  ansible.builtin.set_fact:
+    lifecycle_rollback_failed_current: "{{ lifecycle_rb_positions.split() | first | int >= 0 }}"
+    lifecycle_rollback_good_version: >-
+      {{ lifecycle_history_data[lifecycle_rb_positions.split() | first | int].version | default('')
+         if lifecycle_rb_positions.split() | first | int >= 0 else '' }}
+    lifecycle_rollback_failed_alternate: >-
+      {{ lifecycle_history_data[lifecycle_rb_positions.split() | last | int]
+         if lifecycle_rb_positions.split() | last | int >= 0 else {} }}
+  vars:
+    # "<good> <alternate>" history positions (-1 = none). Only when the newest record
+    # of the current version is a failed deployment: walking back from it, failed
+    # deployments are skipped (the earliest of them is the alternate, its pre/ holds
+    # the good configuration) and the first success/unverified/rolled_back record is
+    # the good state. Any other record in between drops the alternate.
+    lifecycle_rb_positions: >-
+      {%- set ns = namespace(cur=-1, good=-1, alt=-1) -%}
+      {%- for rec in lifecycle_history_data -%}
+      {%- if rec.version | default('') == lifecycle_rollback_current -%}{%- set ns.cur = loop.index0 -%}{%- endif -%}
+      {%- endfor -%}
+      {%- if ns.cur >= 0 and lifecycle_history_data[ns.cur].status | default('') == 'failed'
+             and lifecycle_history_data[ns.cur].backup_location is defined -%}
+      {%- for pos in range(ns.cur, -1, -1) -%}
+      {%- set rec = lifecycle_history_data[pos] -%}
+      {%- if ns.good < 0 -%}
+      {%- if rec.status | default('') in ['success', 'unverified', 'rolled_back'] -%}{%- set ns.good = pos -%}
+      {%- elif rec.status | default('') == 'failed' and rec.backup_location is defined -%}{%- set ns.alt = pos -%}
+      {%- else -%}{%- set ns.alt = -1 -%}
+      {%- endif -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {{ ns.good }} {{ ns.alt }}
+
+- name: Fail when the good state before a failed deployment is unknown | 失败部署之前的正常状态未知时失败
+  ansible.builtin.fail:
+    msg: >-
+      The current deployment {{ lifecycle_rollback_current }} of {{ lifecycle_target_role }} on
+      {{ inventory_hostname }} failed and the last good state before it
+      ('{{ lifecycle_rollback_good_version }}') is not a recorded deployment, so 'prev' cannot be
+      resolved. Restore explicitly with -e lifecycle_restore_from=<snapshot dir>{{ lifecycle_rb_hint }}
+      or pick a version ({{ lifecycle_rollback_candidates | map(attribute='version') | join(', ') }}).
+  vars:
+    lifecycle_rb_hint: >-
+      {{ ' (e.g. ' ~ lifecycle_rollback_failed_alternate.backup_location ~ '/pre)'
+         if lifecycle_rollback_failed_alternate.backup_location is defined else '' }}
+  when:
+    - lifecycle_rollback_explicit_dir | length == 0
+    - lifecycle_rollback_requested == 'prev'
+    - lifecycle_rollback_failed_current | bool
+    - lifecycle_rollback_good_version != 'initial'
+    - lifecycle_rollback_good_version not in (lifecycle_rollback_candidates | map(attribute='version') | list)
+
+- name: Pick the last good state before the failed deployment | 选择失败部署之前的最后正常状态
+  ansible.builtin.set_fact:
+    lifecycle_rollback_target: >-
+      {{ lifecycle_rollback_candidates[0] if lifecycle_rollback_good_version == 'initial'
+         else lifecycle_rollback_candidates | selectattr('version', 'eq', lifecycle_rollback_good_version) | first }}
+    lifecycle_rollback_phase: "{{ 'pre' if lifecycle_rollback_good_version == 'initial' else 'post' }}"
+    lifecycle_rollback_alternate: "{{ lifecycle_rollback_failed_alternate }}"
+  when:
+    - lifecycle_rollback_explicit_dir | length == 0
+    - lifecycle_rollback_requested == 'prev'
+    - lifecycle_rollback_failed_current | bool
+
 - name: Pick the previous version | 选择上一版本
   ansible.builtin.set_fact:
     lifecycle_rollback_target: >-
@@ -118,6 +189,7 @@
   when:
     - lifecycle_rollback_explicit_dir | length == 0
     - lifecycle_rollback_requested == 'prev'
+    - not lifecycle_rollback_failed_current | bool
 
 - name: Pick the initial (pre-first-deployment) configuration | 选择初始配置
   ansible.builtin.set_fact:
@@ -223,6 +295,7 @@
       - "Files: {{ lifecycle_rollback_files | join(', ') }}"
       - "Safety snapshot of current files: {{ lifecycle_pre_rollback_snapshot_dir }}"
       - "Service to restart: {{ lifecycle_service_name | default('none', true) }}"
+      - "Container to restart: {{ lifecycle_container_name | default('none', true) }}"
 
 - name: Stop here in dry-run mode | 干运行模式到此为止
   ansible.builtin.meta: end_host
@@ -288,6 +361,16 @@
     - lifecycle_service_name | length > 0
     - lifecycle_restore_changed | bool or lifecycle_pre_rollback_state.service_state | default('unknown') != 'active'
 
+# Roles run as a plain container (no unit) reload the restored files only on a restart.
+- name: Restart container after rollback | 回滚后重启容器
+  community.docker.docker_container:
+    name: "{{ lifecycle_container_name }}"
+    state: started
+    restart: true
+  when:
+    - lifecycle_container_name | length > 0
+    - lifecycle_restore_changed | bool
+
 - name: Probe service state after rollback | 回滚后探测服务状态
   ansible.builtin.include_tasks: probe_service.yml
 
@@ -348,6 +431,13 @@
         state: restarted
         daemon_reload: "{{ lifecycle_restore_needs_daemon_reload | bool }}"
       when: lifecycle_service_name | length > 0
+
+    - name: Restart container after reverting | 撤销后重启容器
+      community.docker.docker_container:
+        name: "{{ lifecycle_container_name }}"
+        state: started
+        restart: true
+      when: lifecycle_container_name | length > 0
 
 # --- Record the outcome --------------------------------------------------------
 - name: Build rollback record | 生成回滚记录

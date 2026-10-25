@@ -24,9 +24,11 @@ lifecycle_valid_hooks:
 
 # Load the target role's defaults (its lifecycle contract: <role>_service_name,
 # <role>_port, <role>_health_url, <role>_backup_files, <role>_config_dirs,
-# <role>_packages) WITHOUT running any of its tasks. Needed so pre_deploy,
-# status, rollback and cleanup know what to back up / restore / remove before
-# (or without) the service role itself being included. Inventory values still
+# <role>_packages and the optional <role>_cleanup_packages,
+# <role>_cleanup_service_name, <role>_container_name) WITHOUT running any of
+# its tasks. Needed so pre_deploy, status, rollback and cleanup know what to
+# back up / restore / remove before (or without) the service role itself
+# being included. Inventory values still
 # win because role defaults have the lowest precedence.
 lifecycle_load_target_defaults: true
 

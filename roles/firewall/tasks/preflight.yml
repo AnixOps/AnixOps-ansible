@@ -7,7 +7,7 @@
 #   firewall_ssh_ports                 SSH ports that must stay reachable
 #   firewall_effective_public_ports    public + proxy_additional + SSH ports
 #   firewall_effective_restricted_ports
-#   firewall_effective_whitelist       trimmed, split, validated addresses
+#   firewall_effective_whitelist       trimmed, split, validated addresses in ufw's canonical form
 #   firewall_whitelist_rules           [address, port] pairs to allow
 #   firewall_whitelist_rules_enabled   false when the whitelist is empty
 
@@ -84,6 +84,15 @@
       {{ firewall_effective_whitelist
          | reject('match', firewall_ipv4_cidr_regex)
          | reject('match', firewall_ipv6_cidr_regex) | list }}
+
+# ufw stores and prints source addresses normalised (no /32 or /128, IPv4 CIDR
+# reduced to its network, IPv6 lower-cased and compressed). The allow rules, the
+# prune diff against "ufw show added" and firewalld all use that same form,
+# otherwise every second run would delete a still-whitelisted rule.
+# Runs after validation: the filter (filter_plugins/firewall_address.py) fails on bad input.
+- name: Canonicalise whitelist entries the way ufw stores them | 按 ufw 存储格式规范化白名单条目
+  ansible.builtin.set_fact:
+    firewall_effective_whitelist: "{{ firewall_effective_whitelist | map('firewall_ufw_address') | unique | list }}"
 
 - name: Refuse IPv6 whitelist entries while UFW IPv6 support is disabled | 禁用 IPv6 时拒绝 IPv6 白名单
   ansible.builtin.assert:

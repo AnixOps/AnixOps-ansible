@@ -3,9 +3,10 @@
 # promtail role - default variables | promtail 角色默认变量
 # =============================================================================
 # Override any value in inventory group_vars/host_vars or with `-e`.
-# The global `loki.promtail.*` dict in group_vars/all is informational for
-# operators; the role reads only the prefixed variables below (plus the legacy
-# public knobs `loki_server_url` and `promtail_app_log_dir`).
+# The role reads only the prefixed variables below (plus the legacy public
+# knobs `loki_server_url` and `promtail_app_log_dir`); `promtail_port` falls
+# back to `loki.promtail.port` from group_vars/all, the same value the
+# prometheus role scrapes. The other keys of that dict are informational.
 # =============================================================================
 
 # --- Release / download ------------------------------------------------------
@@ -39,7 +40,7 @@ promtail_unit_path: "/etc/systemd/system/{{ promtail_service_name }}.service"
 promtail_config_validate: true
 
 # --- Runtime -----------------------------------------------------------------
-promtail_port: 9080
+promtail_port: "{{ ((loki | default({})).promtail | default({})).port | default(9080) }}"
 # Bind address of the HTTP server (/ready, /metrics, /targets). Empty or
 # 0.0.0.0 binds all interfaces.
 promtail_listen_address: "0.0.0.0"

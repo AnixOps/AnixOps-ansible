@@ -93,9 +93,10 @@ v2board_nodex_port: "{{ lookup('env', 'V2BOARD_NODEX_PORT') or '18081' }}"
 v2board_db_type: "{{ lookup('env', 'V2BOARD_DB_TYPE') or 'postgres' }}"
 v2board_pg_host: "{{ lookup('env', 'V2BOARD_PG_HOST') or 'localhost' }}"
 v2board_pg_port: "5432"
-v2board_pg_user: "v2board"
+# Same env variables and fallbacks as postgresql_user / postgresql_database.
+v2board_pg_user: "{{ lookup('env', 'V2BOARD_PG_USER') or 'v2board' }}"
 v2board_pg_password: "{{ lookup('env', 'V2BOARD_PG_PASSWORD') or '' }}"
-v2board_pg_database: "v2board"
+v2board_pg_database: "{{ lookup('env', 'V2BOARD_PG_DATABASE') or 'v2board' }}"
 v2board_redis_host: "{{ lookup('env', 'V2BOARD_REDIS_HOST') or 'localhost' }}"
 v2board_redis_port: "6379"
 v2board_redis_password: "{{ lookup('env', 'V2BOARD_REDIS_PASSWORD') or '' }}"
@@ -128,4 +129,10 @@ v2board_config_dirs:
 # v2board itself is not an apt package; Docker Engine is deliberately not
 # listed so a lifecycle "cleanup" never removes the container runtime.
 v2board_packages: []
-v2board_service_name: "v2board"
+# systemd unit only in binary mode; docker mode runs a plain container (no unit),
+# which lifecycle and rollback.yml restart through v2board_container_name.
+v2board_service_name: "{{ 'v2board' if v2board_deploy_method == 'binary' else '' }}"
+v2board_container_name: "{{ v2board_docker_container_name if v2board_deploy_method == 'docker' else '' }}"
+# Cleanup still stops and removes a v2board.service unit when one exists (binary
+# mode, or left over from a binary-to-docker switch); absent units are skipped.
+v2board_cleanup_service_name: "{{ v2board_service_name or 'v2board' }}"

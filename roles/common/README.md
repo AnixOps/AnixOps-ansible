@@ -60,7 +60,7 @@ to it, so **operators keep editing the global keys** (they are not renamed).
 | `common_packages` | (it *is* the global key) | `curl wget vim htop git unzip tar chrony` |
 | `common_ntp_servers` | `ntp_servers` | `0.pool.ntp.org`, `1.pool.ntp.org` |
 | `common_ssh_port` | `ssh_port` | `22` |
-| `common_ssh_allow_root` | `ssh_allow_root` | `true` |
+| `common_ssh_allow_root` | `ssh_allow_root` | `true` (renders `PermitRootLogin yes`; `false` renders `PermitRootLogin prohibit-password`: root password login is refused, root key login is still allowed) |
 | `common_ssh_password_authentication` | `ssh_password_authentication` | `true` (set the global to `false` once keys are deployed) |
 | `common_ssh_pubkey_authentication` | `ssh_pubkey_authentication` | `true` |
 | `common_admin_users` | `admin_users` | `[]` |

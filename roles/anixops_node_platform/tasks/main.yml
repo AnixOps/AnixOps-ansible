@@ -32,11 +32,11 @@
     - name: Configure node platform edge firewall policy
       ansible.builtin.include_tasks: firewall.yml
 
+    # Always run when SSL is enabled: tls.yml installs the PEM secrets; the
+    # self-signed fallback flag only gates the openssl req step inside it.
     - name: Configure node platform TLS certificate
       ansible.builtin.include_tasks: tls.yml
-      when:
-        - anixops_node_platform_ssl_enabled | default(false) | bool
-        - anixops_node_platform_ssl_self_signed_fallback | default(true) | bool
+      when: anixops_node_platform_ssl_enabled | default(false) | bool
 
     - name: Verify the node platform stack
       ansible.builtin.include_tasks: verify.yml
@@ -98,5 +98,10 @@
       ansible.builtin.fail:
         msg: >-
           AnixOps node platform deployment failed on {{ inventory_hostname }}
-          during '{{ ansible_failed_task.name | default('unknown') }}'. See the diagnostics above;
-          the previous .env / compose files are kept as *.backup files next to the originals.
+          during '{{ ansible_failed_task.name | default('unknown') }}'. See the diagnostics above.
+          Nothing was rolled back automatically. If the .env / compose files changed in this run,
+          Ansible kept the previous versions next to them as <file>.<pid>.<YYYY-MM-DD@HH:MM:SS>~
+          (this run: env={{ anixops_node_platform_env_render.backup_file | default('none') }},
+          compose={{ anixops_node_platform_compose_render.backup_file | default('none') }});
+          restore them and recreate the stack, or redeploy the previous
+          anixops_node_platform_repo_version (role README, Rollback).

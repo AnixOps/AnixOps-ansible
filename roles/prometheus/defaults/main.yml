@@ -79,11 +79,17 @@ prometheus_alertmanager_targets: []
 #   ansible_host, server_alias, location, server_environment, description,
 #   prometheus_scrape_enabled (set to false to exclude a host).
 prometheus_node_exporter_group: all
+# Fallback scrape port (prometheus.node_exporter.port, else 9100), the same
+# chain as node_exporter_port's default. A node_exporter_port in a target's
+# inventory vars or -e wins for that target (prometheus.yml.j2). It is not read
+# here, so the Prometheus host's own override cannot leak to other targets.
 prometheus_node_exporter_port: "{{ ((prometheus | default({})).node_exporter | default({})).port | default(9100) }}"
 
 # Self-monitoring of the observability host.
 prometheus_scrape_promtail: true
-prometheus_promtail_port: "{{ ((loki | default({})).promtail | default({})).port | default(9080) }}"
+# Same fallback chain as the promtail role's promtail_port.
+prometheus_promtail_port: >-
+  {{ promtail_port | default(((loki | default({})).promtail | default({})).port | default(9080)) }}
 prometheus_scrape_loki: true
 prometheus_loki_port: "{{ (loki | default({})).port | default(3100) }}"
 prometheus_scrape_grafana: true
@@ -111,8 +117,25 @@ prometheus_verify_delay: 5
 # Lifecycle contract | 生命周期契约 (roles/lifecycle, rollback.yml)
 # -----------------------------------------------------------------------------
 prometheus_service_name: prometheus
-prometheus_health_url: "http://localhost:{{ prometheus_port }}/-/healthy"
-prometheus_ready_url: "http://localhost:{{ prometheus_port }}/-/ready"
+# The health probes follow the address Prometheus actually binds (loopback for
+# a wildcard bind, the port from prometheus_listen_address) and its route
+# prefix: `--web.route-prefix=<p>` from prometheus_extra_args, else the path of
+# prometheus_external_url (Prometheus' own default). Override
+# prometheus_health_url / prometheus_ready_url directly for anything else.
+prometheus_health_host: >-
+  {{ '127.0.0.1' if (prometheus_listen_address.rsplit(':', 1) | first) in ['', '0.0.0.0', '::', '[::]']
+     else prometheus_listen_address.rsplit(':', 1) | first }}
+prometheus_health_port: "{{ prometheus_listen_address.rsplit(':', 1) | last }}"
+prometheus_health_route_prefix: >-
+  {{ (prometheus_extra_args | select('match', '^--web[.]route-prefix=')
+      | map('regex_replace', '^--web[.]route-prefix=', '') | list | last
+      | default(prometheus_external_url | urlsplit('path') if prometheus_external_url | length > 0 else '', true))
+     .strip('/') }}
+prometheus_health_base_url: >-
+  http://{{ prometheus_health_host }}:{{ prometheus_health_port }}{{ ('/' ~ prometheus_health_route_prefix)
+  if prometheus_health_route_prefix | length > 0 else '' }}
+prometheus_health_url: "{{ prometheus_health_base_url }}/-/healthy"
+prometheus_ready_url: "{{ prometheus_health_base_url }}/-/ready"
 prometheus_backup_files:
   - "{{ prometheus_config_file }}"
   - "{{ prometheus_unit_file }}"

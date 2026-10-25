@@ -37,6 +37,7 @@
     group: "{{ grafana_group }}"
     mode: "0640"
     backup: true
+  register: grafana_datasource_prometheus_result
   notify: Restart grafana
 
 - name: Provision Loki datasource | 配置 Loki 数据源
@@ -47,6 +48,7 @@
     group: "{{ grafana_group }}"
     mode: "0640"
     backup: true
+  register: grafana_datasource_loki_result
   notify: Restart grafana
 
 - name: Provision dashboard file provider | 配置仪表盘文件 provider
@@ -57,6 +59,7 @@
     group: "{{ grafana_group }}"
     mode: "0640"
     backup: true
+  register: grafana_dashboard_provider_result
   notify: Restart grafana
 
 - name: Collect dashboard files from the repository | 收集仓库中的仪表盘文件

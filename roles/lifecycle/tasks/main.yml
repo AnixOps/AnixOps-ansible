@@ -57,7 +57,16 @@
     lifecycle_cleanup_packages: >-
       {{ lookup('vars', lifecycle_target_role ~ '_cleanup_packages',
                 default=lookup('vars', lifecycle_target_role ~ '_packages', default=[])) }}
+    # Docker container restarted after a rollback ('' = none).
+    lifecycle_container_name: "{{ lookup('vars', lifecycle_target_role ~ '_container_name', default='') }}"
     lifecycle_backup_root: "{{ lifecycle_hooks_backup_base_dir }}/{{ lifecycle_target_role }}"
+
+# Separate task: the fallback is the service name resolved above.
+- name: Resolve the unit stopped and disabled by cleanup | 解析清理时停止并禁用的 unit
+  ansible.builtin.set_fact:
+    # Unit cleanup stops/disables: <role>_cleanup_service_name, else the service name ('' = none).
+    lifecycle_cleanup_service_name: >-
+      {{ lookup('vars', lifecycle_target_role ~ '_cleanup_service_name', default=lifecycle_service_name) }}
 
 - name: Normalise health URL and deployment context | 规范化健康检查地址与上下文
   ansible.builtin.set_fact:

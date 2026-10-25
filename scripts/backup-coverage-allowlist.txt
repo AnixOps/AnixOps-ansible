@@ -25,6 +25,13 @@
 # rollback value and the directory copy does not support per-file backups.
 roles/prometheus/tasks/install.yml:Install console templates and libraries*
 
-# Secret state file (0600). Rotated AuthKeys must not linger in backup copies;
-# the role regenerates it from the panel or V2BX_AUTH_KEY when missing.
+# Secret cache file (0600). The role regenerates it from V2BX_AUTH_KEY or the
+# panel when missing, so a backup has no rollback value; the exemption only
+# avoids authkey.<pid>.<timestamp>~ copies piling up next to the live key. It
+# does NOT keep old AuthKeys out of every backup: the key is also embedded in
+# config.json, whose backups (config.json.<pid>.<timestamp>~, 0600 root:root in
+# the 0750 /etc/V2bX, needed by the role's rescue and by rollback.yml) and the
+# lifecycle snapshots of v2bx_backup_files (0700 /var/backups/v2bx, lifecycle
+# retention) keep superseded keys. The AuthKey is a short-lived registration key
+# (v2bx_authkey_expire_days, default 1); revoke a leaked key on the panel.
 roles/v2bx/tasks/authkey.yml:Store the AuthKey on the node for future runs*

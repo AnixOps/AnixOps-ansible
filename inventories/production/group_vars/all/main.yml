@@ -51,9 +51,12 @@ ntp_servers:
 # -----------------------------------------------------------------------------
 # Key-only access: password authentication is disabled fleet-wide. Root login
 # stays enabled because every host is managed as root over SSH keys
-# (ANSIBLE_USER defaults to root, see .env.example). Switch ssh_allow_root to
-# false only after a sudo-capable admin user (admin_users) has been rolled out
-# and ANSIBLE_USER points at it — otherwise Ansible locks itself out.
+# (ANSIBLE_USER defaults to root, see .env.example).
+# ssh_allow_root: true renders "PermitRootLogin yes"; false renders
+# "PermitRootLogin prohibit-password" (OpenSSH's own default), which refuses root
+# password logins but still accepts root key logins. With password authentication
+# already off, false therefore does NOT block root and does not lock Ansible out;
+# it is not a way to disable root SSH access.
 ssh_port: 22
 ssh_allow_root: true
 ssh_password_authentication: false

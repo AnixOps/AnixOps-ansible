@@ -70,8 +70,11 @@ k8s_provision_prerequisite_packages:
 
 # --- k3s | k3s 配置 -----------------------------------------------------------
 # Extra flags appended to "k3s server" at install time (INSTALL_K3S_EXEC).
+# The admin kubeconfig holds cluster-admin credentials: keep it root-only (0600).
+# Non-root users get a copy through k8s_provision_kubeconfig_copy_* instead.
+# 管理员 kubeconfig 含集群管理员凭据，仅 root 可读（0600）。
 k8s_provision_k3s_server_args: >-
-  {{ k3s_server_args | default(k3s_server_options | default('--disable traefik --write-kubeconfig-mode 644')) }}
+  {{ k3s_server_args | default(k3s_server_options | default('--disable traefik --write-kubeconfig-mode 600')) }}
 # Extra flags appended to "k3s agent" at install time (worker nodes).
 k8s_provision_k3s_agent_args: "{{ k3s_agent_args | default('') }}"
 # Agents must know the server URL and the cluster join token.
@@ -119,7 +122,12 @@ k8s_provision_ready_retries: 30
 k8s_provision_ready_delay: 10
 
 # --- Lifecycle contract (consumed by roles/lifecycle) | 生命周期契约 ---------
-k8s_provision_port: 6443
+# Only a k3s server listens on 127.0.0.1:6443; agents have no local API port (0 = no port check)
+# and kind publishes its API server on k8s_provision_kind_api_server_port (0 = random, no check).
+# 仅 k3s server 监听 6443；agent 无本地 API 端口，kind 使用其映射端口（0 表示不检查）。
+k8s_provision_port: >-
+  {{ 6443 if (k8s_provision_provider == 'k3s' and k8s_provision_k3s_role == 'server')
+     else (k8s_provision_kind_api_server_port | int if k8s_provision_provider == 'kind' else 0) }}
 k8s_provision_health_url: ""
 k8s_provision_backup_files:
   - /etc/rancher/k3s/config.yaml

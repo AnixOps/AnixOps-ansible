@@ -64,12 +64,20 @@ def test_node_platform_templates_expose_app_ports_for_host_edge():
     assert "scheduler:" in compose_text
     assert "container_name: {{ anixops_node_platform_scheduler_container_name }}" in compose_text
     assert "ANIXOPS_API_URL=http://api:{{ anixops_node_platform_api_port }}" in compose_text
-    assert "FRONTEND_URL={{ anixops_node_platform_frontend_url }}" in env_text
-    assert "ALLOWED_ORIGINS={{ anixops_node_platform_allowed_origins }}" in env_text
-    assert "CHAIN_ENVIRONMENT={{ anixops_node_platform_chain_environment }}" in env_text
-    assert "CRYPTO_TOPUP_CHAIN={{ anixops_node_platform_crypto_topup_chain }}" in env_text
-    assert "AUDIT_ANCHOR_CHAIN={{ anixops_node_platform_audit_anchor_chain }}" in env_text
-    assert "PROBE_SERVICE_URL={{ anixops_node_platform_probe_service_url }}" in env_text
+    assert "FRONTEND_URL={{ dq(anixops_node_platform_frontend_url) }}" in env_text
+    assert "ALLOWED_ORIGINS={{ dq(anixops_node_platform_allowed_origins) }}" in env_text
+    assert "CHAIN_ENVIRONMENT={{ dq(anixops_node_platform_chain_environment) }}" in env_text
+    assert "CRYPTO_TOPUP_CHAIN={{ dq(anixops_node_platform_crypto_topup_chain) }}" in env_text
+    assert "AUDIT_ANCHOR_CHAIN={{ dq(anixops_node_platform_audit_anchor_chain) }}" in env_text
+    assert "PROBE_SERVICE_URL={{ dq(anixops_node_platform_probe_service_url) }}" in env_text
+    # Every value is double-quoted and escaped for the compose-go dotenv parser.
+    assert "{%- macro dq(v) -%}" in env_text
+    assert "replace('$', '$$')" in env_text
+    # Null stays empty and surrounding whitespace is trimmed, as unquoted values were.
+    assert "('' if v is none else v) | string | trim |" in env_text
+    for line in env_text.splitlines():
+        if "={{" in line:
+            assert "={{ dq(" in line, line
 
 
 def test_node_platform_role_blocks_direct_app_port_ingress():
@@ -109,12 +117,12 @@ def test_node_platform_templates_pass_provision_and_release_settings():
     )
     env_text = (ROOT / "roles/anixops_node_platform/templates/env.node-platform.j2").read_text(encoding="utf-8")
 
-    assert "INSTALL_MODE={{ anixops_node_platform_install_mode }}" in env_text
-    assert "DISGUISE_DOMAINS={{ anixops_node_platform_disguise_domains }}" in env_text
-    assert "DO_API_TOKEN={{ anixops_node_platform_do_api_token }}" in env_text
-    assert "NEXT_PUBLIC_RELEASE_PROFILE={{ anixops_node_platform_next_public_release_profile }}" in env_text
-    assert "BILLING_TICK_CRON={{ anixops_node_platform_billing_tick_cron }}" in env_text
-    assert "SCHEDULER_ENABLE_CRYPTO_TOPUPS={{ anixops_node_platform_scheduler_enable_crypto_topups }}" in env_text
+    assert "INSTALL_MODE={{ dq(anixops_node_platform_install_mode) }}" in env_text
+    assert "DISGUISE_DOMAINS={{ dq(anixops_node_platform_disguise_domains) }}" in env_text
+    assert "DO_API_TOKEN={{ dq(anixops_node_platform_do_api_token) }}" in env_text
+    assert "NEXT_PUBLIC_RELEASE_PROFILE={{ dq(anixops_node_platform_next_public_release_profile) }}" in env_text
+    assert "BILLING_TICK_CRON={{ dq(anixops_node_platform_billing_tick_cron) }}" in env_text
+    assert "SCHEDULER_ENABLE_CRYPTO_TOPUPS={{ dq(anixops_node_platform_scheduler_enable_crypto_topups) }}" in env_text
     assert "INSTALL_MODE=${INSTALL_MODE}" in compose_text
     assert "DISGUISE_DOMAINS=${DISGUISE_DOMAINS}" in compose_text
     assert "DO_API_TOKEN=${DO_API_TOKEN}" in compose_text
@@ -205,19 +213,28 @@ def test_node_platform_role_is_hardened():
     # UFW rules are probed before deletion; SSH is allowed before UFW is enabled.
     assert "community.general.ufw" in firewall_text
     assert "register: anixops_node_platform_ufw_status" in firewall_text
-    assert "SSH (lockout protection)" in firewall_text
+    # Same rule comments as roles/firewall/tasks/ufw.yml so the roles never rewrite each other's rules.
+    assert "SSH (managed by Ansible)" in firewall_text
+    assert "AnixOps edge (Nginx)" not in firewall_text
     assert "firewall_default_incoming_policy" in firewall_text
 
     # TLS fallback runs once and secret PEMs stay out of the logs.
     assert 'creates: "{{ anixops_node_platform_ssl_key }}"' in tls_text
     assert "no_log: true" in tls_text
     assert "openssl x509 -noout -in %s" in tls_text
+    # PEM secrets are installed whatever the fallback flag; the flag only gates openssl req.
+    assert "self_signed_fallback" not in main_text
+    assert "Refuse to continue without a certificate when the self-signed fallback is disabled" in tls_text
+    # Host Nginx only reads certificates on start/reload: every cert/key change reloads it.
+    assert tls_text.count("notify: Reload nginx") == 3
 
     # Failures are routed to a rescue block with compose diagnostics.
     assert "rescue:" in main_text
     assert "- ps" in main_text
     assert "- logs" in main_text
     assert '- "100"' in main_text
+    assert "*.backup" not in main_text
+    assert "<file>.<pid>.<YYYY-MM-DD@HH:MM:SS>~" in main_text
 
     for key in (
         "anixops_node_platform_compose_pull: \"missing\"",
@@ -230,6 +247,11 @@ def test_node_platform_role_is_hardened():
         "anixops_node_platform_config_dirs:",
         "anixops_node_platform_packages: []",
         "anixops_node_platform_service_name: \"docker\"",
+        # Lifecycle cleanup never stops the shared Docker engine nor removes packages.
+        "anixops_node_platform_cleanup_service_name: \"\"",
+        "anixops_node_platform_cleanup_packages: []",
+        # deb822_repository needs python3-debian on the target.
+        "  - python3-debian",
     ):
         assert key in defaults_text, key
 

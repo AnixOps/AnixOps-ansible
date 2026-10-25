@@ -23,7 +23,7 @@ yamllint>=1.35              # config in .yamllint.yml
 # --- Libraries used by playbooks, filters and tools --------------------------
 pyyaml>=6.0                 # tools/generate_inventory.py, scripts/check-backup-coverage.py
 jmespath>=1.0               # community.general.json_query filter
-netaddr>=0.10               # ansible.utils ipaddr / ipv4 / ipv6 filters (roles/firewall, cloudflare_mesh)
+netaddr>=0.10               # ansible.utils ipaddr / ipv4 / ipv6 filters (cloudflare_mesh)
 requests>=2.31              # tools/cloudflare_manager.py, tools/secrets_uploader.py, tools/ssh_key_manager.py
 PyNaCl>=1.5                 # GitHub secret encryption (tools/ssh_key_manager.py, tools/secrets_uploader.py)
 paramiko>=3.0               # SSH client (tools/ssh_key_deployer.py)

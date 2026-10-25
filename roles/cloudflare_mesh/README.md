@@ -10,8 +10,10 @@ Headscale/Tailscale 和旧的 WARP Connector 方案。
 ## Behaviour | 行为
 
 1. Validates that `cloudflare_mesh_token` is set and the OS family is Debian/Ubuntu or RHEL-compatible.
-2. Installs `cloudflare-warp` from the official repository (apt: signing key downloaded with `get_url`,
-   dearmored once with `creates:`; rpm: `yum_repository` + `dnf`). Every network step retries `5 x 10s`.
+2. Installs `cloudflare-warp` from the official repository (apt: signing key downloaded with `get_url`
+   (conditional GET, replaced when upstream changes it) and re-dearmored into the `signed-by` keyring
+   whenever the key changed or is newer than the keyring; rpm: `yum_repository` + `dnf`). Every network
+   step retries `5 x 10s`.
 3. Applies the kernel settings Cloudflare recommends for Mesh nodes through `ansible.posix.sysctl`
    (`net.ipv4.ip_forward=1`, `net.ipv6.conf.all.forwarding=1`, `net.ipv6.conf.all.accept_ra=2`).
 4. Starts and enables `warp-svc`, waits until `warp-cli status` answers.
