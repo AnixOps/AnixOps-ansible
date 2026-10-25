@@ -214,14 +214,16 @@ def load_from_env(manager: CloudflareManager, zone_id: str):
 
     # 服务器 IP 配置
     servers = {}
-    for key, value in os.environ.items():
-        if key.endswith('_V4') and not key.endswith('_SSH'):
-            # 提取 IP 地址（去除 CIDR 后缀）
-            ip = value.split('/')[0] if '/' in value else value
-            servers[key] = ip
+    # Host addresses use the inventory scheme <HOST>_V4_SSH (servers-config.yml env_var); the legacy
+    # *_V4 names are still accepted. Empty values are skipped.
+    for key, value in sorted(os.environ.items()):
+        if not value.strip() or not (key.endswith('_V4_SSH') or key.endswith('_V4')):
+            continue
+        # 提取 IP 地址（去除 CIDR 后缀）
+        servers[key] = value.strip().split('/')[0]
 
     if not servers:
-        print_colored("  ⚠ 未找到服务器 IP 配置 (格式: *_V4=IP)", Colors.YELLOW)
+        print_colored("  ⚠ 未找到服务器 IP 配置 (格式: <HOST>_V4_SSH=IP)", Colors.YELLOW)
         return
 
     print_colored(f"\n找到 {len(servers)} 台服务器:", Colors.BLUE)

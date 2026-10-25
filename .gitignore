@@ -38,6 +38,8 @@ ansible.local.cfg
 *.zip
 security-patch-report.json
 security-patch-report.md
+# Inventory rendered by CI next to inventories/production/group_vars (see setup-ansible)
+inventories/production/ci-hosts.yml
 
 # Ansible local runtime state (logs, fact cache, control sockets)
 .ansible/

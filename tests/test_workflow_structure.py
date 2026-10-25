@@ -174,6 +174,16 @@ def test_workflows_default_to_bash(path: Path):
         assert workflow.get("defaults", {}).get("run", {}).get("shell") == "bash"
 
 
+def test_nodex_workflows_share_one_concurrency_group():
+    # Target groups overlap (all contains web_servers contains jp-1), so NodeX deploy-type workflows must share one
+    # group; only a read-only run may add a per-run suffix.
+    for name in ("deploy.yml", "lifecycle.yml", "weekly-security-patch.yml"):
+        group = load_yaml(WORKFLOWS_DIR / name)["concurrency"]["group"]
+        assert group == "deploy-NodeX" or group.startswith("deploy-NodeX${{"), f"{name}: {group}"
+        assert "target_group" not in group, f"{name}: a per-target group does not serialise overlapping targets"
+        assert "-readonly-" in group or group == "deploy-NodeX", name
+
+
 @pytest.mark.parametrize("path", WORKFLOW_FILES, ids=workflow_ids())
 def test_concurrency_policy(path: Path):
     workflow = load_yaml(path)
@@ -352,7 +362,7 @@ def test_deploy_workflow_inputs_and_matrix():
         assert jobs[job_id]["environment"] == "NodeX"
     matrix = jobs["deploy-tag"]["strategy"]
     assert matrix["matrix"]["tag"] == SITE_TAGS
-    assert matrix["max-parallel"] == 1 and matrix["fail-fast"] is False
+    assert matrix["max-parallel"] == 1 and matrix["fail-fast"] is True
     assert jobs["deploy-tag"]["needs"] == "lint"
     assert jobs["health-check-tag"]["needs"] == "deploy-tag"
     runs = "\n".join(run for _, run in iter_run_blocks(workflow))
@@ -414,6 +424,8 @@ def test_setup_ansible_action_contract():
     for exported in ("ANSIBLE_INVENTORY=", "ANSIBLE_PRIVATE_KEY_FILE=", "SSH_KEY_PATH=", "ANSIBLE_HOST_KEY_CHECKING=False", "ANSIBLE_FORCE_COLOR=True"):
         assert exported in text
     assert '${RUNNER_TEMP}/ssh' in text
+    # group_vars/host_vars are only loaded next to the inventory file: never render it into RUNNER_TEMP.
+    assert 'inventory_path="${GITHUB_WORKSPACE}/inventories/production/ci-hosts.yml"' in text
     for step in iter_action_steps(action):
         if "run" in step:
             assert step["shell"] == "bash" and "set -euo pipefail" in step["run"]

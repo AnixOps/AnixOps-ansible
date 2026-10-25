@@ -38,9 +38,10 @@ permissions:
   contents: read
   issues: write
 
-# Shares the deploy-NodeX-<target> group with deploy.yml / lifecycle.yml; a running patch run is never cancelled.
+# Shares the deploy-NodeX group with deploy.yml / lifecycle.yml (scan-only runs still install Trivy, so they
+# serialise too); a running patch run is never cancelled.
 concurrency:
-  group: deploy-NodeX-${{ github.event.inputs.target_group || 'all' }}
+  group: deploy-NodeX
   cancel-in-progress: false
 
 defaults:
@@ -77,14 +78,15 @@ jobs:
       - name: Create inventory from config
         run: |
           set -euo pipefail
-          inventory_path="$RUNNER_TEMP/github-actions-hosts.yml"
+          # Next to group_vars/ and host_vars/ so they are loaded (gitignored).
+          inventory_path="$GITHUB_WORKSPACE/inventories/production/ci-hosts.yml"
           python3 tools/generate_inventory.py github-actions --output "$inventory_path"
           echo "ANSIBLE_INVENTORY=${inventory_path}" >> "${GITHUB_ENV}"
 
       - name: Run security patch playbook
         run: |
           set -euo pipefail
-          INVENTORY_PATH="$RUNNER_TEMP/github-actions-hosts.yml"
+          INVENTORY_PATH="$GITHUB_WORKSPACE/inventories/production/ci-hosts.yml"
           REPORT_PATH="$RUNNER_TEMP/security-patch-report.json"
 
           args=(

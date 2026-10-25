@@ -69,6 +69,12 @@ on:
         type: boolean
         default: false
 
+      cleanup_force:
+        description: 'Cleanup only: keep going when package removal or configuration archiving fails'
+        required: false
+        type: boolean
+        default: false
+
       keep_backups:
         description: 'Number of backups to keep (cleanup only)'
         required: false
@@ -78,10 +84,10 @@ on:
 permissions:
   contents: read
 
-# Shares the deploy-NodeX-<target> group with deploy.yml so a lifecycle action never overlaps a deploy
-# of the same target; a running job is never cancelled.
+# Shares the deploy-NodeX group with deploy.yml / weekly-security-patch.yml so a lifecycle action never
+# overlaps another NodeX change; `status` is read-only and gets its own group. Never cancelled.
 concurrency:
-  group: deploy-NodeX-${{ github.event.inputs.target_group || 'all' }}
+  group: deploy-NodeX${{ github.event.inputs.action == 'status' && format('-readonly-{0}', github.run_id) || '' }}
   cancel-in-progress: false
 
 defaults:
@@ -100,6 +106,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       TARGET_GROUP: ${{ inputs.target_group }}
       FORCE: ${{ inputs.force }}
+      CLEANUP_FORCE: ${{ inputs.cleanup_force }}
       KEEP_BACKUPS: ${{ inputs.keep_backups }}
 
     steps:
@@ -119,7 +126,23 @@ jobs:
             echo "::error::keep_backups must be a non-negative integer"
             exit 1
           fi
-          echo "Inputs OK: action=${ACTION} role=${ROLE} target_group=${TARGET_GROUP}"
+          # Scope every host-touching step to the role's home group (as in site.yml), so e.g.
+          # role=prometheus target_group=all never installs Prometheus outside `observability`.
+          case "${ROLE}" in
+            nginx|acme_ssl)          role_group=web_servers ;;
+            prometheus|loki|grafana) role_group=observability ;;
+            postgresql)              role_group=postgres_servers ;;
+            v2board)                 role_group=v2board_servers ;;
+            v2bx)                    role_group=v2bx_servers ;;
+            *)                       role_group=all ;;  # common, node_exporter, promtail, firewall, speedtest
+          esac
+          if [[ "${role_group}" == "all" ]]; then
+            target_pattern="${TARGET_GROUP}"
+          else
+            target_pattern="${TARGET_GROUP}:&${role_group}"
+          fi
+          echo "TARGET_PATTERN=${target_pattern}" >> "${GITHUB_ENV}"
+          echo "Inputs OK: action=${ACTION} role=${ROLE} target_group=${TARGET_GROUP} pattern=${target_pattern}"
           echo "           version=${VERSION} force=${FORCE} keep_backups=${KEEP_BACKUPS}"
 
       - name: Checkout code
@@ -139,10 +162,10 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t members < <(
-            ansible "${TARGET_GROUP}" --list-hosts | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d'
+            ansible "${TARGET_PATTERN}" --list-hosts 2>/dev/null | sed -e '1d' -e 's/^[[:space:]]*//' -e '/^$/d'
           )
           if (( ${#members[@]} == 0 )); then
-            echo "::error::Target '${TARGET_GROUP}' matches no host in the generated inventory"
+            echo "::error::Target '${TARGET_GROUP}' has no host that runs role '${ROLE}' (pattern ${TARGET_PATTERN})"
             exit 1
           fi
           echo "Target hosts (${#members[@]}): ${members[*]}"
@@ -150,7 +173,7 @@ jobs:
       - name: Verify connectivity
         run: |
           set -euo pipefail
-          ansible "${TARGET_GROUP}" -m ansible.builtin.ping -o
+          ansible "${TARGET_PATTERN}" -m ansible.builtin.ping -o
 
       - name: Execute lifecycle action
         run: |
@@ -166,11 +189,11 @@ jobs:
           fi
 
           if [[ -n "${site_tags}" ]]; then
-            args=(playbooks/provision/site.yml --limit "${TARGET_GROUP}" --tags "${site_tags}" -v)
+            args=(playbooks/provision/site.yml --limit "${TARGET_PATTERN}" --tags "${site_tags}" -v)
           else
             args=(
               playbooks/maintenance/lifecycle.yml
-              --limit "${TARGET_GROUP}"
+              --limit "${TARGET_PATTERN}"
               --tags "${ACTION}"
               -e "lifecycle_target_role=${ROLE}"
               -v
@@ -181,7 +204,7 @@ jobs:
                 ;;
               cleanup)
                 args+=(-e cleanup_confirm=yes -e "cleanup_keep_backups=${KEEP_BACKUPS}")
-                if [[ "${FORCE}" == "true" ]]; then
+                if [[ "${CLEANUP_FORCE}" == "true" ]]; then
                   args+=(-e cleanup_force=yes)
                 fi
                 ;;
@@ -202,7 +225,7 @@ jobs:
         if: success() && (inputs.action == 'deploy' || inputs.action == 'rollback')
         run: |
           set -euo pipefail
-          ansible-playbook playbooks/maintenance/health-check.yml --limit "${TARGET_GROUP}" -v
+          ansible-playbook playbooks/maintenance/health-check.yml --limit "${TARGET_PATTERN}" -v
 
       - name: Remove SSH key material
         if: always()
@@ -226,4 +249,5 @@ jobs:
             Target: `${{ inputs.target_group }}`
             Version: `${{ inputs.version }}`
             Force: ${{ inputs.force }}
+            Cleanup force: ${{ inputs.cleanup_force }}
             Keep backups: ${{ inputs.keep_backups }}

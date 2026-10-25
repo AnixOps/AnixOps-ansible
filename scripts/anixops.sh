@@ -41,6 +41,7 @@ readonly ANIXOPS_VERSION
 
 readonly DEFAULT_INVENTORY="inventories/production/hosts.yml"
 readonly DEV_INVENTORY="inventories/development/hosts.yml"
+readonly NODE_PLATFORM_INVENTORY="inventories/production/node-platform.actions.yml"
 readonly DEFAULT_LOG_DIR=".ansible/logs"
 
 # Roles accepted by the lifecycle commands (status / rollback / cleanup-role).
@@ -58,6 +59,7 @@ SKIP_TAGS=""
 DRY_RUN=0
 VERBOSE=0
 ASSUME_YES=0
+CONFIRM_ALL=0
 VAULT_PASSWORD_FILE=""
 ASK_VAULT_PASS=0
 LOG_DIR=""
@@ -219,6 +221,28 @@ confirm_typed() {
     log_warn "Cancelled by operator."
     exit "$EX_CANCELLED"
   fi
+}
+
+limit_label() {
+  # Human-readable target scope, including a --limit passed after "--".
+  local i
+  if [[ -n "$LIMIT" ]]; then
+    printf '%s' "$LIMIT"
+    return
+  fi
+  for (( i = 0; i < ${#PASSTHROUGH[@]}; i++ )); do
+    case "${PASSTHROUGH[$i]}" in
+      -l|--limit) printf '%s' "${PASSTHROUGH[$((i + 1))]:-?}"; return ;;
+      --limit=*) printf '%s' "${PASSTHROUGH[$i]#--limit=}"; return ;;
+    esac
+  done
+  printf 'ALL hosts in the inventory'
+}
+
+multi_host_confirmed() {
+  # True when the operator explicitly allowed a multi-host rollback/cleanup: --confirm-all, a dry run
+  # (nothing changes), or an interactive confirmation. --yes alone never counts.
+  (( CONFIRM_ALL || DRY_RUN || ! ASSUME_YES ))
 }
 
 # --- Environment: venv + .env ------------------------------------------------
@@ -654,6 +678,10 @@ cmd_deploy_web() {
 }
 
 cmd_deploy_node_platform() {
+  # The node platform hosts live in their own inventory, not in the generated hosts.yml.
+  if (( ! INVENTORY_EXPLICIT )); then
+    INVENTORY="${PROJECT_ROOT}/${NODE_PLATFORM_INVENTORY}"
+  fi
   show_plan provision/node-platform.yml
   if (( ! DRY_RUN )); then
     confirm "Deploy the AnixOps node platform to production hosts?"
@@ -686,15 +714,29 @@ cmd_fix_docker() {
 
 cmd_security_patch() {
   local -a extra=()
-  if (( SCAN_ONLY )); then
+  # The report play runs on localhost; a --limit without it silently skips the report.
+  if [[ -n "$LIMIT" && ",${LIMIT}," != *",localhost,"* ]]; then
+    if [[ "$LIMIT" == *[:\&]* || "$LIMIT" == '!'* ]]; then
+      log_warn "--limit '${LIMIT}' cannot be extended safely; add ',localhost' yourself or no report is written."
+    else
+      LIMIT="${LIMIT},localhost"
+      log_info "Added localhost to --limit so the report play runs."
+    fi
+  fi
+  # Check mode skips the Trivy scans (every host would be reported as scan_failed), so a dry run is
+  # a real scan-only run instead.
+  if (( SCAN_ONLY || DRY_RUN )); then
     extra=(-e security_patch_apply_updates=false)
     log_info "Scan-only mode: vulnerabilities are reported, no packages are updated."
+  fi
+  if (( DRY_RUN )); then
+    PLAN_MODE_OVERRIDE="scan only (security_patch_apply_updates=false; check mode would skip the scans)"
   fi
   show_plan maintenance/security-patch.yml ${extra[@]+"${extra[@]}"}
   if (( ! DRY_RUN && ! SCAN_ONLY )); then
     confirm "Apply security updates on production hosts (may schedule reboots)?"
   fi
-  run_playbook security-patch maintenance/security-patch.yml check ${extra[@]+"${extra[@]}"}
+  run_playbook security-patch maintenance/security-patch.yml no-check ${extra[@]+"${extra[@]}"}
 }
 
 cmd_ssh_force_apply() {
@@ -722,15 +764,17 @@ cmd_rollback() {
   require_role_arg "$role"
   warn_tags_overridden
   TAGS="rollback"
-  # The playbook refuses multi-host rollbacks without lifecycle_confirm_all; the prompt below
-  # (or --yes) is that confirmation.
-  local -a extra=(-e "lifecycle_target_role=${role}" -e "lifecycle_confirm_all=true")
+  local -a extra=(-e "lifecycle_target_role=${role}")
   if [[ -n "$version" ]]; then
     extra+=(-e "lifecycle_version=${version}")
   fi
   show_plan maintenance/lifecycle.yml "${extra[@]}"
   if (( ! DRY_RUN )); then
-    confirm "Roll back role '${role}' to version '${version:-prev}' on ${LIMIT:-all hosts}?"
+    confirm "Roll back role '${role}' to version '${version:-prev}' on $(limit_label)?"
+  fi
+  # The playbook refuses multi-host rollbacks without lifecycle_confirm_all.
+  if multi_host_confirmed; then
+    extra+=(-e "lifecycle_confirm_all=true")
   fi
   run_playbook "rollback-${role}" maintenance/lifecycle.yml check "${extra[@]}"
 }
@@ -738,9 +782,7 @@ cmd_rollback() {
 cmd_rollback_files() {
   local role=${ARGS[0]:-}
   require_role_arg "$role"
-  # The playbook refuses multi-host rollbacks without rollback_confirm_all; the prompt below
-  # (or --yes) is that confirmation.
-  local -a extra=(-e "rollback_role=${role}" -e "rollback_confirm_all=true")
+  local -a extra=(-e "rollback_role=${role}")
   if [[ -n "$ROLLBACK_TIMESTAMP" ]]; then
     extra+=(-e "rollback_timestamp=${ROLLBACK_TIMESTAMP}")
   fi
@@ -752,7 +794,11 @@ cmd_rollback_files() {
   fi
   show_plan maintenance/rollback.yml "${extra[@]}"
   if (( ! DRY_RUN )); then
-    confirm "Restore the newest${ROLLBACK_TIMESTAMP:+ (timestamp ${ROLLBACK_TIMESTAMP})} config backups of '${role}'?"
+    confirm "Restore the newest${ROLLBACK_TIMESTAMP:+ (timestamp ${ROLLBACK_TIMESTAMP})} config backups of '${role}' on $(limit_label)?"
+  fi
+  # The playbook refuses multi-host rollbacks without rollback_confirm_all.
+  if multi_host_confirmed; then
+    extra+=(-e "rollback_confirm_all=true")
   fi
   run_playbook "rollback-files-${role}" maintenance/rollback.yml no-check "${extra[@]}"
 }
@@ -762,13 +808,14 @@ cmd_cleanup_role() {
   require_role_arg "$role"
   warn_tags_overridden
   TAGS="cleanup"
-  local -a extra=(
-    -e "lifecycle_target_role=${role}" -e "cleanup_confirm=yes" -e "cleanup_keep_backups=${keep}"
-    -e "lifecycle_confirm_all=true"
-  )
+  local -a extra=(-e "lifecycle_target_role=${role}" -e "cleanup_confirm=yes" -e "cleanup_keep_backups=${keep}")
   show_plan maintenance/lifecycle.yml "${extra[@]}"
   if (( ! DRY_RUN )); then
-    confirm_typed "cleanup-role removes the '${role}' service, its configuration and all but ${keep} backups on ${LIMIT:-all hosts}."
+    confirm_typed "cleanup-role removes the '${role}' service, its configuration and all but ${keep} backups on $(limit_label)."
+  fi
+  # The playbook refuses multi-host cleanups without lifecycle_confirm_all.
+  if multi_host_confirmed; then
+    extra+=(-e "lifecycle_confirm_all=true")
   fi
   run_playbook "cleanup-${role}" maintenance/lifecycle.yml check "${extra[@]}"
 }
@@ -966,13 +1013,13 @@ ${C_BOLD}Provisioning (production, confirmation unless --yes)${C_RESET}
   deploy                   provision/site.yml, full deployment | 完整部署
   quick-setup              provision/quick-setup.yml (common + agents + firewall)
   deploy-web               provision/web-servers.yml (nginx + TLS)
-  deploy-node-platform     provision/node-platform.yml
+  deploy-node-platform     provision/node-platform.yml (default -i inventories/production/node-platform.actions.yml)
 
 ${C_BOLD}Maintenance${C_RESET}
   health, health-check     maintenance/health-check.yml (read-only) | 健康检查
   firewall                 maintenance/firewall-setup.yml
   fix-docker               maintenance/fix-docker.yml
-  security-patch           maintenance/security-patch.yml; --scan-only reports without updating
+  security-patch           maintenance/security-patch.yml; --scan-only (or --dry-run) reports without updating
   ssh-force-apply          maintenance/ssh-config-force-apply.yml (double confirmation)
 
 ${C_BOLD}Lifecycle (roles: $(join_words "${VALID_ROLES[@]}"))${C_RESET}
@@ -1004,6 +1051,8 @@ ${C_BOLD}Options${C_RESET}
   -e, --extra-vars K=V     Extra variable (repeatable)
   -v, --verbose            Increase ansible verbosity (repeatable: -v, -vv, -vvv)
   -y, --yes, --force       Skip confirmation prompts (required when stdin is not a TTY)
+      --confirm-all        rollback/rollback-files/cleanup-role: allow more than one host together
+                           with --yes (an interactive confirmation already allows it)
       --vault-password-file PATH / --ask-vault-pass
       --log-dir DIR        Where ansible logs are written (default: ${DEFAULT_LOG_DIR})
       --env-file PATH      Load this file instead of ./.env;  --no-env skips loading
@@ -1073,6 +1122,8 @@ parse_args() {
       -vvvv) VERBOSE=$((VERBOSE + 4)); shift ;;
       -y|--yes|--force)
         ASSUME_YES=1; shift ;;
+      --confirm-all)
+        CONFIRM_ALL=1; shift ;;
       --vault-password-file)
         need_value "$@"; VAULT_PASSWORD_FILE="$(abs_path "$2")"; shift 2 ;;
       --vault-password-file=*)

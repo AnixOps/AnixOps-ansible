@@ -125,10 +125,11 @@ commands ask for confirmation unless `--yes` (`ANIXOPS_FLAGS=--yes`) is given. M
 | `make gen-inventory` | `gen-inventory` | regenerate `hosts.yml` (shows a diff, asks first) |
 | `make clean` | - | remove caches, logs and the fact cache |
 
-CLI-only commands: `version`, `facts <host>`, `deploy-node-platform` (pass
-`-i inventories/production/node-platform.actions.yml`), `fix-docker`,
+CLI-only commands: `version`, `facts <host>`, `deploy-node-platform` (uses
+`inventories/production/node-platform.actions.yml` unless `-i` is given), `fix-docker`,
 `ssh-force-apply` (double confirmation), `rollback-files <role>` (`rollback.yml`,
-`--timestamp`, `--dry-run`), `cleanup-role <role>` (`--keep-backups N`, typed confirmation),
+`--timestamp`, `--dry-run`), `cleanup-role <role>` (`--keep-backups N`, typed confirmation;
+multi-host `rollback`/`rollback-files`/`cleanup-role` with `--yes` also need `--confirm-all`),
 `deploy-local` (kind), `deploy-remote-test` (`k3s-test.yml`), `deploy-production-k3s` (`k3s.yml`,
 typed confirmation), `cleanup-local`, `status-local`. Common options: `-i/--inventory`,
 `-l/--limit`, `-t/--tags`, `--skip-tags`, `-n/--dry-run`, `-e/--extra-vars`, `-v`, `-y/--yes`,
@@ -137,7 +138,7 @@ typed confirmation), `cleanup-local`, `status-local`. Common options: `-i/--inve
 
 ```bash
 scripts/anixops.sh deploy --dry-run --tags nginx --limit web_servers
-scripts/anixops.sh security-patch --scan-only --limit jp-1
+scripts/anixops.sh security-patch --scan-only --limit jp-1   # localhost is added for the report; --dry-run = --scan-only
 scripts/anixops.sh rollback-files nginx --timestamp 2026-10-24@14 --dry-run --limit jp-1
 make deploy ANSIBLE_ARGS="--tags prometheus,loki,grafana --limit observability"
 ```
@@ -160,15 +161,15 @@ must belong to `target_group`), `tags` (comma-separated play tags), `dry_run`, `
 A health check runs on the same limit after every real deploy.
 
 **Tag-push deploy matrix:** pushing a `v*` tag runs the lint gate, then `site.yml` once per play
-tag in this order, one job at a time (`max-parallel: 1`, `fail-fast: false`): `common`,
+tag in this order, one job at a time (`max-parallel: 1`, `fail-fast: true`, so a failed tag cancels the later ones): `common`,
 `node_exporter`, `promtail`, `firewall`, `nginx`, `prometheus`, `loki`, `grafana`, `postgresql`,
 `v2board`, `v2bx`, `speedtest`; a fleet-wide health check job follows.
 
 **Weekly security patch inputs:** `target_group`, `apply_updates`, `allow_reboot`
 (`inventory` keeps the per-host/group `security_patch_allow_reboot`, `true`/`false` override it).
 **Lifecycle inputs:** `action`, `role`, `version` (`prev`, `initial`, `vYYYYMMDDTHHMMSS`),
-`target_group` (group or single host), `force` (required for rollback/cleanup on more than one host),
-`keep_backups`.
+`target_group` (group or single host, intersected with the role's home group), `force` (required for
+rollback/cleanup on more than one host), `cleanup_force`, `keep_backups`.
 
 Secrets and environments are described in [docs/GITHUB_ACTIONS_SETUP.md](docs/GITHUB_ACTIONS_SETUP.md)
 and [docs/GITHUB_SECRETS_REFERENCE.md](docs/GITHUB_SECRETS_REFERENCE.md).

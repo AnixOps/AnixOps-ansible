@@ -556,3 +556,41 @@ def test_main_rejects_missing_configuration(tmp_path, monkeypatch, capsys):
 
     rc = upsert.main(["--report-path", str(tmp_path / "r.json"), "--repository", "bad-slug", "--run-url", "u", "--token", "t"])
     assert rc == upsert.EXIT_USAGE
+
+
+def _clean_report(tmp_path, target_group):
+    report = {
+        "schema_version": 1,
+        "generated_at": "2026-05-08T04:00:00Z",
+        "target_group": target_group,
+        "apply_updates": True,
+        "total_hosts": 1,
+        "hosts": [{"host": "server-a", "status": "clean", "before_count": 0, "after_count": 0, "reboot_required": False}],
+    }
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(("target_group", "closed"), [("web_servers", False), ("all", True)])
+def test_main_closes_backlog_issue_only_after_a_clean_run_on_all(tmp_path, monkeypatch, target_group, closed):
+    calls = []
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr(upsert, "find_existing_issue", lambda *a, **k: {"number": 7})
+    monkeypatch.setattr(upsert, "comment_on_issue", lambda *a, **k: calls.append(("comment", a[3], a[4])))
+    monkeypatch.setattr(upsert, "close_issue", lambda *a, **k: calls.append(("close", a[3])))
+
+    rc = upsert.main(
+        [
+            "--report-path", str(_clean_report(tmp_path, target_group)),
+            "--repository", "owner/repo",
+            "--run-url", "https://example.invalid/run/5",
+            "--token", "t",
+        ]
+    )
+
+    assert rc == upsert.EXIT_OK
+    assert calls[0][0] == "comment" and calls[0][1] == 7
+    assert (("close", 7) in calls) is closed
+    if not closed:
+        assert "stays open" in calls[0][2]

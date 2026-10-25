@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       playbook:
+        # Lifecycle actions (status/deploy/rollback/cleanup) need a role: use lifecycle.yml (Lifecycle Management).
         description: 'Playbook to run'
         required: true
         type: choice
@@ -13,7 +14,6 @@ on:
           - provision/web-servers.yml
           - maintenance/health-check.yml
           - maintenance/firewall-setup.yml
-          - maintenance/lifecycle.yml
           - maintenance/emergency-cleanup.yml
         default: 'provision/site.yml'
 
@@ -73,9 +73,11 @@ on:
 permissions:
   contents: read
 
-# One deploy at a time per environment + target; a running deploy is never cancelled.
+# One NodeX group for deploy.yml, lifecycle.yml and weekly-security-patch.yml: target groups and single
+# hosts overlap, so a per-target key would not serialise them. Read-only runs (dry run, health check) get
+# their own group so they never wait behind, or displace a pending, mutating run. Never cancelled.
 concurrency:
-  group: deploy-NodeX-${{ github.event.inputs.target_group || 'all' }}
+  group: deploy-NodeX${{ (github.event.inputs.dry_run == 'true' || github.event.inputs.playbook == 'maintenance/health-check.yml') && format('-readonly-{0}', github.run_id) || '' }}
   cancel-in-progress: false
 
 defaults:
@@ -241,7 +243,8 @@ jobs:
     timeout-minutes: 90
     environment: NodeX
     strategy:
-      fail-fast: false
+      # A failed tag cancels the later ones: nothing deploys on top of a failed dependency.
+      fail-fast: true
       max-parallel: 1
       matrix:
         # One entry per site.yml play tag, in dependency order (common first, database before panel).

@@ -14,7 +14,7 @@
 #   - uptime, 1/5/15 min load, root filesystem usage, memory usage
 #   - systemd units: ssh|sshd, chrony|chronyd, node_exporter, promtail (all),
 #     nginx (web_servers), prometheus, loki, grafana-server (observability),
-#     postgresql (postgres_servers), v2board when the unit exists (v2board_servers),
+#     postgresql@<version>-<cluster> (postgres_servers), v2board when the unit exists (v2board_servers),
 #     V2bX (v2bx_servers)
 #   - HTTP 200 on 127.0.0.1: node_exporter :9100/metrics, promtail :9080/ready (all),
 #     nginx :80/health (web_servers), prometheus :9090/-/healthy, loki :3100/ready,
@@ -30,6 +30,8 @@
 #   health_check_delay         5      seconds between endpoint probe attempts
 #   health_check_soft          false  print failures but do not fail the play
 #   health_check_report_path   ""     when set, write an aggregated JSON report on the controller
+#   health_check_base_only     false  only the baseline checks of group `all` (quick-setup sets this,
+#                                     because it does not install the group services)
 #
 # Scope: all servers, serial 100% (read-only, parallel), max_fail_percentage 50
 # Rollback: not applicable (nothing is changed on the hosts)
@@ -46,6 +48,8 @@
   tags: [health]
 
   vars:
+    # Groups whose checks apply to this host; quick-setup passes health_check_base_only=true.
+    health_check_groups: "{{ ['all'] + ([] if health_check_base_only | default(false) | bool else group_names) }}"
     # Units (without .service) that must be running on every host of the group.
     health_required_services_by_group:
       all:
@@ -58,7 +62,9 @@
         - loki
         - grafana-server
       postgres_servers:
-        - postgresql
+        # postgresql.service is a oneshot wrapper (active/exited, reported as 'stopped'); the server runs
+        # in the per-cluster instance unit. Keep the defaults in sync with roles/postgresql/defaults.
+        - "postgresql@{{ postgresql_version | default('15') }}-{{ postgresql_cluster_name | default('main') }}"
       v2bx_servers:
         - V2bX
     # Units that are only checked when the unit exists on the host.
@@ -91,19 +97,19 @@
             [('sshd' if ansible_facts['os_family'] == 'RedHat' else 'ssh'),
              ('chronyd' if ansible_facts['os_family'] == 'RedHat' else 'chrony')]
             + (health_required_services_by_group | dict2items
-               | selectattr('key', 'in', ['all'] + group_names)
+               | selectattr('key', 'in', health_check_groups)
                | map(attribute='value') | flatten | list)
           }}
         health_optional_units: >-
           {{
             health_optional_services_by_group | dict2items
-            | selectattr('key', 'in', ['all'] + group_names)
+            | selectattr('key', 'in', health_check_groups)
             | map(attribute='value') | flatten | list
           }}
         health_endpoints: >-
           {{
             health_endpoints_by_group | dict2items
-            | selectattr('key', 'in', ['all'] + group_names)
+            | selectattr('key', 'in', health_check_groups)
             | map(attribute='value') | flatten | list
           }}
         health_service_states: {}

@@ -42,9 +42,10 @@ Every job that runs Ansible uses the same composite actions:
 2. `./.github/actions/setup-ansible` installs Python 3.11, `requirements.txt` and the Galaxy
    collections (retried), writes `SSH_PRIVATE_KEY` to `$RUNNER_TEMP/ssh/id_ansible`, exports
    `SSH_KEY_PATH` / `ANSIBLE_PRIVATE_KEY_FILE`, and renders the inventory with
-   `python3 tools/generate_inventory.py github-actions --output $RUNNER_TEMP/ansible-inventory.yml`
-   (exported as `ANSIBLE_INVENTORY`; the weekly patch job renders it in its own step). The
-   committed `hosts.yml` is never overwritten.
+   `python3 tools/generate_inventory.py github-actions --output inventories/production/ci-hosts.yml`
+   (gitignored, exported as `ANSIBLE_INVENTORY`; the weekly patch job renders it in its own step). It
+   must sit next to `group_vars/` and `host_vars/`, which Ansible only loads beside the inventory
+   file. The committed `hosts.yml` is never overwritten.
 3. The inventory reads each host address with `lookup('env', '<HOST>_V4_SSH')`, so a missing secret
    shows up as an unreachable host.
 4. A final `if: always()` step shreds `$RUNNER_TEMP/ssh`, and `./.github/actions/job-summary` writes
@@ -60,7 +61,7 @@ Manual run inputs:
 
 | Input | Type | Meaning |
 |---|---|---|
-| `playbook` | choice | `provision/site.yml` (default), `provision/quick-setup.yml`, `provision/web-servers.yml`, `maintenance/health-check.yml`, `maintenance/firewall-setup.yml`, `maintenance/lifecycle.yml`, `maintenance/emergency-cleanup.yml` |
+| `playbook` | choice | `provision/site.yml` (default), `provision/quick-setup.yml`, `provision/web-servers.yml`, `maintenance/health-check.yml`, `maintenance/firewall-setup.yml`, `maintenance/emergency-cleanup.yml` (lifecycle actions use the Lifecycle Management workflow) |
 | `target_group` | choice | `all` (default), `web_servers`, `proxy_servers`, `observability`, `dev_servers`, `v2bx_servers`, `v2board_servers`, `postgres_servers` |
 | `limit_hosts` | string | optional comma-separated host names (`jp-1,uk-1`); every host must be a member of `target_group` or the job fails |
 | `tags` | string | optional comma-separated play tags (`nginx,firewall`) |
@@ -77,7 +78,7 @@ or when the selected playbook is the health check).
 1. `lint` (the reusable lint workflow);
 2. `deploy-tag`, a matrix over the `site.yml` play tags in dependency order: `common`,
    `node_exporter`, `promtail`, `firewall`, `nginx`, `prometheus`, `loki`, `grafana`, `postgresql`,
-   `v2board`, `v2bx`, `speedtest`, with `max-parallel: 1` and `fail-fast: false`;
+   `v2board`, `v2bx`, `speedtest`, with `max-parallel: 1` and `fail-fast: true` (a failed tag cancels the later ones);
 3. `health-check-tag`, a fleet-wide `maintenance/health-check.yml` run (unless the workflow was
    cancelled), with the deploy result in its summary.
 
@@ -89,10 +90,14 @@ or when the selected playbook is the health check).
 | `role` | `common`, `nginx`, `node_exporter`, `promtail`, `prometheus`, `loki`, `grafana`, `postgresql`, `v2board`, `v2bx`, `speedtest`, `firewall`, `acme_ssl` |
 | `version` | rollback target: `prev` (default), `initial` or `vYYYYMMDDTHHMMSS` |
 | `target_group` | a group or a single host (`jp-1`, `uk-1`, `us-w-1`, `sg-1`, `hk-1`, `uk-2`, `pl-1`, `fr-1`) |
-| `force` | confirms a group-wide rollback or cleanup: required for `target_group=all`, needed for any multi-host target, and passed to the playbook as `-e lifecycle_confirm_all=true` (cleanup also gets `cleanup_force=yes`) |
+| `force` | confirms a group-wide rollback or cleanup: required for `target_group=all`, needed for any multi-host target, and passed to the playbook as `-e lifecycle_confirm_all=true` |
+| `cleanup_force` | cleanup only: `-e cleanup_force=yes`, keep going when package removal or configuration archiving fails (default false) |
 | `keep_backups` | snapshot versions kept by cleanup (default 5) |
 
-`deploy` of `postgresql`, `v2bx` and `speedtest` runs the matching `site.yml` tag, and `v2board` runs
+Every host-touching step uses `target_group` intersected with the role's home group (as in `site.yml`):
+`nginx`/`acme_ssl` -> `web_servers`, `prometheus`/`loki`/`grafana` -> `observability`, `postgresql` ->
+`postgres_servers`, `v2board` -> `v2board_servers`, `v2bx` -> `v2bx_servers`; a target with no such host
+fails before anything runs. `deploy` of `postgresql`, `v2bx` and `speedtest` runs the matching `site.yml` tag, and `v2board` runs
 `postgresql,v2board`; every other action goes through `playbooks/maintenance/lifecycle.yml`. A health
 check follows `deploy` and `rollback`.
 
@@ -119,7 +124,8 @@ answer port 80 with a redirect to HTTPS; needs SSL enabled, keep it off during H
 
 | Group | Workflows | Policy |
 |---|---|---|
-| `deploy-NodeX-<target_group>` | `deploy.yml`, `lifecycle.yml`, `weekly-security-patch.yml` | queue; a running job is never cancelled |
+| `deploy-NodeX` | `deploy.yml`, `lifecycle.yml`, `weekly-security-patch.yml` (one group: targets overlap) | queue; a running job is never cancelled; a newer pending run replaces an older pending one |
+| `deploy-NodeX-readonly-<run_id>` | deploy `dry_run` / health-check playbook, lifecycle `status` | never waits |
 | `deploy-node-platform` | `node-platform-deploy.yml` | queue; never cancelled |
 | `ci-<workflow>-<ref>`, `security-<workflow>-<ref>` | CI and security scan | a newer push cancels the running check |
 
@@ -129,5 +135,5 @@ answer port 80 with a redirect to HTTPS; needs SSL enabled, keep it off during H
 |---|---|---|
 | Host addresses and secrets | `.env` (loaded by `scripts/anixops.sh`) | repository / environment secrets |
 | SSH key | `SSH_KEY_PATH` (default `~/.ssh/id_rsa`) | `SSH_PRIVATE_KEY`, written to `$RUNNER_TEMP/ssh` |
-| Inventory | committed `inventories/production/hosts.yml` | rendered into `$RUNNER_TEMP` from `servers-config.yml` |
+| Inventory | committed `inventories/production/hosts.yml` | rendered to `inventories/production/ci-hosts.yml` (gitignored) from `servers-config.yml` |
 | Entry point | `make <target>` / `scripts/anixops.sh` | the workflows above |

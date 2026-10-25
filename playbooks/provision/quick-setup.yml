@@ -15,7 +15,7 @@
 # Rollback: ansible-playbook playbooks/maintenance/rollback.yml -e "rollback_role=common"
 # Risk: MEDIUM (all servers, limited scope)
 # Pre-flight: OS family, Python 3 and free disk assertions (tag always)
-# Post-check: playbooks/maintenance/health-check.yml (tag health)
+# Post-check: playbooks/maintenance/health-check.yml (tag health, baseline checks only)
 #
 # Variables:
 #   preflight_min_free_mb  1024  minimum free space on / required to continue
@@ -140,4 +140,7 @@
 
 - name: Run the post-setup health check | 运行设置后健康检查
   ansible.builtin.import_playbook: ../maintenance/health-check.yml
+  vars:
+    # quick-setup installs only the baseline, so group services (nginx, prometheus, ...) are not checked.
+    health_check_base_only: true
   tags: [health]

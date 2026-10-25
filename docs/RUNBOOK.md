@@ -21,8 +21,9 @@ Every command below runs from the repository root with the virtualenv active
 Fleet-wide rollback or cleanup refuses to run on more than one host unless
 `-e rollback_confirm_all=true` (rollback.yml) or `-e lifecycle_confirm_all=true` (lifecycle.yml)
 is passed explicitly. The CLI commands (`rollback`, `rollback-files`, `cleanup-role`) add the flag
-themselves and rely on their own confirmation prompt instead (skipped with `--yes`); the Lifecycle
-Management workflow passes `lifecycle_confirm_all=true` only when `force=true`.
+after an interactive confirmation (or with `--dry-run`); `--yes` alone does not, so unattended
+multi-host runs also need `--confirm-all`. The Lifecycle Management workflow passes
+`lifecycle_confirm_all=true` only when `force=true`.
 
 ## 2. Before any change | 变更前检查
 
@@ -50,7 +51,7 @@ Management workflow passes `lifecycle_confirm_all=true` only when `force=true`.
 | One service on one group | `make deploy ANSIBLE_ARGS="--tags nginx --limit web_servers"` |
 | Bootstrap new hosts (common, node_exporter, promtail, firewall, health) | `make quick-setup ANSIBLE_ARGS="--limit <host>"` |
 | Web tier only (`web-servers.yml`) | `make deploy-web` |
-| Node platform (`node-platform.yml`, own inventory) | `scripts/anixops.sh deploy-node-platform -i inventories/production/node-platform.actions.yml` |
+| Node platform (`node-platform.yml`, own inventory) | `scripts/anixops.sh deploy-node-platform` (defaults to `inventories/production/node-platform.actions.yml`) |
 | Firewall rules and monitoring whitelist | `make firewall-setup` |
 | Skip the confirmation prompt (CI-like) | append `ANIXOPS_FLAGS=--yes` |
 
@@ -78,7 +79,7 @@ This runs `pre_deploy` (snapshot to `/var/backups/<role>/<YYYYMMDDTHHMMSS>/pre/`
 
 | Input | Meaning |
 |---|---|
-| `playbook` | `provision/site.yml`, `provision/quick-setup.yml`, `provision/web-servers.yml`, `maintenance/health-check.yml`, `maintenance/firewall-setup.yml`, `maintenance/lifecycle.yml`, `maintenance/emergency-cleanup.yml` |
+| `playbook` | `provision/site.yml`, `provision/quick-setup.yml`, `provision/web-servers.yml`, `maintenance/health-check.yml`, `maintenance/firewall-setup.yml`, `maintenance/emergency-cleanup.yml` (lifecycle actions: Lifecycle Management workflow) |
 | `target_group` | `all`, `web_servers`, `proxy_servers`, `observability`, `dev_servers`, `v2bx_servers`, `v2board_servers`, `postgres_servers` |
 | `limit_hosts` | optional comma-separated host names; each must be a member of `target_group` |
 | `tags` | optional comma-separated play tags, e.g. `nginx,firewall` |
@@ -93,11 +94,13 @@ playbook itself).
 **Release deploy.** Pushing a tag that matches `v*` runs the lint gate, then one job per
 `site.yml` play tag in dependency order (`common`, `node_exporter`, `promtail`, `firewall`,
 `nginx`, `prometheus`, `loki`, `grafana`, `postgresql`, `v2board`, `v2bx`, `speedtest`) with
-`max-parallel: 1` and `fail-fast: false`, and finally a fleet-wide health check job.
+`max-parallel: 1` and `fail-fast: true` (a failed tag cancels the later ones), and finally a fleet-wide health check job.
 
-`deploy.yml`, `lifecycle.yml` and `weekly-security-patch.yml` share the concurrency group
-`deploy-NodeX-<target_group>`: a second run for the same target waits, and a running job is never
-cancelled automatically.
+`deploy.yml`, `lifecycle.yml` and `weekly-security-patch.yml` share one concurrency group,
+`deploy-NodeX` (target groups overlap, so a per-target group would not serialise them): a second
+mutating run waits and a running job is never cancelled. GitHub keeps only one *pending* run per
+group, so a newer queued run replaces an older queued one. Read-only runs (deploy `dry_run`, the
+health-check playbook, lifecycle `status`) get their own group and never wait.
 
 ## 4. Verify | 验证
 
@@ -109,7 +112,8 @@ make status ROLE=nginx                                   # lifecycle version, se
 ```
 
 `playbooks/maintenance/health-check.yml` is the single health playbook (`site.yml` and
-`quick-setup.yml` import it). Per host it checks uptime, load, root filesystem and memory usage,
+`quick-setup.yml` import it; quick-setup passes `health_check_base_only=true`, so only the baseline
+checks of group `all` run there). Per host it checks uptime, load, root filesystem and memory usage,
 the systemd units of the host's groups, and HTTP 200 from the local endpoints below. A host fails
 when a unit is not running, an endpoint does not answer 200, root filesystem usage reaches
 `health_disk_warn_percent` (85) or memory usage reaches `health_mem_warn_percent` (90).
@@ -203,10 +207,11 @@ ansible-playbook playbooks/maintenance/lifecycle.yml -e lifecycle_target_role=ng
 | `-e lifecycle_restore_from=<dir>` | a specific snapshot directory, e.g. the `/var/backups/<role>/<ts>-pre-rollback` safety snapshot taken by the previous rollback (undo a rollback) |
 
 More than one host in the play needs `-e lifecycle_confirm_all=true`; `scripts/anixops.sh rollback`
-adds it after its confirmation prompt. In GitHub Actions use the **Lifecycle Management** workflow
+adds it after its interactive confirmation (with `--yes`, pass `--confirm-all` as well). In GitHub Actions use the **Lifecycle Management** workflow
 (`action=rollback`, `role`, `version`, `target_group`); `force=true` is required for
 `target_group=all` and for any multi-host group, and is what passes `lifecycle_confirm_all=true`.
-The workflow runs the health check afterwards.
+Every step is scoped to the role's home group (`target_group:&web_servers` for nginx/acme_ssl,
+`:&observability` for prometheus/loki/grafana, and so on). The workflow runs the health check afterwards.
 
 ### 5.3 Removing a service | 移除服务
 

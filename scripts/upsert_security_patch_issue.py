@@ -551,13 +551,16 @@ def main(argv: list[str] | None = None) -> int:
 
     body, alert_hosts = render_report_body(report, args.run_url)
     append_step_summary(strip_marker(body))
+    # Only a run against `all` can prove the whole backlog is clean; a narrowed run must not close it.
+    report_group = report.get("target_group") or target_group
 
     if args.dry_run:
         print(body)
         print(
             "Dry run: "
             + (f"would create/update the backlog issue ({len(alert_hosts)} alert hosts)." if alert_hosts
-               else "no alert hosts; would close an open backlog issue if one exists.")
+               else "no alert hosts; would close an open backlog issue if one exists." if report_group == "all"
+               else f"no alert hosts in `{report_group}`; would only comment on an open backlog issue.")
         )
         return EXIT_OK
 
@@ -571,6 +574,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{action.capitalize()} issue #{issue_number} with the latest report.")
             return EXIT_OK
 
+        if existing_issue and report_group != "all":
+            comment_on_issue(
+                owner,
+                repo,
+                token,
+                existing_issue["number"],
+                (
+                    f"Security patch run for target group `{report_group}` completed cleanly at "
+                    f"{report.get('generated_at', '')} ({args.run_url}). The issue stays open: only a run "
+                    "against `all` can confirm that no alerts remain."
+                ),
+            )
+            print(f"Commented on issue #{existing_issue['number']}; not closing after a narrowed ({report_group}) run.")
+            return EXIT_OK
+
         if existing_issue:
             comment_on_issue(
                 owner,
@@ -579,7 +597,7 @@ def main(argv: list[str] | None = None) -> int:
                 existing_issue["number"],
                 (
                     f"Security patch run completed cleanly at {report.get('generated_at', '')} "
-                    f"for target group `{report.get('target_group', target_group)}` ({args.run_url})."
+                    f"for target group `{report_group}` ({args.run_url})."
                 ),
             )
             close_issue(owner, repo, token, existing_issue["number"])

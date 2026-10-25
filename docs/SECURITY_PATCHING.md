@@ -175,8 +175,9 @@ findings (deduplicated, CRITICAL first, capped by
   `AnixOps security patch backlog`, labels `security,automation` via `--labels`; if
   GitHub rejects the labels with 422 the issue is created without them) or appends the
   latest report as a comment to the open one.
-* no alert hosts -> comments on and closes the open issue; nothing happens when none
-  is open.
+* no alert hosts -> on a run against `all`, comments on and closes the open issue; after a
+  narrowed run (`target_group` other than `all`) it only comments and the issue stays open;
+  nothing happens when none is open.
 * report missing/unparsable -> the failure is filed in the issue.
 * The issue body starts with the marker `<!-- anixops-security-patch -->`; the script
   finds "its" issue by marker + title and falls back to the exact title.

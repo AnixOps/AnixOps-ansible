@@ -99,7 +99,9 @@ runs:
         INVENTORY_MODE: ${{ inputs.inventory-mode }}
       run: |
         set -euo pipefail
-        inventory_path="${RUNNER_TEMP}/ansible-inventory.yml"
+        # Ansible loads group_vars/ and host_vars/ only next to the inventory file, so the rendered
+        # inventory must live in inventories/production/ (gitignored), never in RUNNER_TEMP.
+        inventory_path="${GITHUB_WORKSPACE}/inventories/production/ci-hosts.yml"
         python3 tools/generate_inventory.py "${INVENTORY_MODE}" --output "${inventory_path}"
         echo "path=${inventory_path}" >> "${GITHUB_OUTPUT}"
         echo "ANSIBLE_INVENTORY=${inventory_path}" >> "${GITHUB_ENV}"

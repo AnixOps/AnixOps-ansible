@@ -217,7 +217,7 @@ nginx_sites:
 # Local operator run: the fleet inventory (hosts.yml) has no anixops_node_platform_servers group,
 # so pass the dedicated inventory (host from ANIXOPS_NODE_PLATFORM_1_V4_SSH, secrets from .env)
 ansible-playbook -i inventories/production/node-platform.actions.yml playbooks/provision/node-platform.yml
-scripts/anixops.sh deploy-node-platform -i inventories/production/node-platform.actions.yml
+scripts/anixops.sh deploy-node-platform   # uses node-platform.actions.yml unless -i is given
 
 # Dry run
 ansible-playbook -i inventories/production/node-platform.actions.yml \

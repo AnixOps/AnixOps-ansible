@@ -111,8 +111,8 @@ Fleet-wide rollback or cleanup refuses to run on more than one host unless
 `ansible-ci.yml` runs on every pull request: yamllint, ansible-lint, backup coverage, encoding guard,
 unit tests, inventory drift, syntax check of every playbook and (when present) the localhost
 integration converge/verify/idempotency run. `security-scan.yml` adds secret scanning, dependency
-audit and the `ignore_errors` policy check. Deploy-type workflows share a concurrency group per
-environment so two deployments never overlap.
+audit and the `ignore_errors` policy check. Deploy-type workflows share one concurrency group per
+environment (`deploy-NodeX`, never per target: targets overlap) so two deployments never overlap.
 
 ## 9. Known pitfalls | 已知陷阱
 
