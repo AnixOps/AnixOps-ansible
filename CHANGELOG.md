@@ -77,6 +77,31 @@ Every role, playbook, workflow and tool was rewritten to one written standard,
   observability, SSH keys, secrets management; new `docs/RUNBOOK.md`, `docs/CONVENTIONS.md` and
   `CONTRIBUTING.md`.
 
+### Fixed in the review wave | 评审修复
+
+- CI inventory is rendered to `inventories/production/ci-hosts.yml` (gitignored) instead of
+  `$RUNNER_TEMP`, so `group_vars`/`host_vars` load again; CI runs had been rendering
+  `PasswordAuthentication yes` fleet-wide.
+- `cloudflare_manager.py from-env` reads the `<HOST>_V4_SSH` host variables (legacy `*_V4` still accepted).
+- Lifecycle `prev` after a failed deployment no longer goes one good version too far back
+  (after a failed v2 it used to restore the initial configuration).
+- Firewall whitelist rules for non-canonical entries (e.g. `1.2.3.4/32`) are no longer pruned on every
+  second run.
+- `k8s_provision`: the agent verify step no longer fails on `systemd_service` without a state, and a
+  failed first-time `config.yaml` is removed instead of left in place.
+- `k8s_dashboard_deploy`: re-runs no longer blank the CSRF key, so a second run reports `changed=0`.
+- `postgresql`: data checksums now really apply to clusters created on a fresh host.
+- `nginx`: relative `include`s (e.g. `include snippets/fastcgi-php.conf;`) no longer make validation
+  fail and roll back; the landing page no longer changes on every run.
+- `grafana` / `loki` verify rescues also restore the provisioning files / the replaced Loki binary.
+- `node_exporter`, `promtail`, `v2bx` and the binary-mode `v2board` restart handlers daemon-reload
+  themselves, so a changed unit is re-read even when roles share a play.
+- `anixops_node_platform`: PEM secrets are installed even with the self-signed fallback disabled; the
+  rescue message names the real backup files; its UFW rules match `roles/firewall` so the two roles no
+  longer rewrite each other's rules.
+- `speedtest_force_update: true` on an unchanged release reports `changed=0`; `cloudflare_mesh` rebuilds
+  the dearmored apt keyring whenever the downloaded key changes.
+
 ### Behaviour changes in v0.3.0 | v0.3.0 行为变更
 
 - **PostgreSQL listens on localhost only.** `postgresql_listen_addresses` defaults to `localhost`,
@@ -117,6 +142,86 @@ Every role, playbook, workflow and tool was rewritten to one written standard,
 - **Localhost integration suite in CI.** Pull requests now also converge `common`, `node_exporter`,
   `promtail`, `nginx` and `firewall` on the runner, verify them and fail when a second converge is not
   idempotent.
+- **CI applies the real group_vars.** With the CI inventory next to `group_vars/`, the first CI deploy
+  after this release renders the intended settings (e.g. `PasswordAuthentication no`) on every host.
+- **`--yes` no longer confirms multi-host rollback/cleanup.** `rollback`, `rollback-files` and
+  `cleanup-role` pass `*_confirm_all=true` only after an interactive confirmation, with `--dry-run`, or
+  with the new `--confirm-all`; prompts show the real `--limit` scope.
+- **`security-patch` CLI.** A `--limit` gets `,localhost` appended so the report play runs; `--dry-run`
+  is now a real scan-only run (check mode would skip the scans).
+- **`deploy-node-platform`** defaults to `inventories/production/node-platform.actions.yml`.
+- **One `deploy-NodeX` concurrency group** for `deploy.yml`, `lifecycle.yml` and
+  `weekly-security-patch.yml` (was per target); read-only runs (deploy `dry_run`, health-check playbook,
+  lifecycle `status`) get their own group. GitHub keeps one pending run per group, so a newer queued run
+  replaces an older queued one.
+- **Lifecycle workflow scoping.** Every step runs on `target_group` intersected with the role's home group
+  (`nginx`/`acme_ssl` -> `web_servers`, `prometheus`/`loki`/`grafana` -> `observability`, `postgresql` ->
+  `postgres_servers`, `v2board`, `v2bx`); a target without such a host fails early. `cleanup_force` is a
+  separate input (`force` no longer implies it).
+- **`deploy.yml`** dropped the `maintenance/lifecycle.yml` playbook option (use Lifecycle Management);
+  the tag-push matrix is `fail-fast: true`, so a failed tag cancels the later ones.
+- **Health check** checks `postgresql@<version>-<cluster>` instead of the oneshot `postgresql` wrapper;
+  `quick-setup.yml` runs only the baseline checks (`health_check_base_only=true`).
+- **Security patch issue.** A clean run narrowed to a `target_group` other than `all` only comments on
+  the backlog issue; only a run against `all` closes it.
+- **k3s admin kubeconfig is `0600`** (role default and the pl-1 inventory; was `0644`). The role resets
+  the mode on every server run and warns while the unit still has the old flag. **pl-1 action:** remove
+  `--write-kubeconfig-mode 644` from `ExecStart` in `/etc/systemd/system/k3s.service`, then
+  `systemctl daemon-reload && systemctl restart k3s` ([RUNBOOK](docs/RUNBOOK.md) section 6). Non-root
+  `kubectl` needs `sudo` or `k8s_provision_kubeconfig_copy_*`. `k8s_provision_port` is `0` on agents and
+  the kind API port on kind, so lifecycle no longer waits on 6443 there.
+- **Dashboard** is applied with `kubectl apply --kustomize`; on an existing cluster the first run reports
+  the CSRF Secret `configured` once and the dashboard regenerates the key at its next pod start.
+- **Firewall whitelist canonicalisation.** Entries are converted to ufw's stored form (`/32` and `/128`
+  dropped, IPv4 CIDR reduced to its network, IPv6 compressed); invalid addresses such as `010.0.0.1` now
+  fail in preflight. firewalld hosts with a non-canonical entry get the canonical rich rule once; the old
+  one stays until removed by hand.
+- **nginx.** The web root and landing page are owned by `root:root` (changed once; anything that wrote
+  into `/var/www/html` as `www-data`/`nginx` loses write access); `nginx.conf` is validated as a staged
+  copy `/etc/nginx/.nginx.conf.ansible-validate` (needs `sh` and `cp`); the landing page has no
+  `Deployed:` timestamp (changed once, no reload).
+- **PostgreSQL logging.** `logging_collector = off`: every PostgreSQL host restarts once on the next
+  converge (v2board briefly loses its database) and logs return to
+  `/var/log/postgresql/postgresql-<ver>-<cluster>.log`; old files under the data directory's `log/` are not
+  deleted. `postgresql_log_rotation_age` / `_size` were removed.
+- **PostgreSQL checksums.** On a host without a cluster the drop-in
+  `/etc/postgresql-common/createcluster.d/50-anixops-checksums.conf` enables data checksums for every later
+  `pg_createcluster`; existing clusters stay without them (`pg_checksums --enable`, offline).
+- **Grafana `admin_password` is triple-quoted** in `grafana.ini`: one rewrite and one restart per host;
+  existing credentials are unchanged (a password truncated at `#`/`;` stays until
+  `-e grafana_reset_admin_password=true`).
+- **Loki binary rollback.** An upgrade keeps the replaced binary as `loki.<pid>.<timestamp>~` for the run;
+  a failed `/ready` restores binary, configuration and unit together.
+- **Prometheus probe URLs** follow `prometheus_listen_address` (`127.0.0.1` for wildcard binds) and the
+  route prefix (`--web.route-prefix=` or the `prometheus_external_url` path); new defaults
+  `prometheus_health_host`, `_port`, `_route_prefix`, `_base_url`.
+- **Exporter port fallback chain.** `node_exporter_port` / `promtail_port` fall back to
+  `prometheus.node_exporter.port` / `loki.promtail.port` (non-default values there move the listeners),
+  and Prometheus scrapes each target on its own `node_exporter_port`; `firewall_restricted_ports` still
+  has to be changed by hand.
+- **Node platform `.env` quoting.** Every value is double-quoted and escaped (one re-render with a backup);
+  secrets with `$`, ` #` or quotes now arrive verbatim and `${VAR}` interpolation is gone. A
+  `POSTGRES_PASSWORD` that the old format mangled no longer matches the initialised volume until it is
+  rotated inside PostgreSQL.
+- **Node platform prerequisites and TLS.** `python3-debian` is installed (keep it in overrides of
+  `anixops_node_platform_docker_prerequisites`); `tls.yml` runs whenever SSL is enabled and fails early
+  when the fallback is off and no certificate exists; certificate changes reload host Nginx (the play
+  must include the `nginx` role); the SSH and 80/443 UFW rule comments are rewritten once.
+- **Node platform cleanup no longer stops Docker** (`anixops_node_platform_cleanup_service_name: ""`, no
+  package removal) and still does not stop the stack: run `docker compose ... down` first
+  ([RUNBOOK](docs/RUNBOOK.md) section 5.3).
+- **`acme_ssl` cleanup no longer stops cron** or removes packages (`acme_ssl_cleanup_service_name: ""`,
+  `acme_ssl_cleanup_packages: []`); the renewal crontab line is still left in place.
+- **New optional lifecycle contract keys** `<role>_cleanup_service_name` and `<role>_container_name`;
+  `rollback.yml` treats a defined empty `<role>_service_name` as "no unit" and restarts
+  `<role>_container_name` after restoring files.
+- **v2board docker mode.** `v2board_service_name` is `""` and `v2board_container_name` is `v2board`, so
+  rollbacks restart the container; binary-mode hosts must export `V2BOARD_DEPLOY_METHOD=binary` for
+  lifecycle and rollback runs too. `v2board_pg_user` / `_database` honour `V2BOARD_PG_USER` /
+  `V2BOARD_PG_DATABASE`.
+- **Lifecycle `prev` after a failed deployment** restores the last good state before it, skipping
+  consecutive failed deployments; when that state is not a recorded deployment it fails with a
+  `lifecycle_restore_from` hint instead of guessing.
 
 ---
 

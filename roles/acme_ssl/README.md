@@ -50,6 +50,7 @@ Run the role **after** the `nginx` role (or on a host where Nginx is already ins
 | `acme_ssl_cron_enabled` / `acme_ssl_cron_minute` / `acme_ssl_cron_hour` | `true` / per-host random | Renewal schedule. |
 | `acme_ssl_packages` | OS-aware list | Dependencies. |
 | `acme_ssl_service_name`, `acme_ssl_port`, `acme_ssl_health_url`, `acme_ssl_backup_files`, `acme_ssl_config_dirs` | `cron`/`crond`, `443`, `https://127.0.0.1:443/`, `account.conf`, home + cert dir | Lifecycle contract. |
+| `acme_ssl_cleanup_service_name` / `acme_ssl_cleanup_packages` | `""` / `[]` | Lifecycle cleanup never stops or disables the host-wide cron service and removes no packages (they are a shared base set). |
 
 The unprefixed inventory keys `acme_email`, `acme_dns_provider`, `acme_domains`,
 `cloudflare_api_token` and `cloudflare_zone_id` keep working as fallbacks.
@@ -90,3 +91,9 @@ credentials); the log file above has the details. Certificates are never deleted
 to roll back to a previous certificate restore `/etc/nginx/ssl/<domain>.{crt,key}` from the
 lifecycle backup and reload Nginx, or re-run with `-e acme_ssl_force_renew=true` to obtain a
 fresh one.
+
+`lifecycle.yml --tags cleanup -e lifecycle_target_role=acme_ssl` archives the acme.sh home and
+certificate directory but leaves cron running and the packages installed; it does **not** remove
+the `acme.sh auto-renewal` line from root's crontab (remove it with `crontab -e`). Note that
+`rollback.yml` restarts cron (the contract service) rather than reloading Nginx after restoring
+certificates; reload Nginx yourself afterwards.

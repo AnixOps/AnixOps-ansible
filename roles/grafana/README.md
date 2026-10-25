@@ -13,7 +13,7 @@ verifies `/api/health` with rollback on failure.
 | install | `tasks/install.yml` | `ca-certificates` + `python3-debian` (needed by `deb822_repository`), downloads the ASCII-armored key to `/etc/apt/keyrings/grafana.asc` (`get_url`, retries), removes the legacy `grafana.list` / `/usr/share/keyrings/grafana.gpg`, writes `/etc/apt/sources.list.d/grafana.sources` with `ansible.builtin.deb822_repository`, installs `grafana_package` (apt retries; the cache is force-refreshed when the repository definition changed). |
 | configure | `tasks/configure.yml` | `grafana.ini` (`no_log`, `backup`), datasource files `provisioning/datasources/prometheus.yml` + `loki.yml` (uids `prometheus` / `loki`), the dashboard file provider `provisioning/dashboards/anixops.yml`, copies `*.json` dashboards to `/var/lib/grafana/dashboards/` and prunes stale ones. |
 | service | `tasks/service.yml` | `meta: flush_handlers`, enable + start `grafana-server`, optional one-off `grafana-cli admin reset-admin-password`. |
-| verify | `tasks/verify.yml` | Polls `/api/health` until `database: ok` (12 x 5s). On failure: journal tail, restore of the `grafana.ini` backup, restart, `fail`. |
+| verify | `tasks/verify.yml` | Polls `/api/health` until `database: ok` (12 x 5s). On failure: journal tail, restore of the `grafana.ini` backup and of `datasources/prometheus.yml`, `datasources/loki.yml` and `dashboards/anixops.yml` when they changed in the failed run (files created for the first time stay), restart, `fail`. |
 
 Handler: `Restart grafana` (`grafana-server`, with daemon-reload).
 
@@ -23,6 +23,13 @@ Handler: `Restart grafana` (`grafana-server`, with daemon-reload).
 the admin user is first created**. Changing the variable later does not change
 an existing password; run once with `-e grafana_reset_admin_password=true` to
 force it through `grafana-cli` (not idempotent by design, hence opt-in).
+
+The value is written triple-quoted (`admin_password = """..."""`) so Grafana's INI parser keeps
+it literal; unquoted, it was cut at the first `#` or `;` (a password starting with one silently
+fell back to `admin`). The first run after this change rewrites `grafana.ini` once per host and
+restarts Grafana once; existing admin credentials are unaffected. An admin created with a
+truncated password keeps it until a run with `-e grafana_reset_admin_password=true`. Grafana still
+expands `${VAR}`, `$__env{...}` and `$__file{...}` inside the password.
 
 The variable can come from group_vars/vault, `-e`, or the
 `GRAFANA_ADMIN_PASSWORD` environment variable (GitHub Actions secret); the same

@@ -25,6 +25,8 @@ role loads them automatically (see *How the contract is loaded*).
 | `<role>_config_dirs` | list | cleanup | Directories archived (and removed when `cleanup_keep_data=false`) |
 | `<role>_packages` | list | cleanup (fallback) | Packages removed by cleanup when `<role>_cleanup_packages` is undefined |
 | `<role>_cleanup_packages` | list | cleanup | Packages removed by cleanup (preferred over `<role>_packages`, which may be a base install list) |
+| `<role>_cleanup_service_name` | string | cleanup | Optional. systemd unit that cleanup stops, disables and, when it lives in `/etc/systemd/system/`, removes. Default: `<role>_service_name`. `""` = cleanup leaves every unit alone (`acme_ssl` sets `""` because its service is the host-wide cron; `anixops_node_platform` because it is the shared Docker engine) |
+| `<role>_container_name` | string | post_rollback | Optional. Docker container restarted after restored files changed and after a revert (`v2board` in docker mode sets `v2board`). Default: `""` = none |
 
 ## Hooks | Hook 说明
 
@@ -33,9 +35,9 @@ role loads them automatically (see *How the contract is loaded*).
 | `pre_deploy` | Creates `<backup_root>/<YYYYMMDDTHHMMSS>/pre/` with every existing contract file (`NN-<basename>`) plus `manifest.json` (original path, owner, group, mode), records the service state, prunes versions older than `lifecycle_hooks_backup_retention_days` while keeping the newest `lifecycle_hooks_backup_min_keep` |
 | `post_deploy` | Snapshots the same files into `<version>/post/`, waits for the port, probes systemd, polls the health URL (retries), writes `<role>_state.json` and appends to `<role>_history.json`, notifies, and **fails in strict mode when the service is unhealthy** (after recording the failure) |
 | `pre_rollback` | Records the current version and service state (fact + `<role>_pre_rollback.json`), optionally stops the service (`hooks_graceful_stop`) |
-| `post_rollback` | Resolves the target (below), snapshots the files about to be overwritten into `<backup_root>/<ts>-pre-rollback/`, restores the target snapshot to the **original paths from its manifest**, runs the config validators, reverts on any error, reloads systemd if unit files changed, restarts the service, verifies health, updates state/history, notifies |
+| `post_rollback` | Resolves the target (below), snapshots the files about to be overwritten into `<backup_root>/<ts>-pre-rollback/`, restores the target snapshot to the **original paths from its manifest**, runs the config validators, reverts on any error, reloads systemd if unit files changed, restarts the service (and `<role>_container_name`), verifies health, updates state/history, notifies |
 | `status` | Read-only summary: version, service state, recent history, snapshot count, contract |
-| `cleanup` | Requires `cleanup_confirm=yes`; stops/disables the service, removes `<role>_cleanup_packages`, archives the config dirs (`community.general.archive`), removes them only when `cleanup_keep_data=false`, keeps the newest `cleanup_keep_backups` snapshot versions, removes a role-owned unit file and the state files. **`common` can never be cleaned up** (host keys, base packages) |
+| `cleanup` | Requires `cleanup_confirm=yes`; stops/disables `<role>_cleanup_service_name` (default: the service), removes `<role>_cleanup_packages`, archives the config dirs (`community.general.archive`), removes them only when `cleanup_keep_data=false`, keeps the newest `cleanup_keep_backups` snapshot versions, removes a role-owned unit file and the state files. **`common` can never be cleaned up** (host keys, base packages) |
 
 ### Backup layout | 备份目录结构
 
@@ -63,13 +65,19 @@ Record *N* = deployment *N*: `pre/` holds the configuration from **before** it,
 | `lifecycle_version` | Restores | Fallback |
 |---|---|---|
 | `prev` (default) | `post/` of the deployment before the current one (`state.current_version`) | `pre/` of the current deployment (identical content) |
+| `prev` after a **failed** current deployment | the last good state before it (a `success`, `unverified` or `rolled_back` record), skipping consecutive failed deployments; `pre/` when that state is `initial` | `pre/` of the first failed deployment in that run of failures |
 | `initial` | `pre/` of the first recorded deployment | – |
 | `v<YYYYMMDDTHHMMSS>` | `post/` of that deployment | `pre/` of the following deployment |
 | `lifecycle_restore_from=/abs/dir` | that snapshot directory (e.g. a `*-pre-rollback` safety snapshot) | – |
 
 Repeating `prev` walks further back through the history; an explicit version rolls
 forward again. Fewer than two usable records or an unknown version fail with a clear
-message listing what is available. Directories written by the pre-manifest version of
+message listing what is available. When the good state before a failed deployment is not a
+recorded deployment (e.g. it was reached with `lifecycle_restore_from`, recorded as `dir:`),
+`prev` fails with a hint to restore explicitly with `lifecycle_restore_from`. A failed **first**
+deployment leaves no `success`/`unverified` record, so every version aborts there; restore
+`-e lifecycle_restore_from=/var/backups/<role>/<version>/pre` instead.
+Directories written by the pre-manifest version of
 this role are refused unless `lifecycle_rollback_allow_legacy=true`.
 
 ## Hook sequences | 执行顺序
@@ -86,7 +94,7 @@ rollback (lifecycle.yml --tags rollback)
   lifecycle: post_rollback ► resolve target ──► snapshot current files (<ts>-pre-rollback)
       ┌─ block ──► restore manifest files to original paths ──► validators (nginx -t, sshd -t, promtool)
       └─ rescue ─► put pre-rollback snapshot back ──► fail
-      ──► daemon-reload (if units) ──► restart service ──► wait port / health ──► state + history ──► notify
+      ──► daemon-reload (if units) ──► restart service / container ──► wait port / health ──► state + history ──► notify
       ──► FAIL if unhealthy (strict; set lifecycle_rollback_revert_on_unhealthy=true to also revert)
 
 cleanup  (lifecycle.yml --tags cleanup, cleanup_confirm=yes)
@@ -106,6 +114,9 @@ cleanup  (lifecycle.yml --tags cleanup, cleanup_confirm=yes)
 * Every systemd task uses `<role>_service_name`; `""` disables service handling, an undefined
   variable falls back to the role name. `uri` is skipped for an empty health URL and `wait_for`
   for port `0`.
+* Only cleanup uses `<role>_cleanup_service_name`, which falls back to the service name; `""` means
+  no unit is stopped, disabled or removed. `<role>_container_name` is restarted with
+  `community.docker.docker_container` (`restart: true`) only by `post_rollback`.
 * `lifecycle_cleanup_protected_roles` (plus `common`, always) can never be cleaned up.
 
 ## How the contract is loaded | 约定变量如何载入

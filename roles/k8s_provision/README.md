@@ -21,6 +21,15 @@ Two providers are supported:
    `kubectl -n kube-system wait --for=condition=Available deployment --all`, each retried
    (`k8s_provision_ready_retries x k8s_provision_ready_delay`). Agents verify that `k3s-agent` is active.
 
+**Admin kubeconfig.** On every k3s server run the role forces `/etc/rancher/k3s/k3s.yaml` to `root:root 0600`
+(it holds cluster-admin credentials). When it had to change the mode it prints a warning: the k3s unit still
+carries an old `--write-kubeconfig-mode 644` in `ExecStart`, which k3s re-applies at every start (the
+installer never re-runs). Remove that flag from `/etc/systemd/system/k3s.service`, then
+`systemctl daemon-reload && systemctl restart k3s` (see `docs/RUNBOOK.md`).
+
+**config.yaml rescue.** When k3s does not come back after a `config.yaml` change, the previous file is
+restored; a file created for the first time in that run is removed. k3s / k3s-agent is then restarted.
+
 A second run reports `changed=0`: binaries are only downloaded when the installed version differs from the pin,
 the k3s installer only runs when `/usr/local/bin/k3s` is missing and the kind cluster is only created when absent.
 The role never upgrades a running k3s automatically; it prints a drift notice instead.
@@ -37,12 +46,12 @@ Every knob is prefixed `k8s_provision_`; the historical inventory names are stil
 | `k8s_provision_kind_version` | `v0.26.0` | `kind_version` | kind release |
 | `k8s_provision_kubectl_version` | `v1.31.5` | `kubectl_version` | kubectl release (kind only) |
 | `k8s_provision_helm_version` | `v3.16.4` | `helm_version` | Helm release (only when `k8s_provision_install_helm: true`) |
-| `k8s_provision_k3s_server_args` | `--disable traefik --write-kubeconfig-mode 644` | `k3s_server_args`, `k3s_server_options` | flags appended to `k3s server` at install time |
+| `k8s_provision_k3s_server_args` | `--disable traefik --write-kubeconfig-mode 600` | `k3s_server_args`, `k3s_server_options` | flags appended to `k3s server` at install time |
 | `k8s_provision_k3s_agent_args` | `""` | `k3s_agent_args` | flags appended to `k3s agent` |
 | `k8s_provision_k3s_url` / `k8s_provision_k3s_token` | `""` / `$K3S_TOKEN` | `k3s_url`, `k3s_token` | agent join settings (token is never logged) |
 | `k8s_provision_k3s_config` | `{}` | - | optional dict written to `/etc/rancher/k3s/config.yaml` (`backup: true`, restart + health check + rollback on failure) |
 | `k8s_provision_k3s_kubeconfig_path` | `/etc/rancher/k3s/k3s.yaml` | `kubeconfig_remote_path` | kubeconfig written by k3s |
-| `k8s_provision_kubeconfig_copy_path` | `""` | - | optional extra copy of the kubeconfig (mode 0600) |
+| `k8s_provision_kubeconfig_copy_path` | `""` | - | optional extra copy of the kubeconfig (mode 0600, owned by `k8s_provision_kubeconfig_copy_owner` / `_group`, default `root`); the way to give a non-root user kubectl access |
 | `k8s_provision_kind_cluster_name` | `anixops-dev` | `kind_cluster_name`, `cluster_name` | kind cluster name |
 | `k8s_provision_kind_node_image` | `""` | - | pin a `kindest/node` image |
 | `k8s_provision_kind_api_server_port` | `0` (random) | `kind_api_server_port` | host port for the kind API server |
@@ -54,7 +63,9 @@ Every knob is prefixed `k8s_provision_`; the historical inventory names are stil
 | `k8s_provision_download_retries` / `_download_delay` | `5` / `10` | - | retry policy for downloads |
 | `k8s_provision_wait_timeout`, `_ready_retries`, `_ready_delay` | `300`, `30`, `10` | - | readiness waits |
 
-Lifecycle contract (consumed by `roles/lifecycle`): `k8s_provision_port: 6443`, `k8s_provision_health_url: ""`,
+Lifecycle contract (consumed by `roles/lifecycle`): `k8s_provision_port` (`6443` for a k3s server, `0` for
+k3s agents, which have no local API port, and `k8s_provision_kind_api_server_port` for kind, `0` = random, no
+port check), `k8s_provision_health_url: ""`,
 `k8s_provision_backup_files: [/etc/rancher/k3s/config.yaml]`, `k8s_provision_config_dirs: [/etc/rancher/k3s]`,
 `k8s_provision_packages: []`, `k8s_provision_service_name: k3s` (`k3s-agent` on workers).
 
@@ -90,7 +101,7 @@ The role defines no tags of its own; use the play tags (`k3s`, `k3s_test`, `kind
 ## Verification | 验证
 
 ```bash
-kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes -o wide     # k3s
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes -o wide   # k3s (root-only kubeconfig)
 kubectl cluster-info --context kind-anixops-dev                       # kind
 systemctl status k3s                                                  # k3s service
 ```
@@ -98,5 +109,6 @@ systemctl status k3s                                                  # k3s serv
 ## Rollback | 回滚
 
 * k3s: `/usr/local/bin/k3s-uninstall.sh` (server) or `/usr/local/bin/k3s-agent-uninstall.sh` (agent) removes
-  the installation; a failed `config.yaml` change is rolled back automatically from the `backup: true` copy.
+  the installation; a failed `config.yaml` change is rolled back automatically from the `backup: true` copy
+  (or the new file is removed when none existed before).
 * kind: `kind delete cluster --name <name>`.

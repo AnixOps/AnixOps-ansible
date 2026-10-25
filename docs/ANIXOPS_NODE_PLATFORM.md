@@ -52,7 +52,8 @@ Operator-facing environment variables use the `ANIXOPS_NODE_PLATFORM_` prefix an
 - Optional SMTP, Stripe, cloud provider, probe, chain-backed topup, audit anchor, Cloudflare DNS and
   scheduler settings (same prefix; defaults in `roles/anixops_node_platform/defaults/main.yml`).
 
-The generated env file is stored at `/etc/anixops-node-platform.env` (`0600`, rendered with `no_log`),
+The generated env file is stored at `/etc/anixops-node-platform.env` (`0600`, rendered with `no_log`;
+every value is double-quoted and escaped, so secrets with `$`, ` #` or quotes arrive verbatim),
 outside the source checkout, so secrets never sit inside the Docker build context. It keeps the upstream
 runtime keys such as `PROVISION_SERVER_TOKEN`, `API_SECRET`, `INSTALL_MODE` and `DISGUISE_DOMAINS`
 because the application containers read them.
@@ -77,7 +78,9 @@ starting `anixops-node-platform`, so stale containers cannot keep `30000` or `87
    `remove_orphans: true` and `--wait`.
 4. **Edge policy**: UFW `DENY 30000/tcp`, `DENY 8787/tcp` (`AnixOps edge only`), SSH and 80/443 allowed
    before UFW is enabled.
-5. **TLS**: PEM secrets decoded and validated, or a self-signed fallback created once.
+5. **TLS** (whenever SSL is enabled): PEM secrets decoded and validated, or a self-signed fallback created
+   once; with `ANIXOPS_NODE_PLATFORM_SSL_SELF_SIGNED_FALLBACK=false` and no certificate the run fails early.
+   Certificate changes reload the host Nginx in the same run.
 6. **Verify**: every container healthy, loopback HTTP checks, then the Nginx role and the playbook's edge
    checks (`http://127.0.0.1/` and `https://127.0.0.1/` with the public `Host` header, `200/301/302`).
 

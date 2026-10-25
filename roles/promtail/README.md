@@ -58,7 +58,7 @@ knobs `loki_server_url` and `promtail_app_log_dir` which keep working.
 | `promtail_config_dir` / `promtail_config_path` | `/etc/promtail` / `.../config.yml` | Configuration location. |
 | `promtail_positions_dir` / `promtail_positions_file` | `/var/lib/promtail` / `.../positions.yaml` | Tail positions (the only writable path of the unit). |
 | `promtail_config_validate` | `true` | Run `-check-syntax` before installing the config. |
-| `promtail_port` | `9080` | HTTP port for `/ready`, `/metrics`, `/targets` (restricted in the firewall role). |
+| `promtail_port` | `loki.promtail.port`, else `9080` | HTTP port for `/ready`, `/metrics`, `/targets` (restricted in the firewall role). |
 | `promtail_listen_address` | `"0.0.0.0"` | HTTP bind address (`http_listen_address`); empty binds all interfaces. |
 | `promtail_log_level` | `info` | Promtail server log level. |
 | `promtail_extra_args` | `[]` | Extra flags appended to `ExecStart`, e.g. `["-config.expand-env=true"]`. |
@@ -81,9 +81,14 @@ knobs `loki_server_url` and `promtail_app_log_dir` which keep working.
 | `promtail_config_dirs` | `[/etc/promtail, /var/lib/promtail]` | Lifecycle contract. |
 | `promtail_packages` | `[]` | Lifecycle contract (binary install, nothing to purge). |
 
-The global `loki.promtail.*` dict in `inventories/production/group_vars/all/main.yml` is kept for
-operators but is **not** read by the role; set `promtail_version` / `promtail_port` explicitly to
-override. `_target_arch` from the same file is honoured for the architecture.
+`promtail_port` falls back to `loki.promtail.port` from
+`inventories/production/group_vars/all/main.yml`, the same value the prometheus role scrapes; the
+other keys of that dict are informational (set `promtail_version` explicitly). A changed port also
+needs `firewall_restricted_ports` updated by hand (it lists `9080` literally). `_target_arch` from
+the same file is honoured for the architecture.
+
+The `Restart promtail` handler daemon-reloads itself (`daemon_reload: true`), so a changed unit is
+re-read even when several roles in one play merge their `Reload systemd` handlers.
 
 Example override:
 

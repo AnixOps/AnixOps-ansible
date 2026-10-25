@@ -42,6 +42,11 @@ Every file in this repository must satisfy the rules below. They are enforced by
   `validate:` whenever the service offers a syntax checker (`sshd -t -f %s`, `nginx -t -c %s`,
   `promtool check config %s`, `loki -verify-config`). Deliberate exceptions live in
   `scripts/backup-coverage-allowlist.txt` with a documented reason.
+- `nginx -t -c %s` resolves relative `include` paths against the directory of the checked file,
+  so a configuration with relative includes (the nginx role's `nginx.conf`) is validated as a
+  staged copy inside its real directory: `sh -c 'trap "rm -f /etc/nginx/.nginx.conf.ansible-validate" EXIT;
+  cp -- "$1" /etc/nginx/.nginx.conf.ansible-validate && nginx -t -c /etc/nginx/.nginx.conf.ansible-validate' sh %s`.
+  The hidden staged name must match no include glob.
 - Roll-out pattern for a service role: template configuration → `meta: flush_handlers` → verify
   health (`uri`/`wait_for` with retries) → on failure the `rescue` restores the backup produced in
   this run (`<register>.backup_file`), restarts the service and fails with a clear message.
@@ -81,6 +86,11 @@ can manage it generically:
 | `<role>_config_dirs` | directories archived or removed on cleanup |
 | `<role>_packages` | packages the role installs |
 | `<role>_cleanup_packages` | packages cleanup may remove (defaults to `<role>_packages`; `common` is never cleaned up) |
+| `<role>_cleanup_service_name` | optional: unit that lifecycle cleanup stops, disables and removes from `/etc/systemd/system/` (defaults to `<role>_service_name`; `""` = cleanup touches no unit; `acme_ssl` (cron) and `anixops_node_platform` (docker) set `""`) |
+| `<role>_container_name` | optional: Docker container restarted by lifecycle `post_rollback` and by `rollback.yml` after restored files change (default `""` = none; `v2board` in docker mode sets `v2board`) |
+
+`rollback.yml` treats a defined but empty `<role>_service_name` as "no systemd unit"; its static
+`rollback_services_default` table is used only when the variable is undefined.
 
 ## 6. Playbooks | Playbook
 

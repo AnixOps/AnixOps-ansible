@@ -47,6 +47,7 @@ or a local `.env`), see `defaults/main.yml` for the full list.
 | `v2board_api_port` / `v2board_frontend_port` / `v2board_grpc_port` / `v2board_nodex_port` | `V2BOARD_*_PORT` | `8080` / `3001` / `50051` / `18081` | |
 | `v2board_db_type` | `V2BOARD_DB_TYPE` | `postgres` | `postgres` or `sqlite` |
 | `v2board_pg_host` / `v2board_pg_password` | `V2BOARD_PG_HOST` / `V2BOARD_PG_PASSWORD` | `localhost` / required | |
+| `v2board_pg_user` / `v2board_pg_database` | `V2BOARD_PG_USER` / `V2BOARD_PG_DATABASE` | `v2board` / `v2board` | same variables and fallbacks as the postgresql role's `postgresql_user` / `postgresql_database` |
 | `v2board_redis_host` / `v2board_redis_password` | `V2BOARD_REDIS_HOST` / `V2BOARD_REDIS_PASSWORD` | `localhost` / `""` | memory cache is used unless a non-local host or a password is set |
 | `v2board_jwt_secret` | `V2BOARD_JWT_SECRET` | required | |
 | `v2board_api_token` | `V2BOARD_API_TOKEN` | required | internal API token, also used by `roles/v2bx` to mint AuthKeys |
@@ -58,7 +59,20 @@ or a local `.env`), see `defaults/main.yml` for the full list.
 
 `v2board_port`, `v2board_health_url` (`http://127.0.0.1:<api_port>/api/v2/status`),
 `v2board_backup_files`, `v2board_config_dirs`, `v2board_packages` (empty on
-purpose so a cleanup never removes Docker Engine) and `v2board_service_name`.
+purpose so a cleanup never removes Docker Engine) and:
+
+| Variable | docker mode (default) | binary mode |
+|---|---|---|
+| `v2board_service_name` | `""` (no systemd unit) | `v2board` |
+| `v2board_container_name` | `v2board` (`v2board_docker_container_name`) | `""` |
+| `v2board_cleanup_service_name` | `v2board` | `v2board` |
+
+In docker mode lifecycle rollbacks and `rollback.yml` restart the container (`docker_container`
+`restart: true`) instead of a `v2board.service`, and lifecycle deploys are judged by the health URL
+only. Cleanup still stops and removes a leftover `v2board.service` (absent units are skipped) but
+does not remove the container. Binary-mode hosts must export `V2BOARD_DEPLOY_METHOD=binary` (or pin
+`v2board_deploy_method` in the inventory) for lifecycle and rollback runs too, not only for deploys;
+otherwise the rollback tries to restart a `v2board` container and fails.
 
 ## Secrets handling | 密钥处理
 

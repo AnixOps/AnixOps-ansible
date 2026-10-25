@@ -21,8 +21,8 @@ changes restart.
 
 ### Scrape targets | 抓取目标
 
-* `prometheus` (self), `promtail` (9080), `loki` (3100) and `grafana` (3000) on
-  the observability host.
+* `prometheus` (self), `promtail` (`prometheus_promtail_port`: the host's `promtail_port`, else
+  `loki.promtail.port`, else 9080), `loki` (3100) and `grafana` (3000) on the observability host.
 * `node_exporter`: one target per host of `prometheus_node_exporter_group`
   (default `all`) built from `hostvars[host].ansible_host` with labels
   `alias` (`server_alias`, falls back to the inventory name), `location`,
@@ -50,16 +50,19 @@ changes restart.
 | `prometheus_scrape_interval` / `prometheus_scrape_timeout` / `prometheus_evaluation_interval` | `15s` / `10s` / `15s` | Global intervals. |
 | `prometheus_external_labels` | `{cluster: anixops}` | `global.external_labels`. |
 | `prometheus_alertmanager_targets` | `[]` | e.g. `["localhost:9093"]`; empty omits `alerting`. |
-| `prometheus_node_exporter_group` / `prometheus_node_exporter_port` | `all` / `prometheus.node_exporter.port` or `9100` | node_exporter target generation. |
+| `prometheus_node_exporter_group` / `prometheus_node_exporter_port` | `all` / `prometheus.node_exporter.port` or `9100` | node_exporter target generation. A target's own `node_exporter_port` (host_vars, group_vars or `-e`) wins for that target. |
 | `prometheus_scrape_promtail` / `prometheus_scrape_loki` / `prometheus_scrape_grafana` | `true` | Self-monitoring jobs (ports `prometheus_promtail_port`, `prometheus_loki_port`, `prometheus_grafana_port`). |
 | `prometheus_speedtest_exporter_host` | `speedtest_exporter_host` or `""` | Speedtest exporter; job rendered only when non-empty (`prometheus_speedtest_scrape_interval: 60s`, timeout `30s`). |
 | `prometheus_extra_scrape_configs` | `[]` | Raw `scrape_configs` entries. |
 | `prometheus_rules_src_dir` / `prometheus_rules_prune` | `observability/prometheus/rules` / `true` | Rule file source and pruning of stale files. |
 | `prometheus_verify_retries` / `prometheus_verify_delay` | `12` / `5` | Health check polling. |
+| `prometheus_health_host` / `prometheus_health_port` | `127.0.0.1` for a wildcard bind, else the host of `prometheus_listen_address` / its port | Address the probes use. |
+| `prometheus_health_route_prefix` | `--web.route-prefix=<p>` from `prometheus_extra_args`, else the path of `prometheus_external_url` | Route prefix of the probes. A prefix passed as two list items (`--web.route-prefix`, `<p>`) is not detected: override the URLs. |
+| `prometheus_health_base_url` / `prometheus_health_url` / `prometheus_ready_url` | `http://127.0.0.1:9090` / `<base>/-/healthy` / `<base>/-/ready` | Probe URLs used by `verify.yml`, the lifecycle hooks and `rollback.yml`. |
 
 Lifecycle contract (consumed by `roles/lifecycle` and `rollback.yml`):
 `prometheus_service_name: prometheus`, `prometheus_port`,
-`prometheus_health_url` (`/-/healthy`), `prometheus_backup_files`
+`prometheus_health_url` (`<base>/-/healthy`, see above), `prometheus_backup_files`
 (`prometheus.yml`, unit), `prometheus_packages: []`, `prometheus_config_dirs`
 (`/etc/prometheus`, `/var/lib/prometheus`).
 
@@ -73,7 +76,7 @@ Lifecycle contract (consumed by `roles/lifecycle` and `rollback.yml`):
 ## Verification | 验证
 
 ```bash
-curl -fsS http://localhost:9090/-/healthy && curl -fsS http://localhost:9090/-/ready
+curl -fsS http://127.0.0.1:9090/-/healthy && curl -fsS http://127.0.0.1:9090/-/ready
 curl -fsS http://localhost:9090/api/v1/targets | python3 -m json.tool | grep -E '"health"|"instance"'
 curl -fsS http://localhost:9090/api/v1/rules | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]["groups"]), "rule groups")'
 promtool check config /etc/prometheus/prometheus.yml

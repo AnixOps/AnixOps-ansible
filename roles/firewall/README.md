@@ -36,7 +36,7 @@ the role consumes them through prefixed defaults with fallbacks.
 | `firewall_public_ports` | `["22", "80", "443"]` | TCP ports open to anyone (global key). |
 | `firewall_restricted_ports` | `["9100", "9080", "9090", "3100", "3000"]` | TCP ports open to the whitelist only (global key). |
 | `firewall_proxy_additional_ports` | `proxy_additional_ports \| default([])` | Extra public ports (group/host vars). |
-| `firewall_whitelist` | `monitoring_whitelist \| default([])` | Whitelisted sources; trimmed, comma-split, de-duplicated, validated. |
+| `firewall_whitelist` | `monitoring_whitelist \| default([])` | Whitelisted sources; trimmed, comma-split, validated, converted to ufw's canonical form and de-duplicated. |
 | `firewall_ssh_port` | `ansible_port \| default(ssh_port \| default(22))` | SSH port that must stay reachable. |
 | `firewall_default_incoming_policy` | `allow` | `allow` keeps the historical behaviour, `deny`/`reject` = allow-list mode. |
 | `firewall_default_outgoing_policy` | `allow` | |
@@ -57,6 +57,19 @@ Facts computed by `tasks/preflight.yml` (usable by playbooks after
 `include_role: name=firewall tasks_from=preflight`): `firewall_ssh_ports`,
 `firewall_effective_public_ports`, `firewall_effective_restricted_ports`,
 `firewall_effective_whitelist`, `firewall_whitelist_rules`, `firewall_whitelist_rules_enabled`.
+
+After validation every whitelist entry is converted (filter `firewall_ufw_address` in
+`filter_plugins/firewall_address.py`, standard library only) to the form ufw stores and prints:
+`/32` and `/128` are dropped, IPv4 CIDRs are reduced to the network address (`10.0.0.5/24` becomes
+`10.0.0.0/24`), IPv6 is lower-cased and compressed and IPv6 prefixes keep their host bits, as in
+ufw. That form is what appears in `firewall_effective_whitelist`, the plan output, the ufw rule
+comment (`Monitoring access from <address>`) and the firewalld rich rules; entries that become
+identical are de-duplicated. Before, a non-canonical entry such as `1.2.3.4/32` lost its allow rule
+on every second run (pruned, then re-added). Entries that match the regex but are not valid
+addresses (e.g. `010.0.0.1`) fail in preflight with `firewall_ufw_address: ... is not a valid
+IPv4/IPv6 address or CIDR`. On firewalld hosts that had a non-canonical entry, the canonical rich
+rule is added once and the old one stays as a harmless duplicate (firewalld rules are never
+pruned); remove it by hand if wanted.
 
 ## Behaviour | 行为
 

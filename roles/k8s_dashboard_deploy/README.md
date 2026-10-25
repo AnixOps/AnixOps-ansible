@@ -17,7 +17,11 @@ The public HTTPS vhost is **not** part of this role: `roles/nginx` renders
 2. Downloads the pinned `recommended.yaml` (retries, optional sha256) into `/usr/local/share/k8s-dashboard/`
    and renders `admin-user.yaml` (ServiceAccount + `cluster-admin` ClusterRoleBinding, plus a
    `service-account-token` Secret in `secret` mode).
-3. `kubectl apply` of both files; `changed` only when kubectl reports `created`/`configured`.
+3. Renders `kustomization.yaml` next to the two manifests and runs `kubectl apply --kustomize=<manifest_dir>`;
+   `changed` only when kubectl reports `created`/`configured`. The kustomization drops the placeholder `data`
+   of the `kubernetes-dashboard-csrf` Secret, so a re-run no longer blanks the CSRF key the dashboard generated.
+   On an existing cluster the first run after this change reports that Secret `configured` once (its data is
+   removed and the dashboard regenerates the key at the next pod start); later runs are unchanged.
 4. Waits for `deployment/kubernetes-dashboard` to roll out (retried).
 5. Token:
    * `bound` (default) - `kubectl create token admin-user --duration 8760h`, generated only when the token

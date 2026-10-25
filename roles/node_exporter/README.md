@@ -46,7 +46,7 @@ All variables live in `defaults/main.yml` and are prefixed `node_exporter_`.
 | `node_exporter_arch` | `_target_arch` or derived from `ansible_architecture` | `amd64` / `arm64` archive suffix. |
 | `node_exporter_install_path` | `/usr/local/bin/node_exporter` | Binary location. |
 | `node_exporter_user` / `node_exporter_group` | `node_exporter` | Service account. |
-| `node_exporter_port` | `9100` | Listen port (restricted in the firewall role; only monitoring hosts may reach it). |
+| `node_exporter_port` | `prometheus.node_exporter.port`, else `9100` | Listen port (restricted in the firewall role; only monitoring hosts may reach it). The prometheus role scrapes each target on that target's own `node_exporter_port` (host_vars/group_vars/`-e`). |
 | `node_exporter_listen_address` | `"0.0.0.0"` | Bind address. IPv6 literals are bracketed automatically. |
 | `node_exporter_collector_args` | filesystem/netclass/netdev exclusions | Collector flags (unchanged from the original role). |
 | `node_exporter_extra_args` | `[]` | Extra flags appended to `ExecStart`, e.g. `["--collector.systemd"]`. |
@@ -57,9 +57,15 @@ All variables live in `defaults/main.yml` and are prefixed `node_exporter_`.
 | `node_exporter_config_dirs` | `[]` | Lifecycle contract (no config directory). |
 | `node_exporter_packages` | `[]` | Lifecycle contract (binary install, nothing to purge). |
 
-The global `prometheus.node_exporter.*` dict in `inventories/production/group_vars/all/main.yml` is kept
-for operators but is **not** read by the role; set `node_exporter_version` / `node_exporter_port`
-explicitly to override. `_target_arch` from the same file is honoured for the architecture.
+`node_exporter_port` falls back to `prometheus.node_exporter.port` from
+`inventories/production/group_vars/all/main.yml`, the same value the prometheus role scrapes; the
+other keys of that dict are informational (set `node_exporter_version` explicitly). A changed port
+also needs `firewall_restricted_ports` updated by hand (it lists `9100` literally). `_target_arch`
+from the same file is honoured for the architecture.
+
+The `Restart node_exporter` handler daemon-reloads itself (`daemon_reload: true`): roles sharing a
+play merge their same-named `Reload systemd` handlers, so handler order alone does not guarantee a
+changed unit is re-read first.
 
 ## Verification | 验证
 

@@ -11,7 +11,7 @@ and a verify-or-rollback roll-out.
 | install | `tasks/install.yml` | `loki` user/group, `/etc/loki`, `/var/lib/loki`, `unzip`. Reads `loki --version` and downloads `loki-linux-<arch>.zip` (amd64/arm64 via `_target_arch`) into a `tempfile` directory only when the binary is missing **or its version differs** from `loki_version` (`get_url` retries, optional `loki_checksum`). Temp directory removed in `always`. |
 | configure | `tasks/configure.yml` | Renders `/etc/loki/loki-config.yml` with `validate: loki -config.file=%s -verify-config` (parses and validates without starting modules) and `backup: true`; renders the systemd unit. |
 | service | `tasks/service.yml` | `meta: flush_handlers`, then enable + start. |
-| verify | `tasks/verify.yml` | Polls `/ready` 12 x 5s (Loki answers 503 for ~15s after start). On failure: journal tail, restore of the `.backup` files, restart, `fail`. |
+| verify | `tasks/verify.yml` | Polls `/ready` 12 x 5s (Loki answers 503 for ~15s after start). On failure: journal tail, restore of the binary, configuration and unit replaced in this run (together, because a config rendered for one Loki version may not start another), restart, `fail`. An upgrade keeps the replaced binary as `/usr/local/bin/loki.<pid>.<YYYY-MM-DD@HH:MM:SS>~` only for the run; it is deleted once `/ready` succeeds or after the restore. If `-verify-config` fails in `configure` after a new binary was installed, the play fails before verify and the binary is not reverted (its backup stays in `/usr/local/bin`). |
 
 Handlers: `Reload systemd`, `Restart loki` (Loki has no config reload).
 

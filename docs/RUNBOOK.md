@@ -201,7 +201,7 @@ ansible-playbook playbooks/maintenance/lifecycle.yml -e lifecycle_target_role=ng
 
 | `lifecycle_version` | Restores |
 |---|---|
-| `prev` (default) | the configuration of the deployment before the current one; repeating `prev` walks further back |
+| `prev` (default) | the configuration of the deployment before the current one; repeating `prev` walks further back. When the current deployment **failed**: the last good state before it, skipping consecutive failed deployments (a failed first deployment has none: use `lifecycle_restore_from=/var/backups/<role>/<version>/pre`) |
 | `initial` | the configuration from before the first recorded deployment |
 | `v<YYYYMMDDTHHMMSS>` | the configuration right after that deployment |
 | `-e lifecycle_restore_from=<dir>` | a specific snapshot directory, e.g. the `/var/backups/<role>/<ts>-pre-rollback` safety snapshot taken by the previous rollback (undo a rollback) |
@@ -219,9 +219,26 @@ Every step is scoped to the role's home group (`target_group:&web_servers` for n
 scripts/anixops.sh cleanup-role loki --limit jp-1 --keep-backups 5
 ```
 
-Typed confirmation; stops and disables the unit, removes the role's packages, archives its
-configuration directories (kept unless `-e cleanup_keep_data=false`) and keeps the newest
-`--keep-backups` snapshot versions. `common` can never be cleaned up.
+Typed confirmation; stops and disables the unit (`<role>_cleanup_service_name`, default the
+service), removes the role's packages, archives its configuration directories (kept unless
+`-e cleanup_keep_data=false`) and keeps the newest `--keep-backups` snapshot versions. `common` can
+never be cleaned up. `acme_ssl` cleanup leaves cron running, removes no packages and does not
+delete the `acme.sh auto-renewal` crontab line (`crontab -e`). A docker-mode `v2board` cleanup does
+not remove the `v2board` container.
+
+**Node platform.** Cleanup of `anixops_node_platform` never stops Docker and removes no packages,
+but it does not stop the stack either. Bring the stack down first, otherwise a
+`cleanup_keep_data=false` cleanup deletes `/opt/anixops-node-platform` under running containers:
+
+```bash
+# on the node platform host
+cd /opt/anixops-node-platform
+docker compose --project-name anixops-node-platform \
+  --env-file /etc/anixops-node-platform.env -f docker-compose.node-platform.yml down
+# then, from the workstation (the role is not in the CLI's role list)
+ansible-playbook -i inventories/production/node-platform.actions.yml playbooks/maintenance/lifecycle.yml \
+  -e lifecycle_target_role=anixops_node_platform -e cleanup_confirm=yes --tags cleanup
+```
 
 ## 6. Incident response | 故障处理
 
@@ -265,3 +282,28 @@ configuration directories (kept unless `-e cleanup_keep_data=false`) and keeps t
 | Host unreachable in GitHub Actions | Check the `<HOST>_V4_SSH` secret and `SSH_PRIVATE_KEY`; the inventory reads the address from that variable. |
 | Security patch backlog issue opened | Follow the runbook in [SECURITY_PATCHING.md](SECURITY_PATCHING.md). |
 | Inventory drift gate fails | Edit `inventories/production/servers-config.yml`, run `make gen-inventory`, commit both files. |
+| k3s role warns that the kubeconfig "was not root-only 0600 and has been reset" | The k3s unit still has `--write-kubeconfig-mode 644`; see *pl-1 k3s kubeconfig mode* below. |
+
+### One-off operator actions | 一次性运维操作
+
+**pl-1 k3s kubeconfig mode.** The inventory and `k8s_provision` now use
+`--write-kubeconfig-mode 600`, but an existing installation keeps `--write-kubeconfig-mode 644` in
+`/etc/systemd/system/k3s.service` (the installer is not re-run), and k3s re-applies `0644` to
+`/etc/rancher/k3s/k3s.yaml` at every start. Until the unit is fixed the role resets the file to
+`0600` on each run and prints a warning. Fix it once on pl-1 (the restart briefly takes the control
+plane down):
+
+```bash
+# on pl-1: remove the '--write-kubeconfig-mode' '644' arguments from ExecStart, then
+systemctl daemon-reload && systemctl restart k3s
+stat -c '%a %U:%G' /etc/rancher/k3s/k3s.yaml    # expect 600 root:root after the next role run
+```
+
+Re-running the pinned k3s installer with the new `INSTALL_K3S_EXEC` also rewrites the unit. Non-root
+`kubectl` on pl-1 now needs `sudo` or a copy via `k8s_provision_kubeconfig_copy_path` / `_owner` /
+`_group`.
+
+**Node platform PostgreSQL password.** The `.env` file is now fully quoted. If
+`ANIXOPS_NODE_PLATFORM_POSTGRES_PASSWORD` contains `$`, ` #` or quotes, the
+already-initialised volume holds the old mangled password; rotate it inside PostgreSQL
+(`ALTER ROLE ... PASSWORD`) if the API cannot connect after the upgrade.
