@@ -57,8 +57,8 @@ different file and `--no-env` skips it.
   secret with another name is not visible to the playbooks.
 - `node-platform-deploy.yml` maps its secrets explicitly in the job environment.
 
-Set secrets with `gh secret set NAME` (add `--env NodeX` for an environment secret), or upload a whole
-`.env` file with `tools/secrets_uploader.py --env .env --repo owner/repo --token-env --dry-run`.
+Set secrets with `gh secret set NAME` (add `--env NodeX` for an environment secret), one name at a time
+or in the GitHub web UI.
 
 ## 5. Ansible Vault (optional) | Ansible Vault（可选）
 

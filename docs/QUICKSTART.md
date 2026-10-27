@@ -54,8 +54,8 @@ ssh-copy-id -i ~/.ssh/anixops_ed25519.pub root@<host-address>     # repeat per h
 # then in .env: SSH_KEY_PATH=~/.ssh/anixops_ed25519
 ```
 
-`tools/ssh_key_deployer.py` pushes a public key to many hosts at once (interactive, or
-`--key-file ... --host ...`). Password authentication is disabled fleet-wide by the `common` role
+Access goes through JumpServer, which manages accounts and keys; see [SSH_KEY_MANAGEMENT.md](SSH_KEY_MANAGEMENT.md).
+Password authentication is disabled fleet-wide by the `common` role
 (`ssh_password_authentication: false` in `group_vars/all/main.yml`), so install the key before the
 first deployment.
 

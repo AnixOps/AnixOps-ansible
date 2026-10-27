@@ -1,9 +1,0 @@
----
-- name: Reload systemd
-  ansible.builtin.systemd_service:
-    daemon_reload: true
-
-- name: Restart kubectl-port-forward
-  ansible.builtin.systemd_service:
-    name: "{{ k8s_dashboard_deploy_service_name }}"
-    state: restarted

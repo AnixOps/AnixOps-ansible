@@ -22,28 +22,6 @@ create/update A and AAAA records, toggle proxying, and batch-apply a list of rec
 Without arguments it starts an interactive menu; with `--help` it lists the batch sub-commands.
 Changes are made against the live Cloudflare API, so run it with care.
 
-## ssh_key_manager.py
-
-Finds (or generates) the operator's SSH private key, validates its format, and uploads it as a
-GitHub Actions secret (default name `SSH_PRIVATE_KEY`) using libsodium sealed boxes via PyNaCl,
-which is what the GitHub API requires. `python3 tools/ssh_key_manager.py --key-file ~/.ssh/id_ed25519
---repo owner/repo --token ghp_...`; omit the options for the interactive wizard. The private key
-never leaves the machine unencrypted.
-
-## ssh_key_deployer.py
-
-Pushes an SSH public key to one or many servers (IPv4 and IPv6) before Ansible can reach them,
-using `ssh-copy-id` where available and an `scp` + `ssh` fallback otherwise (paramiko/scp).
-Hosts can be typed interactively or read from `.env` host variables. Useful for bootstrapping a
-freshly reinstalled host that still only accepts password authentication.
-
-## secrets_uploader.py
-
-Bulk-uploads the variables of a `.env` file to GitHub repository secrets so the workflows in
-`.github/workflows/` can render the inventory. Supports include/exclude patterns, skips comments and
-empty values, shows a dry-run summary before uploading, and asks for confirmation. Requires a GitHub
-token with `repo` scope (`--token` or `GITHUB_TOKEN`).
-
 ## encode_ssl_cert.sh
 
 Encodes a PEM certificate chain and its private key as single-line base64 for storage in `.env`

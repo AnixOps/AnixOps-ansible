@@ -1,6 +1,6 @@
 # Kubernetes Dashboard Reverse Proxy Configuration
 # {{ ansible_managed }}
-# Same default as roles/k8s_dashboard_deploy (k8s_dashboard_deploy_domain).
+# Default domain: dashboard.local (k8s_dashboard_domain).
 {% set nginx_k8s_dashboard_domain = k8s_dashboard_domain | default('dashboard.local') %}
 
 upstream k8s_dashboard_backend {

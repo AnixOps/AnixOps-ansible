@@ -82,7 +82,6 @@ and creating the secret; any `<NAME>_V4_SSH` is exported automatically.
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | no | `tools/cloudflare_manager.py` (preferred: scoped token with Zone DNS Edit) |
 | `CLOUDFLARE_EMAIL`, `CLOUDFLARE_API_KEY` | no | `tools/cloudflare_manager.py` (Global API key alternative) |
 | `CLOUDFLARE_BASE_DOMAIN` | no | `tools/cloudflare_manager.py` |
-| `CLOUDFLARE_MESH_TOKEN` | no | `roles/cloudflare_mesh` (not part of any playbook since the mesh was removed from the deployment paths) |
 
 The `acme_ssl` role takes its account e-mail and Cloudflare credentials from inventory variables
 (`acme_email` / `acme_ssl_email`, `cloudflare_api_token`, `cloudflare_zone_id`), not from the
@@ -131,8 +130,7 @@ workflow also maps `VULTR_API_KEY`, `SMTP_*` and `SSL_CERTIFICATE_*`. The full l
 
 - `K3S_TOKEN` (optional) is read by `roles/k8s_provision` when joining k3s agents; it is not on the
   CI allow-list, so runs that need it are local.
-- `.env.example` also lists `ACME_EMAIL`, `OBSERVABILITY_SSL_METHOD`, `CLOUDFLARE_MESH_ADVERTISE_SUBNETS`,
-  `K8S_CONTROL_SSL_ENABLED`, `K8S_CONTROL_SSL_METHOD`, `K8S_DASHBOARD_DOMAIN`, `K8S_API_DOMAIN`,
+- `.env.example` also lists `ACME_EMAIL`, `OBSERVABILITY_SSL_METHOD`, `K8S_CONTROL_SSL_ENABLED`, `K8S_CONTROL_SSL_METHOD`, `K8S_DASHBOARD_DOMAIN`, `K8S_API_DOMAIN`,
   `K8S_METRICS_DOMAIN` and `SPEEDTEST_INSTALL_METHOD`; no role, playbook or workflow reads them at
   the moment.
 - Older documentation described per-interface `*_V4`, `*_V6` and `*_SSH_IP` secrets with CIDR
@@ -150,11 +148,8 @@ gh secret set GRAFANA_ADMIN_PASSWORD --env NodeX     # prompts for the value
 gh secret list
 ```
 
-`tools/ssh_key_manager.py` uploads the private key (interactive without arguments, or
-`--key-file <key> --repo owner/repo --token <token> [--secret-name SSH_PRIVATE_KEY]`), and
-`tools/secrets_uploader.py` bulk-uploads a `.env` file (`--env .env --repo owner/repo --token-env`,
-which reads `GITHUB_TOKEN`; try `--dry-run` first). Both need a GitHub token with `repo` scope and
-create repository secrets, not environment secrets.
+Upload the private key with `gh secret set SSH_PRIVATE_KEY < <key-file>`. Repository secrets are not
+environment secrets; use `--env <name>` when a secret belongs to an environment.
 
 ## Security practice | 安全建议
 
