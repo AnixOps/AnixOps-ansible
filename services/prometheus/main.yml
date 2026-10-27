@@ -78,7 +78,7 @@
 
     - name: Start Prometheus with Docker Compose | 启动 Prometheus 容器
       ansible.builtin.command:
-        cmd: docker compose up -d --pull missing --force-recreate-if-changed
+        cmd: docker compose up -d --pull missing
         chdir: "{{ prometheus_dir }}"
       register: prometheus_compose
       retries: 3
