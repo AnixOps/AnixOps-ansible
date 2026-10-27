@@ -1,0 +1,10 @@
+# Managed by Ansible | 由 Ansible 管理
+apiVersion: 1
+providers:
+  - name: anixops
+    folder: AnixOps
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

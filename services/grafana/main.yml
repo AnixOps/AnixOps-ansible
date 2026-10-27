@@ -1,0 +1,130 @@
+---
+# =============================================================================
+# Grafana | Grafana 监控面板
+# =============================================================================
+# JumpServer job template "grafana": this file is the entry point, the sibling
+# folders templates/ and files/ are uploaded next to it.
+#
+# Required variables (define them in the JumpServer variable table):
+#   grafana_admin_password   admin password (secret)
+#   grafana_prometheus_url   Prometheus base URL, e.g. http://10.0.0.5:9090
+# Optional variables:
+#   grafana_port (3000), grafana_admin_user (admin), grafana_image_tag (11.2.0),
+#   grafana_dir (/opt/grafana)
+# Scope: the selected assets; one host at a time
+# =============================================================================
+
+- name: Deploy Grafana | 部署 Grafana
+  hosts: all
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+
+  vars:
+    grafana_port: 3000
+    grafana_admin_user: admin
+    grafana_image_tag: "11.2.0"
+    grafana_dir: /opt/grafana
+
+  tasks:
+    - name: Assert the required variables are set | 断言必需变量已设置
+      ansible.builtin.assert:
+        that:
+          - grafana_admin_password | default('') | length > 0
+          - grafana_prometheus_url | default('') | length > 0
+        fail_msg: "grafana_admin_password and grafana_prometheus_url must be set"
+        quiet: true
+      no_log: true
+
+    - name: Install Docker with the official convenience script | 安装 Docker
+      ansible.builtin.shell:
+        cmd: set -o pipefail && curl -fsSL https://get.docker.com | sh
+        executable: /bin/bash
+        creates: /usr/bin/docker
+      register: grafana_docker_install
+      retries: 3
+      delay: 10
+      until: grafana_docker_install is succeeded
+      changed_when: true
+
+    - name: Enable and start Docker | 启动 Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create the Grafana directories | 创建 Grafana 目录
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ grafana_dir }}"
+        - "{{ grafana_dir }}/provisioning/datasources"
+        - "{{ grafana_dir }}/provisioning/dashboards"
+        - "{{ grafana_dir }}/dashboards"
+
+    - name: Write the environment file with the admin credentials | 写入管理员凭据
+      ansible.builtin.template:
+        src: env.j2
+        dest: "{{ grafana_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Write the compose file | 写入 compose 文件
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ grafana_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write the datasource provisioning | 写入数据源配置
+      ansible.builtin.template:
+        src: datasources.yml.j2
+        dest: "{{ grafana_dir }}/provisioning/datasources/prometheus.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write the dashboard provider | 写入仪表盘目录配置
+      ansible.builtin.template:
+        src: dashboards-provider.yml.j2
+        dest: "{{ grafana_dir }}/provisioning/dashboards/anixops.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy the dashboards | 复制仪表盘
+      ansible.builtin.copy:
+        src: dashboards/
+        dest: "{{ grafana_dir }}/dashboards/"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Start Grafana with Docker Compose | 启动 Grafana 容器
+      ansible.builtin.command:
+        cmd: docker compose up -d --pull missing
+        chdir: "{{ grafana_dir }}"
+      register: grafana_compose
+      retries: 3
+      delay: 10
+      until: grafana_compose is succeeded
+      changed_when: true
+
+    - name: Wait for Grafana to answer its health endpoint | 等待健康检查通过
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+        status_code: 200
+        timeout: 10
+      register: grafana_health
+      retries: 12
+      delay: 5
+      until: grafana_health.status == 200
+      changed_when: false
