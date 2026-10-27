@@ -33,9 +33,8 @@
         that:
           - grafana_admin_password | default('') | length > 0
           - grafana_prometheus_url | default('') | length > 0
-        fail_msg: "grafana_admin_password and grafana_prometheus_url must be set"
+        fail_msg: "Set grafana_admin_password and grafana_prometheus_url in the JumpServer variable table"
         quiet: true
-      no_log: true
 
     - name: Install Docker with the official convenience script | 安装 Docker
       ansible.builtin.shell:
