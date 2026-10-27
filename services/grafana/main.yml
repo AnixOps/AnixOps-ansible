@@ -5,10 +5,13 @@
 # JumpServer job template "grafana": this file is the entry point, the sibling
 # folders templates/ and files/ are uploaded next to it.
 #
-# Required variables (define them in the JumpServer variable table):
+# Variables: enter the names below in the JumpServer variable table. JumpServer
+# exposes each one to the playbook with a fixed jms_ prefix, so the value of
+# "grafana_admin_password" arrives as jms_grafana_admin_password.
+# Required:
 #   grafana_admin_password   admin password (secret)
 #   grafana_prometheus_url   Prometheus base URL, e.g. http://10.0.0.5:9090
-# Optional variables:
+# Optional:
 #   grafana_port (3000), grafana_admin_user (admin), grafana_image_tag (11.2.0),
 #   grafana_dir (/opt/grafana)
 # Scope: the selected assets; one host at a time
@@ -22,10 +25,12 @@
   max_fail_percentage: 0
 
   vars:
-    grafana_port: 3000
-    grafana_admin_user: admin
-    grafana_image_tag: "11.2.0"
-    grafana_dir: /opt/grafana
+    grafana_admin_password: "{{ jms_grafana_admin_password | default('') }}"
+    grafana_prometheus_url: "{{ jms_grafana_prometheus_url | default('') }}"
+    grafana_port: "{{ jms_grafana_port | default(3000) }}"
+    grafana_admin_user: "{{ jms_grafana_admin_user | default('admin') }}"
+    grafana_image_tag: "{{ jms_grafana_image_tag | default('11.2.0') }}"
+    grafana_dir: "{{ jms_grafana_dir | default('/opt/grafana') }}"
 
   tasks:
     - name: Assert the required variables are set | 断言必需变量已设置
@@ -33,7 +38,7 @@
         that:
           - grafana_admin_password | default('') | length > 0
           - grafana_prometheus_url | default('') | length > 0
-        fail_msg: "Set grafana_admin_password and grafana_prometheus_url in the JumpServer variable table"
+        fail_msg: "Enter grafana_admin_password and grafana_prometheus_url in the JumpServer variable table"
         quiet: true
 
     - name: Install Docker with the official convenience script | 安装 Docker

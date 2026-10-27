@@ -9,7 +9,9 @@ grafana/
 └── files/dashboards/             node-overview.json
 ```
 
-## 变量（在 JumpServer 变量表里定义）
+## 变量（在 JumpServer 变量表里填写）
+
+在变量表里填写下面的名称，JumpServer 会加上固定前缀 `jms_` 后交给剧本，例如 `grafana_admin_password` 在剧本中是 `jms_grafana_admin_password`。剧本内部已经做了映射，这里只需要填写不带前缀的名字。
 
 | 变量 | 必需 | 默认 | 说明 |
 |---|---|---|---|
