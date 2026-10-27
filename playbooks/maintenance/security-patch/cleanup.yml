@@ -1,7 +1,0 @@
----
-# Cleanup (always) | 清理
-
-- name: Remove temporary Trivy installer
-  ansible.builtin.file:
-    path: "{{ security_patch_trivy_installer_path }}"
-    state: absent

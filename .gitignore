@@ -1,46 +1,5 @@
-# Ansible
-*.retry
-*.pre-rollback.*
-
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.pytest_cache
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# Virtual environments
 venv/
-venv*/
-.venv/
-
-# Local environment and secrets
-.env
-.vault_password.txt
-*.pem
-*.local
-ansible.local.cfg
-
-# Editor and operating system files
-.idea/
-.vscode/
-*.swp
-*~
-.DS_Store
-
-# Generated artifacts and local run output
-.claude/
-*.log
-*.zip
-security-patch-report.json
-security-patch-report.md
-# Inventory rendered by CI next to inventories/production/group_vars (see setup-ansible)
-inventories/production/ci-hosts.yml
-
-# Ansible local runtime state (logs, fact cache, control sockets)
 .ansible/
 collections/
+*.retry
+.env

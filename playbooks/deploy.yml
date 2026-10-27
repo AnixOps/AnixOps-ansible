@@ -1,0 +1,32 @@
+---
+# Deploy an external project to the hosts of the inventory.
+#
+#   ansible-playbook playbooks/deploy.yml --limit app_servers \
+#     -e project_src=/path/to/project -e project_dest=/opt/app -e project_cmd="docker compose up -d"
+- name: Deploy the project | 部署项目
+  hosts: all
+  become: true
+  gather_facts: false
+  serial: "30%"
+  max_fail_percentage: 25
+
+  tasks:
+    - name: Check the required variables | 检查必需变量
+      ansible.builtin.assert:
+        that:
+          - project_src is defined
+          - project_dest is defined
+        quiet: true
+
+    - name: Sync the project directory | 同步项目目录
+      ansible.posix.synchronize:
+        src: "{{ project_src }}/"
+        dest: "{{ project_dest }}/"
+        delete: false
+
+    - name: Run the project command | 执行项目命令
+      ansible.builtin.command:
+        cmd: "{{ project_cmd }}"
+        chdir: "{{ project_dest }}"
+      when: project_cmd is defined
+      changed_when: true

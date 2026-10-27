@@ -1,9 +1,0 @@
----
-- name: Reload ufw
-  community.general.ufw:
-    state: reloaded
-
-- name: Reload firewalld
-  ansible.builtin.service:
-    name: firewalld
-    state: reloaded
