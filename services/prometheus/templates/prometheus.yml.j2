@@ -1,0 +1,14 @@
+# Managed by Ansible | 由 Ansible 管理
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+{% if prometheus_targets_list | length > 0 %}
+  - job_name: node
+    static_configs:
+      - targets: {{ prometheus_targets_list | to_json }}
+{% endif %}
