@@ -37,8 +37,11 @@
       ansible.builtin.assert:
         that:
           - grafana_admin_password | default('') | length > 0
+          - "grafana_admin_password is not match('^\\*+$')"
           - grafana_prometheus_url | default('') | length > 0
-        fail_msg: "Enter grafana_admin_password and grafana_prometheus_url in the JumpServer variable table"
+        fail_msg: >-
+          Enter grafana_admin_password and grafana_prometheus_url in the JumpServer variable table.
+          A password made only of asterisks is the mask JumpServer shows, not the real value.
         quiet: true
 
     - name: Install Docker with the official convenience script | 安装 Docker
