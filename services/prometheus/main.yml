@@ -12,6 +12,8 @@
 #   prometheus_scrape_targets   comma-separated host:port list of node_exporter
 #                               endpoints, e.g. 10.0.0.11:9100,10.0.0.12:9100
 #                               (empty = only Prometheus itself is scraped)
+#   prometheus_pushgateway_targets  comma-separated host:port list of Pushgateways,
+#                               e.g. 10.0.0.5:9091 (empty = no pushgateway job)
 #   prometheus_retention (30d)  how long metrics are kept
 #   prometheus_image_tag (v2.54.1)
 #   prometheus_dir (/opt/prometheus)
@@ -28,10 +30,12 @@
   vars:
     prometheus_port: "{{ jms_prometheus_port | default(9090) }}"
     prometheus_scrape_targets: "{{ jms_prometheus_scrape_targets | default('') }}"
+    prometheus_pushgateway_targets: "{{ jms_prometheus_pushgateway_targets | default('') }}"
     prometheus_retention: "{{ jms_prometheus_retention | default('30d') }}"
     prometheus_image_tag: "{{ jms_prometheus_image_tag | default('v2.54.1') }}"
     prometheus_dir: "{{ jms_prometheus_dir | default('/opt/prometheus') }}"
     prometheus_targets_list: "{{ prometheus_scrape_targets.split(',') | map('trim') | reject('equalto', '') | list }}"
+    prometheus_pushgateway_list: "{{ prometheus_pushgateway_targets.split(',') | map('trim') | reject('equalto', '') | list }}"
 
   tasks:
     - name: Install Docker with the official convenience script | 安装 Docker

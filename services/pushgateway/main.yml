@@ -1,0 +1,92 @@
+---
+# =============================================================================
+# Pushgateway | Prometheus Pushgateway
+# =============================================================================
+# JumpServer job template "pushgateway": this file is the entry point, the
+# sibling folder templates/ is uploaded next to it.
+#
+# Variables: enter the names below in the JumpServer variable table. JumpServer
+# passes each one with a fixed jms_ prefix (jms_pushgateway_port, ...).
+# No variable is required and none is a secret.
+#   pushgateway_port (9091)
+#   pushgateway_image_tag (v1.9.0)
+#   pushgateway_dir (/opt/pushgateway)
+#   pushgateway_persistence_interval (5m)   how often metrics are written to disk
+# Scope: the selected assets; one host at a time
+# =============================================================================
+
+- name: Deploy Pushgateway | 部署 Pushgateway
+  hosts: all
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+
+  vars:
+    pushgateway_port: "{{ jms_pushgateway_port | default(9091) }}"
+    pushgateway_image_tag: "{{ jms_pushgateway_image_tag | default('v1.9.0') }}"
+    pushgateway_dir: "{{ jms_pushgateway_dir | default('/opt/pushgateway') }}"
+    pushgateway_persistence_interval: "{{ jms_pushgateway_persistence_interval | default('5m') }}"
+
+  tasks:
+    - name: Install Docker with the official convenience script | 安装 Docker
+      ansible.builtin.shell:
+        cmd: set -o pipefail && curl -fsSL https://get.docker.com | sh
+        executable: /bin/bash
+        creates: /usr/bin/docker
+      register: pushgateway_docker_install
+      retries: 3
+      delay: 10
+      until: pushgateway_docker_install is succeeded
+      changed_when: pushgateway_docker_install.changed
+
+    - name: Enable and start Docker | 启动 Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create the Pushgateway directory | 创建 Pushgateway 目录
+      ansible.builtin.file:
+        path: "{{ pushgateway_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create the persistence directory owned by the container user | 创建持久化目录
+      ansible.builtin.file:
+        path: "{{ pushgateway_dir }}/data"
+        state: directory
+        owner: "65534"
+        group: "65534"
+        mode: "0750"
+
+    - name: Write the compose file | 写入 compose 文件
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ pushgateway_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Start Pushgateway with Docker Compose | 启动 Pushgateway 容器
+      ansible.builtin.command:
+        cmd: docker compose up -d --pull missing
+        chdir: "{{ pushgateway_dir }}"
+      register: pushgateway_compose
+      retries: 3
+      delay: 10
+      until: pushgateway_compose is succeeded
+      changed_when: true
+
+    - name: Wait for Pushgateway to become ready | 等待 Pushgateway 就绪
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ pushgateway_port }}/-/ready"
+        status_code: 200
+        timeout: 10
+      register: pushgateway_ready
+      retries: 12
+      delay: 5
+      until: pushgateway_ready.status == 200
+      changed_when: false

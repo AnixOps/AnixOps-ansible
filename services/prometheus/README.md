@@ -8,6 +8,7 @@ JumpServer 作业模板 `prometheus`。结构与 `services/grafana` 相同：`ma
 |---|---|---|---|
 | `prometheus_port` | 否 | `9090` | 宿主机端口 |
 | `prometheus_scrape_targets` | 否 | 空 | 逗号分隔的 node_exporter 地址，如 `10.0.0.11:9100,10.0.0.12:9100`；为空时只抓取 Prometheus 自身 |
+| `prometheus_pushgateway_targets` | 否 | 空 | 逗号分隔的 Pushgateway 地址，如 `10.0.0.5:9091`；为空则不添加该抓取任务（使用 `honor_labels: true`） |
 | `prometheus_retention` | 否 | `30d` | 指标保留时长 |
 | `prometheus_image_tag` | 否 | `v2.54.1` | Prometheus 镜像版本 |
 | `prometheus_dir` | 否 | `/opt/prometheus` | 部署目录 |

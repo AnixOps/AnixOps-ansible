@@ -1,0 +1,12 @@
+# Managed by Ansible | 由 Ansible 管理
+services:
+  pushgateway:
+    image: "prom/pushgateway:{{ pushgateway_image_tag }}"
+    restart: unless-stopped
+    command:
+      - --persistence.file=/data/metrics
+      - --persistence.interval={{ pushgateway_persistence_interval }}
+    ports:
+      - "{{ pushgateway_port }}:9091"
+    volumes:
+      - ./data:/data

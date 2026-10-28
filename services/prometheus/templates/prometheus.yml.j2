@@ -12,3 +12,9 @@ scrape_configs:
     static_configs:
       - targets: {{ prometheus_targets_list | to_json }}
 {% endif %}
+{% if prometheus_pushgateway_list | length > 0 %}
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: {{ prometheus_pushgateway_list | to_json }}
+{% endif %}
