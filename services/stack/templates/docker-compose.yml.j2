@@ -1,0 +1,61 @@
+# Managed by Ansible | 由 Ansible 管理
+services:
+  prometheus:
+    image: "prom/prometheus:{{ stack_prometheus_image_tag }}"
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time={{ stack_retention }}
+    ports:
+      - "{{ stack_prometheus_port }}:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  pushgateway:
+    image: "prom/pushgateway:{{ stack_pushgateway_image_tag }}"
+    restart: unless-stopped
+    command:
+      - --persistence.file=/data/metrics
+      - --persistence.interval=5m
+    ports:
+      - "{{ stack_pushgateway_port }}:9091"
+    volumes:
+      - ./pushgateway-data:/data
+
+  grafana:
+    image: "grafana/grafana:{{ stack_grafana_image_tag }}"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "{{ stack_grafana_port }}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+{% if stack_node_exporter_enabled %}
+
+  node-exporter:
+    image: "prom/node-exporter:{{ stack_node_exporter_image_tag }}"
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=:{{ stack_node_exporter_port }}
+    volumes:
+      - /:/host:ro,rslave
+{% endif %}
+
+volumes:
+  prometheus-data:
+  grafana-data:

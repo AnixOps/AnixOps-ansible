@@ -1,0 +1,191 @@
+---
+# =============================================================================
+# Monitoring stack | 监控全量安装 (Prometheus + Pushgateway + Grafana + node_exporter)
+# =============================================================================
+# JumpServer job template "stack": main.yml is the entry point, the sibling
+# folders templates/ and files/ are uploaded next to it. One compose project
+# runs everything on one Docker network, so Grafana reaches Prometheus as
+# http://prometheus:9090 and no URL has to be configured.
+#
+# Variables: enter the names below in the JumpServer variable table. JumpServer
+# passes each one with a fixed jms_ prefix (jms_stack_grafana_port, ...).
+# All are optional:
+#   stack_dir (/opt/stack)
+#   stack_grafana_port (3000)  stack_prometheus_port (9090)
+#   stack_pushgateway_port (9091)  stack_node_exporter_port (9100)
+#   stack_node_exporter_enabled (true)   run node_exporter on the host network
+#   stack_scrape_targets        extra node_exporter targets, comma-separated host:port
+#   stack_retention (30d)
+#   stack_grafana_admin_user (admin)
+#   stack_grafana_admin_password   only used to CREATE <stack_dir>/.env; an existing
+#                               .env is never overwritten
+# Grafana reads its admin password only on its first start (empty data volume).
+# Scope: the selected assets; one host at a time
+# =============================================================================
+
+- name: Deploy the monitoring stack | 部署监控栈
+  hosts: all
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+
+  vars:
+    stack_dir: "{{ jms_stack_dir | default('/opt/stack') }}"
+    stack_grafana_port: "{{ jms_stack_grafana_port | default(3000) }}"
+    stack_prometheus_port: "{{ jms_stack_prometheus_port | default(9090) }}"
+    stack_pushgateway_port: "{{ jms_stack_pushgateway_port | default(9091) }}"
+    stack_node_exporter_port: "{{ jms_stack_node_exporter_port | default(9100) }}"
+    stack_node_exporter_enabled: "{{ jms_stack_node_exporter_enabled | default('true') | bool }}"
+    stack_scrape_targets: "{{ jms_stack_scrape_targets | default('') }}"
+    stack_retention: "{{ jms_stack_retention | default('30d') }}"
+    stack_grafana_admin_user: "{{ jms_stack_grafana_admin_user | default('admin') }}"
+    stack_grafana_admin_password: "{{ jms_stack_grafana_admin_password | default('') }}"
+    stack_prometheus_image_tag: "v2.54.1"
+    stack_pushgateway_image_tag: "v1.9.0"
+    stack_grafana_image_tag: "11.2.0"
+    stack_node_exporter_image_tag: "v1.8.2"
+    stack_extra_targets_list: "{{ stack_scrape_targets.split(',') | map('trim') | reject('equalto', '') | list }}"
+
+  tasks:
+    - name: Check whether the Grafana credentials file already exists | 检查凭据文件
+      ansible.builtin.stat:
+        path: "{{ stack_dir }}/.env"
+      register: stack_env_file
+
+    - name: Assert the admin credentials are available | 断言管理员凭据可用
+      ansible.builtin.assert:
+        that:
+          - stack_env_file.stat.exists or (stack_grafana_admin_password | length > 0)
+          - stack_grafana_admin_password | length == 0 or stack_grafana_admin_password is not match('^\*+$')
+        fail_msg: >-
+          {{ stack_dir }}/.env does not exist and no valid stack_grafana_admin_password was passed.
+          Create the file once on the host (root, mode 0600) with GRAFANA_ADMIN_USER and
+          GRAFANA_ADMIN_PASSWORD, or pass stack_grafana_admin_password. A value made only of
+          asterisks is the mask JumpServer shows, not the real secret.
+        quiet: true
+
+    - name: Install Docker with the official convenience script | 安装 Docker
+      ansible.builtin.shell:
+        cmd: set -o pipefail && curl -fsSL https://get.docker.com | sh
+        executable: /bin/bash
+        creates: /usr/bin/docker
+      register: stack_docker_install
+      retries: 3
+      delay: 10
+      until: stack_docker_install is succeeded
+      changed_when: stack_docker_install.changed
+
+    - name: Enable and start Docker | 启动 Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create the stack directories | 创建目录
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ stack_dir }}"
+        - "{{ stack_dir }}/prometheus"
+        - "{{ stack_dir }}/grafana/provisioning/datasources"
+        - "{{ stack_dir }}/grafana/provisioning/dashboards"
+        - "{{ stack_dir }}/grafana/dashboards"
+
+    - name: Create the Pushgateway data directory owned by the container user | 创建 Pushgateway 数据目录
+      ansible.builtin.file:
+        path: "{{ stack_dir }}/pushgateway-data"
+        state: directory
+        owner: "65534"
+        group: "65534"
+        mode: "0750"
+
+    - name: Create the credentials file when it does not exist | 创建凭据文件（不覆盖已有）
+      ansible.builtin.template:
+        src: env.j2
+        dest: "{{ stack_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+        force: false
+      when: not stack_env_file.stat.exists
+      no_log: true
+
+    - name: Write the compose file | 写入 compose 文件
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ stack_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write the Prometheus configuration | 写入 Prometheus 配置
+      ansible.builtin.template:
+        src: prometheus.yml.j2
+        dest: "{{ stack_dir }}/prometheus/prometheus.yml"
+        owner: root
+        group: root
+        mode: "0644"
+      register: stack_prometheus_config
+
+    - name: Write the Grafana datasource provisioning | 写入数据源配置
+      ansible.builtin.template:
+        src: datasources.yml.j2
+        dest: "{{ stack_dir }}/grafana/provisioning/datasources/prometheus.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write the Grafana dashboard provider | 写入仪表盘目录配置
+      ansible.builtin.template:
+        src: dashboards-provider.yml.j2
+        dest: "{{ stack_dir }}/grafana/provisioning/dashboards/anixops.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy the dashboards | 复制仪表盘
+      ansible.builtin.copy:
+        src: dashboards/
+        dest: "{{ stack_dir }}/grafana/dashboards/"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Start the stack with Docker Compose | 启动监控栈
+      ansible.builtin.command:
+        cmd: docker compose up -d --pull missing
+        chdir: "{{ stack_dir }}"
+      register: stack_compose
+      retries: 3
+      delay: 10
+      until: stack_compose is succeeded
+      changed_when: stack_compose.stderr is search('Started|Created|Recreated|Pulled')
+
+    - name: Restart Prometheus when its configuration changed | 配置变化时重启 Prometheus
+      ansible.builtin.command:
+        cmd: docker compose restart prometheus
+        chdir: "{{ stack_dir }}"
+      when: stack_prometheus_config.changed
+      changed_when: true
+
+    - name: Wait for every service to answer its health endpoint | 等待各服务健康
+      ansible.builtin.uri:
+        url: "{{ item.url }}"
+        status_code: 200
+        timeout: 10
+      register: stack_health
+      retries: 12
+      delay: 5
+      until: stack_health.status == 200
+      changed_when: false
+      loop:
+        - { name: prometheus, url: "http://127.0.0.1:{{ stack_prometheus_port }}/-/ready" }
+        - { name: pushgateway, url: "http://127.0.0.1:{{ stack_pushgateway_port }}/-/ready" }
+        - { name: grafana, url: "http://127.0.0.1:{{ stack_grafana_port }}/api/health" }
+      loop_control:
+        label: "{{ item.name }}"

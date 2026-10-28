@@ -1,0 +1,19 @@
+# Managed by Ansible | 由 Ansible 管理
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+{% set stack_node_targets = (["host.docker.internal:" ~ stack_node_exporter_port] if stack_node_exporter_enabled else []) + stack_extra_targets_list %}
+{% if stack_node_targets | length > 0 %}
+  - job_name: node
+    static_configs:
+      - targets: {{ stack_node_targets | to_json }}
+{% endif %}
